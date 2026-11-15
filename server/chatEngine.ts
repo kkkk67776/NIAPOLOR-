@@ -2,8 +2,10 @@ import fs from 'fs';
 import {
   atomicWriteJsonSync,
   getDataFilePath,
+  isCloudPersistenceEnabled,
   loadCloudJson,
-  pushCloudJson,
+  saveCloudJson,
+  savePersistentJson,
 } from './cloudPersistence.js';
 import type {
   ChatMessage,
@@ -78,28 +80,39 @@ function loadInitialChatDb(): ChatDatabase {
 
 let chatDb: ChatDatabase = loadInitialChatDb();
 
-function persistChatDb(): void {
-  try {
-    // Prune oldest threads if exceeding MAX_THREADS
-    const threadIds = Object.keys(chatDb.threads);
-    if (threadIds.length > MAX_THREADS) {
-      threadIds
-        .sort((a, b) => new Date(chatDb.threads[a].lastMessageAt).getTime() - new Date(chatDb.threads[b].lastMessageAt).getTime())
-        .slice(0, threadIds.length - MAX_THREADS)
-        .forEach((oldId) => {
-          delete chatDb.threads[oldId];
-        });
-    }
-    atomicWriteJsonSync(CHAT_DATA_FILE, chatDb);
-    pushCloudJson(CLOUD_CHAT_KEY, chatDb);
-  } catch (err) {
-    console.error('[ChatEngine] Failed to persist chat database:', err);
+async function persistChatDb(candidate: ChatDatabase): Promise<{ ok: boolean; error?: string }> {
+  const pruned: ChatDatabase = {
+    config: { ...candidate.config },
+    threads: { ...candidate.threads },
+  };
+  const threadIds = Object.keys(pruned.threads);
+  if (threadIds.length > MAX_THREADS) {
+    threadIds
+      .sort(
+        (a, b) =>
+          new Date(pruned.threads[a].lastMessageAt).getTime() -
+          new Date(pruned.threads[b].lastMessageAt).getTime()
+      )
+      .slice(0, threadIds.length - MAX_THREADS)
+      .forEach((oldId) => {
+        delete pruned.threads[oldId];
+      });
   }
+  const res = await savePersistentJson(CLOUD_CHAT_KEY, CHAT_DATA_FILE, pruned);
+  if (!res.ok) {
+    return { ok: false, error: res.error };
+  }
+  chatDb = pruned;
+  return { ok: true };
 }
 
 export async function hydrateChatDbFromCloud(): Promise<void> {
+  if (!isCloudPersistenceEnabled()) return;
   const remote = await loadCloudJson<Partial<ChatDatabase>>(CLOUD_CHAT_KEY);
-  if (!remote) return;
+  if (!remote) {
+    await saveCloudJson(CLOUD_CHAT_KEY, chatDb).catch(() => {});
+    return;
+  }
   if (remote.config) {
     chatDb.config = {
       ...DEFAULT_CHAT_CONFIG,
@@ -118,38 +131,47 @@ export async function hydrateChatDbFromCloud(): Promise<void> {
   if (remote.threads && typeof remote.threads === 'object') {
     chatDb.threads = { ...remote.threads, ...chatDb.threads };
   }
-  atomicWriteJsonSync(CHAT_DATA_FILE, chatDb);
+  try {
+    atomicWriteJsonSync(CHAT_DATA_FILE, chatDb);
+  } catch {}
 }
 
 export function getPublicChatConfig(): SupportChatConfig {
   return chatDb.config;
 }
 
-export function updateChatConfig(payload: {
+export async function updateChatConfig(payload: {
   autoReplyEnabled?: boolean;
   welcomeMessage?: Partial<{ ar: string; fr: string; en: string }>;
   fallbackMessage?: Partial<{ ar: string; fr: string; en: string }>;
   customRules?: CustomChatRule[];
-}): SupportChatConfig {
+}): Promise<{ ok: boolean; statusCode?: number; config?: SupportChatConfig; error?: string }> {
+  const nextConfig: SupportChatConfig = {
+    ...chatDb.config,
+    welcomeMessage: { ...chatDb.config.welcomeMessage },
+    fallbackMessage: { ...chatDb.config.fallbackMessage },
+    customRules: [...chatDb.config.customRules],
+  };
+
   if (typeof payload.autoReplyEnabled === 'boolean') {
-    chatDb.config.autoReplyEnabled = payload.autoReplyEnabled;
+    nextConfig.autoReplyEnabled = payload.autoReplyEnabled;
   }
   if (payload.welcomeMessage) {
-    chatDb.config.welcomeMessage = {
-      ar: sanitizeText(payload.welcomeMessage.ar, 600) || chatDb.config.welcomeMessage.ar,
-      fr: sanitizeText(payload.welcomeMessage.fr, 600) || chatDb.config.welcomeMessage.fr,
-      en: sanitizeText(payload.welcomeMessage.en, 600) || chatDb.config.welcomeMessage.en,
+    nextConfig.welcomeMessage = {
+      ar: sanitizeText(payload.welcomeMessage.ar, 600) || nextConfig.welcomeMessage.ar,
+      fr: sanitizeText(payload.welcomeMessage.fr, 600) || nextConfig.welcomeMessage.fr,
+      en: sanitizeText(payload.welcomeMessage.en, 600) || nextConfig.welcomeMessage.en,
     };
   }
   if (payload.fallbackMessage) {
-    chatDb.config.fallbackMessage = {
-      ar: sanitizeText(payload.fallbackMessage.ar, 600) || chatDb.config.fallbackMessage.ar,
-      fr: sanitizeText(payload.fallbackMessage.fr, 600) || chatDb.config.fallbackMessage.fr,
-      en: sanitizeText(payload.fallbackMessage.en, 600) || chatDb.config.fallbackMessage.en,
+    nextConfig.fallbackMessage = {
+      ar: sanitizeText(payload.fallbackMessage.ar, 600) || nextConfig.fallbackMessage.ar,
+      fr: sanitizeText(payload.fallbackMessage.fr, 600) || nextConfig.fallbackMessage.fr,
+      en: sanitizeText(payload.fallbackMessage.en, 600) || nextConfig.fallbackMessage.en,
     };
   }
   if (Array.isArray(payload.customRules)) {
-    chatDb.config.customRules = payload.customRules
+    nextConfig.customRules = payload.customRules
       .slice(0, 40)
       .map((r, idx) => ({
         id: sanitizeText(r.id, 60) || `rule_${Date.now()}_${idx}`,
@@ -160,9 +182,17 @@ export function updateChatConfig(payload: {
       }))
       .filter((r) => r.keyword && (r.replyAr || r.replyFr || r.replyEn));
   }
-  chatDb.config.updatedAt = new Date().toISOString();
-  persistChatDb();
-  return chatDb.config;
+  nextConfig.updatedAt = new Date().toISOString();
+
+  const saved = await persistChatDb({ config: nextConfig, threads: chatDb.threads });
+  if (!saved.ok) {
+    return {
+      ok: false,
+      statusCode: 503,
+      error: saved.error || 'تعذر حفظ إعدادات المحادثة في قاعدة البيانات.',
+    };
+  }
+  return { ok: true, config: chatDb.config };
 }
 
 export function normalizeChatSessionId(rawId: unknown): string {
@@ -176,7 +206,7 @@ export function getChatThread(sessionId: string): SupportChatThread | null {
   return chatDb.threads[safeId] || null;
 }
 
-export function recordCustomerChatExchange(params: {
+export async function recordCustomerChatExchange(params: {
   sessionId: string;
   language?: Language;
   customerLabel?: string;
@@ -184,40 +214,40 @@ export function recordCustomerChatExchange(params: {
   autoReplyText?: string;
   suggestedProducts?: ChatSuggestedProduct[];
   actionView?: string;
-}): { ok: boolean; thread?: SupportChatThread; error?: string } {
+}): Promise<{ ok: boolean; statusCode?: number; thread?: SupportChatThread; error?: string }> {
   const safeId = normalizeChatSessionId(params.sessionId);
   if (!safeId) {
-    return { ok: false, error: 'معرف جلسة المحادثة غير صالح.' };
+    return { ok: false, statusCode: 400, error: 'معرف جلسة المحادثة غير صالح.' };
   }
   const customerText = sanitizeText(params.customerText, 1200);
   if (!customerText) {
-    return { ok: false, error: 'نص الرسالة فارغ.' };
+    return { ok: false, statusCode: 400, error: 'نص الرسالة فارغ.' };
   }
 
   const lang: Language = params.language === 'fr' || params.language === 'en' ? params.language : 'ar';
   const now = new Date().toISOString();
 
-  if (!chatDb.threads[safeId]) {
-    chatDb.threads[safeId] = {
-      sessionId: safeId,
-      customerLabel: sanitizeText(params.customerLabel, 60) || `حريف #${safeId.slice(-4).toUpperCase()}`,
-      language: lang,
-      messages: [
-        {
-          id: `msg_welcome_${Date.now()}`,
-          sender: 'owner',
-          source: 'auto',
-          text: chatDb.config.welcomeMessage[lang] || chatDb.config.welcomeMessage.ar,
-          timestamp: now,
-        },
-      ],
-      unreadByOwner: 0,
-      lastMessageAt: now,
-      createdAt: now,
-    };
-  }
+  const existingThread = chatDb.threads[safeId];
+  const thread: SupportChatThread = existingThread
+    ? { ...existingThread, messages: [...existingThread.messages] }
+    : {
+        sessionId: safeId,
+        customerLabel: sanitizeText(params.customerLabel, 60) || `حريف #${safeId.slice(-4).toUpperCase()}`,
+        language: lang,
+        messages: [
+          {
+            id: `msg_welcome_${Date.now()}`,
+            sender: 'owner',
+            source: 'auto',
+            text: chatDb.config.welcomeMessage[lang] || chatDb.config.welcomeMessage.ar,
+            timestamp: now,
+          },
+        ],
+        unreadByOwner: 0,
+        lastMessageAt: now,
+        createdAt: now,
+      };
 
-  const thread = chatDb.threads[safeId];
   thread.language = lang;
 
   const customerMsg: ChatMessage = {
@@ -248,24 +278,31 @@ export function recordCustomerChatExchange(params: {
     thread.messages = thread.messages.slice(-MAX_MESSAGES_PER_THREAD);
   }
   thread.lastMessageAt = now;
-  persistChatDb();
+
+  const saved = await persistChatDb({
+    config: chatDb.config,
+    threads: { ...chatDb.threads, [safeId]: thread },
+  });
+  if (!saved.ok) {
+    return { ok: false, statusCode: 503, error: saved.error || 'تعذر حفظ رسالة المحادثة.' };
+  }
   return { ok: true, thread };
 }
 
-export function adminSendChatReply(params: {
+export async function adminSendChatReply(params: {
   sessionId: string;
   replyText: string;
-}): { ok: boolean; thread?: SupportChatThread; message?: ChatMessage; error?: string } {
+}): Promise<{ ok: boolean; statusCode?: number; thread?: SupportChatThread; message?: ChatMessage; error?: string }> {
   const safeId = normalizeChatSessionId(params.sessionId);
   if (!safeId || !chatDb.threads[safeId]) {
-    return { ok: false, error: 'المحادثة غير موجودة.' };
+    return { ok: false, statusCode: 404, error: 'المحادثة غير موجودة.' };
   }
   const replyText = sanitizeText(params.replyText, 1600);
   if (!replyText) {
-    return { ok: false, error: 'نص الرد مطلوب.' };
+    return { ok: false, statusCode: 400, error: 'نص الرد مطلوب.' };
   }
 
-  const thread = chatDb.threads[safeId];
+  const baseThread = chatDb.threads[safeId];
   const now = new Date().toISOString();
   const ownerMsg: ChatMessage = {
     id: `chat_owner_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -274,30 +311,50 @@ export function adminSendChatReply(params: {
     text: replyText,
     timestamp: now,
   };
-  thread.messages.push(ownerMsg);
-  if (thread.messages.length > MAX_MESSAGES_PER_THREAD) {
-    thread.messages = thread.messages.slice(-MAX_MESSAGES_PER_THREAD);
+  const nextMessages = [...baseThread.messages, ownerMsg].slice(-MAX_MESSAGES_PER_THREAD);
+  const nextThread: SupportChatThread = {
+    ...baseThread,
+    messages: nextMessages,
+    unreadByOwner: 0,
+    lastMessageAt: now,
+  };
+
+  const saved = await persistChatDb({
+    config: chatDb.config,
+    threads: { ...chatDb.threads, [safeId]: nextThread },
+  });
+  if (!saved.ok) {
+    return { ok: false, statusCode: 503, error: saved.error || 'تعذر حفظ الرد في قاعدة البيانات.' };
   }
-  thread.unreadByOwner = 0;
-  thread.lastMessageAt = now;
-  persistChatDb();
-  return { ok: true, thread, message: ownerMsg };
+  return { ok: true, thread: nextThread, message: ownerMsg };
 }
 
-export function markThreadReadByOwner(sessionId: string): boolean {
+export async function markThreadReadByOwner(sessionId: string): Promise<{ ok: boolean; statusCode?: number; error?: string }> {
   const safeId = normalizeChatSessionId(sessionId);
-  if (!safeId || !chatDb.threads[safeId]) return false;
-  chatDb.threads[safeId].unreadByOwner = 0;
-  persistChatDb();
-  return true;
+  if (!safeId || !chatDb.threads[safeId]) return { ok: false, statusCode: 404, error: 'المحادثة غير موجودة.' };
+  const nextThread: SupportChatThread = {
+    ...chatDb.threads[safeId],
+    unreadByOwner: 0,
+  };
+  const saved = await persistChatDb({
+    config: chatDb.config,
+    threads: { ...chatDb.threads, [safeId]: nextThread },
+  });
+  if (!saved.ok) return { ok: false, statusCode: 503, error: saved.error };
+  return { ok: true };
 }
 
-export function deleteChatThread(sessionId: string): boolean {
+export async function deleteChatThread(sessionId: string): Promise<{ ok: boolean; statusCode?: number; error?: string }> {
   const safeId = normalizeChatSessionId(sessionId);
-  if (!safeId || !chatDb.threads[safeId]) return false;
-  delete chatDb.threads[safeId];
-  persistChatDb();
-  return true;
+  if (!safeId || !chatDb.threads[safeId]) return { ok: false, statusCode: 404, error: 'المحادثة غير موجودة.' };
+  const nextThreads = { ...chatDb.threads };
+  delete nextThreads[safeId];
+  const saved = await persistChatDb({
+    config: chatDb.config,
+    threads: nextThreads,
+  });
+  if (!saved.ok) return { ok: false, statusCode: 503, error: saved.error };
+  return { ok: true };
 }
 
 export function listAdminChatThreads(): {

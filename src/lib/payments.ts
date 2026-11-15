@@ -340,8 +340,20 @@ export async function testAdminOnlineGateway(): Promise<{ ok: boolean; message: 
     credentials: 'include',
     headers: getAdminAuthHeaders(),
   });
+  const data = await res.json().catch(() => ({}));
   if (res.status === 401 || res.status === 403) notifySessionExpired();
-  return res.json();
+  if (!res.ok) {
+    return {
+      ok: false,
+      message: data.error || data.message || 'تعذر فحص اتصال بوابة الدفع.',
+      checkedAt: new Date().toISOString(),
+    };
+  }
+  return {
+    ok: Boolean(data.ok),
+    message: data.message || '',
+    checkedAt: data.checkedAt || new Date().toISOString(),
+  };
 }
 
 export async function verifyAdminPaymentAction(payload: {

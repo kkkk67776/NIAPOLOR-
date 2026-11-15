@@ -37,8 +37,20 @@ import {
   deleteAdminOrderServer,
   submitServerCheckout,
   canOrderShipClient,
-  syncAdminCatalogToPaymentEngine
 } from '../lib/payments';
+
+export interface ServerPersistenceStatus {
+  provider: string;
+  storageMode: string;
+  cloudEnabled: boolean;
+  durable: boolean;
+  isRender: boolean;
+  dataDir: string;
+  firestoreProjectId?: string;
+  firestoreDatabaseId?: string;
+  lastCloudWriteAt: string | null;
+  lastCloudError: string | null;
+}
 import { 
   INITIAL_COMPANIES, 
   INITIAL_PRODUCTS, 
@@ -106,31 +118,32 @@ interface StoreContextType {
   
   // Products Management
   products: Product[];
-  addProduct: (product: Omit<Product, 'id' | 'reviews' | 'rating' | 'reviewCount'>) => void;
-  updateProduct: (id: string, updates: Partial<Product>) => void;
-  deleteProduct: (id: string) => void;
-  toggleProductActive: (id: string) => void;
-  addProductReview: (productId: string, review: Omit<Review, 'id' | 'date'>) => void;
+  addProduct: (product: Omit<Product, 'id' | 'reviews' | 'rating' | 'reviewCount'>) => Promise<{ ok: boolean; error?: string }>;
+  updateProduct: (id: string, updates: Partial<Product>) => Promise<{ ok: boolean; error?: string }>;
+  deleteProduct: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  toggleProductActive: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  addProductReview: (productId: string, review: Omit<Review, 'id' | 'date'>) => Promise<{ ok: boolean; error?: string }>;
   
   // Companies Management
   companies: Company[];
-  addCompany: (company: Omit<Company, 'id'>) => void;
-  updateCompany: (id: string, updates: Partial<Company>) => void;
-  deleteCompany: (id: string) => void;
+  addCompany: (company: Omit<Company, 'id'>) => Promise<{ ok: boolean; error?: string }>;
+  updateCompany: (id: string, updates: Partial<Company>) => Promise<{ ok: boolean; error?: string }>;
+  deleteCompany: (id: string) => Promise<{ ok: boolean; error?: string }>;
   
   // Categories & Chips
   categories: CategoryItem[];
-  addCategory: (category: CategoryItem) => void;
-  deleteCategory: (id: string) => void;
+  addCategory: (category: CategoryItem) => Promise<{ ok: boolean; error?: string }>;
+  deleteCategory: (id: string) => Promise<{ ok: boolean; error?: string }>;
   
   // Banners & Promos
   banners: PromoBanner[];
-  addBanner: (banner: Omit<PromoBanner, 'id'>) => void;
-  deleteBanner: (id: string) => void;
-  toggleBannerActive: (id: string) => void;
+  addBanner: (banner: Omit<PromoBanner, 'id'>) => Promise<{ ok: boolean; error?: string }>;
+  deleteBanner: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  toggleBannerActive: (id: string) => Promise<{ ok: boolean; error?: string }>;
 
   // Orders & Payments
   paymentConfig: PaymentSystemPublicConfig;
+  persistenceStatus: ServerPersistenceStatus | null;
   refreshPaymentConfig: () => Promise<void>;
   refreshStoreState: () => Promise<void>;
   refreshAdminStoreState: () => Promise<{ ok: boolean; error?: string }>;
@@ -158,16 +171,16 @@ interface StoreContextType {
   updateOrderInState: (updatedOrder: Order) => void;
   syncOrdersFromServer: (serverOrders: Order[]) => void;
   refreshAdminOrders: () => Promise<{ ok: boolean; count: number; error?: string }>;
-  addManualOrder: (orderData: Partial<Order>) => Order;
-  updateOrderStatus: (orderId: string, status: OrderStatus, note?: string) => { ok: boolean; error?: string };
-  deleteOrder: (orderId: string) => void;
+  addManualOrder: (orderData: Partial<Order>) => Promise<{ ok: boolean; order?: Order; error?: string }>;
+  updateOrderStatus: (orderId: string, status: OrderStatus, note?: string) => Promise<{ ok: boolean; order?: Order; error?: string }>;
+  deleteOrder: (orderId: string) => Promise<{ ok: boolean; error?: string }>;
   isSupportModalOpen: boolean;
   setIsSupportModalOpen: (open: boolean) => void;
   
   // Contact & Chat
   inquiries: ContactInquiry[];
-  sendInquiry: (inquiry: Omit<ContactInquiry, 'id' | 'createdAt' | 'read'>) => void;
-  replyToInquiry: (inquiryId: string, reply: string) => void;
+  sendInquiry: (inquiry: Omit<ContactInquiry, 'id' | 'createdAt' | 'read'>) => Promise<{ ok: boolean; error?: string }>;
+  replyToInquiry: (inquiryId: string, reply: string) => Promise<{ ok: boolean; error?: string }>;
   chatMessages: ChatMessage[];
   chatConfig: SupportChatConfig;
   isChatReplying: boolean;
@@ -256,6 +269,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [isCartOpen, setIsCartOpen] = useState<boolean>(false);
   const [isSupportModalOpen, setIsSupportModalOpen] = useState<boolean>(false);
   const [paymentConfig, setPaymentConfig] = useState<PaymentSystemPublicConfig>(DEFAULT_PUBLIC_PAYMENT_CONFIG);
+  const [persistenceStatus, setPersistenceStatus] = useState<ServerPersistenceStatus | null>(null);
 
   const setCurrentView = (view: string) => {
     setCurrentViewState(view);
@@ -414,7 +428,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [categories]);
 
-  const pushAdminStoreState = async (patch: Record<string, unknown>): Promise<{ ok: boolean; error?: string }> => {
+  const pushAdminStoreState = async (
+    patch: Record<string, unknown>
+  ): Promise<{ ok: boolean; data?: any; error?: string }> => {
     try {
       const res = await fetch('/api/admin/store/state', {
         method: 'PUT',
@@ -429,27 +445,40 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (!res.ok || !data?.success) {
         return {
           ok: false,
-          error: data?.error || (res.status === 401 || res.status === 403 ? 'جلسة المالك غير نشطة على الخادم.' : 'تعذر حفظ التعديلات على الخادم.'),
+          error:
+            data?.error ||
+            (res.status === 401 || res.status === 403
+              ? 'جلسة المالك غير نشطة على الخادم.'
+              : 'تعذر تأكيد الحفظ الدائم على الخادم.'),
         };
       }
-      return { ok: true };
+      if (data.persistenceStatus) {
+        setPersistenceStatus(data.persistenceStatus);
+      }
+      return { ok: true, data };
     } catch {
       return { ok: false, error: 'تعذر الاتصال بالخادم لحفظ التغييرات.' };
     }
   };
 
-  const addCategory = (category: CategoryItem) => {
-    if (categories.some(c => c.id === category.id)) return;
+  const addCategory = async (category: CategoryItem): Promise<{ ok: boolean; error?: string }> => {
+    if (categories.some(c => c.id === category.id)) {
+      return { ok: false, error: 'معرف التصنيف موجود مسبقاً.' };
+    }
     const next = [...categories, category];
-    setCategories(next);
-    void pushAdminStoreState({ categories: next });
+    const res = await pushAdminStoreState({ categories: next });
+    if (!res.ok) return { ok: false, error: res.error };
+    setCategories(Array.isArray(res.data?.categories) ? res.data.categories : next);
+    return { ok: true };
   };
 
-  const deleteCategory = (id: string) => {
-    if (id === 'all') return;
+  const deleteCategory = async (id: string): Promise<{ ok: boolean; error?: string }> => {
+    if (id === 'all') return { ok: false, error: 'لا يمكن حذف التصنيف الأساسي.' };
     const next = categories.filter(c => c.id !== id);
-    setCategories(next);
-    void pushAdminStoreState({ categories: next });
+    const res = await pushAdminStoreState({ categories: next });
+    if (!res.ok) return { ok: false, error: res.error };
+    setCategories(Array.isArray(res.data?.categories) ? res.data.categories : next);
+    return { ok: true };
   };
 
   // 5.2 Banners & Promos
@@ -481,30 +510,40 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [banners]);
 
-  const addBanner = (bannerData: Omit<PromoBanner, 'id'>) => {
+  const addBanner = async (bannerData: Omit<PromoBanner, 'id'>): Promise<{ ok: boolean; error?: string }> => {
     const newBanner: PromoBanner = {
       ...bannerData,
       id: `banner_${Date.now()}`
     };
     const next = [newBanner, ...banners];
-    setBanners(next);
-    void pushAdminStoreState({ banners: next });
+    const res = await pushAdminStoreState({ banners: next });
+    if (!res.ok) return { ok: false, error: res.error };
+    setBanners(Array.isArray(res.data?.banners) ? res.data.banners : next);
+    return { ok: true };
   };
 
-  const deleteBanner = (id: string) => {
+  const deleteBanner = async (id: string): Promise<{ ok: boolean; error?: string }> => {
     const next = banners.filter(b => b.id !== id);
-    setBanners(next);
-    void pushAdminStoreState({ banners: next });
+    const res = await pushAdminStoreState({ banners: next });
+    if (!res.ok) return { ok: false, error: res.error };
+    setBanners(Array.isArray(res.data?.banners) ? res.data.banners : next);
+    return { ok: true };
   };
 
-  const toggleBannerActive = (id: string) => {
+  const toggleBannerActive = async (id: string): Promise<{ ok: boolean; error?: string }> => {
     const next = banners.map(b => b.id === id ? { ...b, active: !b.active } : b);
-    setBanners(next);
-    void pushAdminStoreState({ banners: next });
+    const res = await pushAdminStoreState({ banners: next });
+    if (!res.ok) return { ok: false, error: res.error };
+    setBanners(Array.isArray(res.data?.banners) ? res.data.banners : next);
+    return { ok: true };
   };
 
   // 5.3 Order Deletion & Manual Order Creation
-  const deleteOrder = (orderId: string) => {
+  const deleteOrder = async (orderId: string): Promise<{ ok: boolean; error?: string }> => {
+    const res = await deleteAdminOrderServer(orderId);
+    if (!res.ok) {
+      return { ok: false, error: res.error || 'تعذر حذف الطلب من الخادم.' };
+    }
     const target = orders.find(o => o.id === orderId || o.trackingNumber === orderId);
     try {
       const existing = getDeletedOrderIds();
@@ -520,10 +559,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       // ignore
     }
     setOrders(prev => prev.filter(o => o.id !== orderId && o.trackingNumber !== orderId));
-    void deleteAdminOrderServer(orderId).catch(() => {});
+    return { ok: true };
   };
 
-  const addManualOrder = (orderData: Partial<Order>): Order => {
+  const addManualOrder = async (
+    orderData: Partial<Order>
+  ): Promise<{ ok: boolean; order?: Order; error?: string }> => {
     const newId = `ord_manual_${Date.now()}`;
     const tracking = `ECH-TN-${Math.floor(100000 + Math.random() * 900000)}`;
     const now = new Date().toISOString();
@@ -569,13 +610,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       ]
     };
 
-    setOrders(prev => [created, ...prev]);
-    void createAdminManualOrderServer(created).then(res => {
-      if (res.ok && res.order) {
-        updateOrderInState(res.order);
-      }
-    }).catch(() => {});
-    return created;
+    const res = await createAdminManualOrderServer(created);
+    if (!res.ok || !res.order) {
+      return { ok: false, error: res.error || 'تعذر حفظ الطلب اليدوي بشكل دائم على الخادم.' };
+    }
+    updateOrderInState(res.order);
+    return { ok: true, order: res.order };
   };
 
   // 6. Settings
@@ -682,6 +722,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           return merged;
         });
       }
+      if (data.persistenceStatus) {
+        setPersistenceStatus(data.persistenceStatus);
+      }
       if (Array.isArray(data.inquiries)) {
         setInquiries(data.inquiries);
       }
@@ -729,34 +772,48 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       workingHours: { ...siteSettings.workingHours, ...(updates.workingHours || {}) },
       announcementText: { ...siteSettings.announcementText, ...(updates.announcementText || {}) },
     };
-    setSiteSettingsState(next);
+
+    const res = await pushAdminStoreState({ siteSettings: next });
+    if (!res.ok) {
+      return { ok: false, error: res.error };
+    }
+
+    const committed: SiteSettings = res.data?.siteSettings || next;
+    setSiteSettingsState(committed);
     try {
-      localStorage.setItem('echox_site_settings', JSON.stringify(next));
+      localStorage.setItem('echox_site_settings', JSON.stringify(committed));
     } catch (e) {
       console.warn('Storage write error:', e);
     }
-    return pushAdminStoreState({ siteSettings: next });
+    return { ok: true };
   };
 
   const updateOwnerSettings = async (updates: Partial<OwnerSettings>): Promise<{ ok: boolean; error?: string }> => {
-    if (updates.loginEmail) {
-      setAuthorizedOwnerEmail(updates.loginEmail);
-    }
-    if (updates.primaryPhone) {
-      setAuthorizedOwnerPhone(updates.primaryPhone);
-    }
     const next = {
       ...ownerSettings,
       ...updates,
       bio: { ...ownerSettings.bio, ...(updates.bio || {}) },
     };
-    setOwnerSettingsState(next);
+
+    const res = await pushAdminStoreState({ ownerSettings: next });
+    if (!res.ok) {
+      return { ok: false, error: res.error };
+    }
+
+    const committed: OwnerSettings = res.data?.ownerSettings || next;
+    if (committed.loginEmail) {
+      setAuthorizedOwnerEmail(committed.loginEmail);
+    }
+    if (committed.primaryPhone) {
+      setAuthorizedOwnerPhone(committed.primaryPhone);
+    }
+    setOwnerSettingsState(committed);
     try {
-      localStorage.setItem('echox_owner_settings', JSON.stringify(next));
+      localStorage.setItem('echox_owner_settings', JSON.stringify(committed));
     } catch (e) {
       console.warn('Storage write error:', e);
     }
-    return pushAdminStoreState({ ownerSettings: next });
+    return { ok: true };
   };
 
   // 7. Cart & Discounts
@@ -973,7 +1030,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   // 11. Products CRUD
-  const addProduct = (prodData: Omit<Product, 'id' | 'reviews' | 'rating' | 'reviewCount'>) => {
+  const addProduct = async (
+    prodData: Omit<Product, 'id' | 'reviews' | 'rating' | 'reviewCount'>
+  ): Promise<{ ok: boolean; error?: string }> => {
     const newProduct: Product = {
       ...prodData,
       id: `prod_${Date.now()}`,
@@ -982,84 +1041,84 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       reviews: []
     };
     const next = [newProduct, ...products];
-    setProducts(next);
-    void pushAdminStoreState({ products: next });
-    void syncAdminCatalogToPaymentEngine(next);
+    const res = await pushAdminStoreState({ products: next });
+    if (!res.ok) return { ok: false, error: res.error };
+    setProducts(Array.isArray(res.data?.products) ? res.data.products : next);
+    return { ok: true };
   };
 
-  const updateProduct = (id: string, updates: Partial<Product>) => {
+  const updateProduct = async (id: string, updates: Partial<Product>): Promise<{ ok: boolean; error?: string }> => {
     const next = products.map(p => p.id === id ? { ...p, ...updates } : p);
-    setProducts(next);
-    void pushAdminStoreState({ products: next });
-    void syncAdminCatalogToPaymentEngine(next);
+    const res = await pushAdminStoreState({ products: next });
+    if (!res.ok) return { ok: false, error: res.error };
+    setProducts(Array.isArray(res.data?.products) ? res.data.products : next);
+    return { ok: true };
   };
 
-  const deleteProduct = (id: string) => {
+  const deleteProduct = async (id: string): Promise<{ ok: boolean; error?: string }> => {
     const next = products.filter(p => p.id !== id);
-    setProducts(next);
-    void pushAdminStoreState({ products: next });
-    void syncAdminCatalogToPaymentEngine(next);
+    const res = await pushAdminStoreState({ products: next });
+    if (!res.ok) return { ok: false, error: res.error };
+    setProducts(Array.isArray(res.data?.products) ? res.data.products : next);
+    return { ok: true };
   };
 
-  const toggleProductActive = (id: string) => {
+  const toggleProductActive = async (id: string): Promise<{ ok: boolean; error?: string }> => {
     const next = products.map(p => p.id === id ? { ...p, active: !p.active } : p);
-    setProducts(next);
-    void pushAdminStoreState({ products: next });
-    void syncAdminCatalogToPaymentEngine(next);
+    const res = await pushAdminStoreState({ products: next });
+    if (!res.ok) return { ok: false, error: res.error };
+    setProducts(Array.isArray(res.data?.products) ? res.data.products : next);
+    return { ok: true };
   };
 
-  const addProductReview = (productId: string, review: Omit<Review, 'id' | 'date'>) => {
-    const newRev: Review = {
-      ...review,
-      id: `rev_${Date.now()}`,
-      date: new Date().toISOString().split('T')[0]
-    };
-    setProducts(prev => prev.map(prod => {
-      if (prod.id !== productId) return prod;
-      const updatedReviews = [newRev, ...prod.reviews];
-      const newRating = +(updatedReviews.reduce((sum, r) => sum + r.rating, 0) / updatedReviews.length).toFixed(1);
-      return {
-        ...prod,
-        reviews: updatedReviews,
-        rating: newRating,
-        reviewCount: updatedReviews.length
-      };
-    }));
-    void fetch(`/api/store/products/${encodeURIComponent(productId)}/reviews`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(review),
-    })
-      .then(res => res.json().catch(() => null))
-      .then(data => {
-        if (data?.success && data.product) {
-          setProducts(prev => prev.map(p => (p.id === productId ? data.product : p)));
-        }
-      })
-      .catch(() => {});
+  const addProductReview = async (
+    productId: string,
+    review: Omit<Review, 'id' | 'date'>
+  ): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      const res = await fetch(`/api/store/products/${encodeURIComponent(productId)}/reviews`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(review),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success || !data.product) {
+        return { ok: false, error: data?.error || 'تعذر حفظ التقييم على الخادم.' };
+      }
+      setProducts(prev => prev.map(p => (p.id === productId ? data.product : p)));
+      return { ok: true };
+    } catch {
+      return { ok: false, error: 'تعذر الاتصال بالخادم.' };
+    }
   };
 
   // 12. Companies CRUD
-  const addCompany = (compData: Omit<Company, 'id'>) => {
+  const addCompany = async (compData: Omit<Company, 'id'>): Promise<{ ok: boolean; error?: string }> => {
     const newCompany: Company = {
       ...compData,
       id: `comp_${Date.now()}`
     };
     const next = [...companies, newCompany];
-    setCompanies(next);
-    void pushAdminStoreState({ companies: next });
+    const res = await pushAdminStoreState({ companies: next });
+    if (!res.ok) return { ok: false, error: res.error };
+    setCompanies(Array.isArray(res.data?.companies) ? res.data.companies : next);
+    return { ok: true };
   };
 
-  const updateCompany = (id: string, updates: Partial<Company>) => {
+  const updateCompany = async (id: string, updates: Partial<Company>): Promise<{ ok: boolean; error?: string }> => {
     const next = companies.map(c => c.id === id ? { ...c, ...updates } : c);
-    setCompanies(next);
-    void pushAdminStoreState({ companies: next });
+    const res = await pushAdminStoreState({ companies: next });
+    if (!res.ok) return { ok: false, error: res.error };
+    setCompanies(Array.isArray(res.data?.companies) ? res.data.companies : next);
+    return { ok: true };
   };
 
-  const deleteCompany = (id: string) => {
+  const deleteCompany = async (id: string): Promise<{ ok: boolean; error?: string }> => {
     const next = companies.filter(c => c.id !== id);
-    setCompanies(next);
-    void pushAdminStoreState({ companies: next });
+    const res = await pushAdminStoreState({ companies: next });
+    if (!res.ok) return { ok: false, error: res.error };
+    setCompanies(Array.isArray(res.data?.companies) ? res.data.companies : next);
+    return { ok: true };
   };
 
   // 13. Orders
@@ -1226,28 +1285,43 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return newOrder;
   };
 
-  const updateOrderStatus = (orderId: string, status: OrderStatus, note?: string): { ok: boolean; error?: string } => {
+  const updateOrderStatus = async (
+    orderId: string,
+    status: OrderStatus,
+    note?: string
+  ): Promise<{ ok: boolean; order?: Order; error?: string }> => {
     const targetOrder = orders.find(o => o.id === orderId);
     const shippingSteps: OrderStatus[] = ['preparing', 'out_for_delivery', 'delivered'];
     if (targetOrder && shippingSteps.includes(status) && !canOrderShipClient(targetOrder)) {
       return { ok: false, error: t.payments.shippingBlockedUnpaid };
     }
 
-    const now = new Date().toISOString();
-    setOrders(prev => prev.map(o => {
-      if (o.id !== orderId) return o;
-      return {
-        ...o,
-        status,
-        updatedAt: now,
-        notes: note ? `${o.notes ? o.notes + ' | ' : ''}${note}` : o.notes,
-        statusHistory: [
-          ...o.statusHistory,
-          { status, timestamp: now, note }
-        ]
-      };
-    }));
-    return { ok: true };
+    try {
+      const srvRes = await fetch(`/api/admin/orders/${encodeURIComponent(orderId)}/status`, {
+        method: 'PATCH',
+        headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
+        credentials: 'include',
+        body: JSON.stringify({ status, note }),
+      });
+      const data = await srvRes.json().catch(() => ({}));
+      if (srvRes.status === 401 || srvRes.status === 403) {
+        notifySessionExpired();
+        return {
+          ok: false,
+          error: data.error || 'انتهت جلسة الأمان على الخادم — يرجى إدخال رمز الـ PIN لتجديد الجلسة.',
+        };
+      }
+      if (!srvRes.ok || !data?.success) {
+        return { ok: false, error: data?.error || 'تعذر حفظ حالة الطلب على الخادم.' };
+      }
+      if (data.order) {
+        updateOrderInState(data.order);
+        return { ok: true, order: data.order };
+      }
+      return { ok: true };
+    } catch {
+      return { ok: false, error: 'تعذر الاتصال بالخادم لتحديث حالة الطلب.' };
+    }
   };
 
   // 14. Inquiries & Chat
@@ -1294,48 +1368,55 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [inquiries]);
 
-  const sendInquiry = (inquiry: Omit<ContactInquiry, 'id' | 'createdAt' | 'read'>) => {
-    const newInquiry: ContactInquiry = {
-      ...inquiry,
-      id: `inq_${Date.now()}`,
-      createdAt: new Date().toISOString(),
-      read: false
-    };
-    setInquiries(prev => [newInquiry, ...prev]);
-    void fetch('/api/store/inquiries', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(inquiry),
-    })
-      .then(res => res.json().catch(() => null))
-      .then(data => {
-        if (data?.success && data.inquiry) {
-          setInquiries(prev => prev.map(i => (i.id === newInquiry.id ? data.inquiry : i)));
-        }
-      })
-      .catch(() => {});
+  const sendInquiry = async (
+    inquiry: Omit<ContactInquiry, 'id' | 'createdAt' | 'read'>
+  ): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      const res = await fetch('/api/store/inquiries', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(inquiry),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success || !data.inquiry) {
+        return { ok: false, error: data?.error || 'تعذر إرسال الاستفسار للخادم.' };
+      }
+      setInquiries(prev => [data.inquiry, ...prev]);
+      return { ok: true };
+    } catch {
+      return { ok: false, error: 'تعذر الاتصال بالخادم.' };
+    }
   };
 
-  const replyToInquiry = (inquiryId: string, reply: string) => {
-    setInquiries(prev => prev.map(inq => {
-      if (inq.id !== inquiryId) return inq;
-      return {
-        ...inq,
-        read: true,
-        reply,
-        repliedAt: new Date().toISOString()
-      };
-    }));
-    void fetch(`/api/admin/store/inquiries/${encodeURIComponent(inquiryId)}/reply`, {
-      method: 'POST',
-      headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
-      credentials: 'include',
-      body: JSON.stringify({ reply }),
-    })
-      .then((res) => {
-        if (res.status === 401 || res.status === 403) notifySessionExpired();
-      })
-      .catch(() => {});
+  const replyToInquiry = async (inquiryId: string, reply: string): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      const res = await fetch(`/api/admin/store/inquiries/${encodeURIComponent(inquiryId)}/reply`, {
+        method: 'POST',
+        headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
+        credentials: 'include',
+        body: JSON.stringify({ reply }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.status === 401 || res.status === 403) {
+        notifySessionExpired();
+        return { ok: false, error: data?.error || 'انتهت جلسة مركز التحكم.' };
+      }
+      if (!res.ok || !data?.success) {
+        return { ok: false, error: data?.error || 'تعذر حفظ الرد على الخادم.' };
+      }
+      setInquiries(prev => prev.map(inq => {
+        if (inq.id !== inquiryId) return inq;
+        return data.inquiry || {
+          ...inq,
+          read: true,
+          reply,
+          repliedAt: new Date().toISOString()
+        };
+      }));
+      return { ok: true };
+    } catch {
+      return { ok: false, error: 'تعذر الاتصال بالخادم.' };
+    }
   };
 
   const [chatConfig, setChatConfig] = useState<SupportChatConfig>(DEFAULT_CHAT_CONFIG);
@@ -1565,6 +1646,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       toggleBannerActive,
       
       paymentConfig,
+      persistenceStatus,
       refreshPaymentConfig,
       refreshStoreState,
       refreshAdminStoreState,

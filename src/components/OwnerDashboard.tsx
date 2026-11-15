@@ -41,7 +41,8 @@ import {
   MessageCircle,
   RotateCcw,
   CreditCard,
-  BellRing
+  BellRing,
+  Database
 } from 'lucide-react';
 import { Product, Company, Order, OrderStatus, CategoryItem, PromoBanner, SiteSettings } from '../types';
 import { INITIAL_SITE_SETTINGS } from '../data/initialData';
@@ -136,6 +137,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
     updateOwnerSettings,
     siteSettings, 
     updateSiteSettings,
+    persistenceStatus,
     language, 
     t 
   } = useStore();
@@ -143,6 +145,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
   // Active Tab
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
   const [orderStatusError, setOrderStatusError] = useState<string | null>(null);
+  const [tabActionError, setTabActionError] = useState<string>('');
   const [ordersSyncing, setOrdersSyncing] = useState(false);
   const [ordersSyncError, setOrdersSyncError] = useState<string | null>(null);
   const [lastOrdersSyncAt, setLastOrdersSyncAt] = useState<string | null>(null);
@@ -176,8 +179,16 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
   // 1. Account & Security Form States
   const [editOwnerEmail, setEditOwnerEmail] = useState(ownerSettings.loginEmail || getAuthorizedOwnerEmail());
   const [editOwnerPhone, setEditOwnerPhone] = useState(ownerSettings.primaryPhone || getAuthorizedOwnerPhone());
+  const [emailSaving, setEmailSaving] = useState(false);
+  const [emailSaveError, setEmailSaveError] = useState('');
   const [emailSavedSuccess, setEmailSavedSuccess] = useState(false);
+  const [phoneSaving, setPhoneSaving] = useState(false);
+  const [phoneSaveError, setPhoneSaveError] = useState('');
   const [phoneSavedSuccess, setPhoneSavedSuccess] = useState(false);
+  const [entitySaving, setEntitySaving] = useState(false);
+  const [entityModalError, setEntityModalError] = useState('');
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   // 1.1 Footer & Store Info Form States
   const [footerDescAr, setFooterDescAr] = useState(siteSettings.description?.ar || '');
@@ -220,7 +231,26 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
   const [sessionsUnauthorized, setSessionsUnauthorized] = useState(false);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionsMessage, setSessionsMessage] = useState('');
-  const [securityStatusInfo, setSecurityStatusInfo] = useState<{ argon2idEnabled: boolean; hashingAlgorithm: string; activeSessionsCount: number; updatedAt: string } | null>(null);
+  const [securityStatusInfo, setSecurityStatusInfo] = useState<{
+    argon2idEnabled: boolean;
+    hashingAlgorithm: string;
+    activeSessionsCount: number;
+    updatedAt: string;
+    storageMode?: string;
+    durablePersistence?: boolean;
+    persistence?: {
+      provider: string;
+      storageMode: string;
+      cloudEnabled: boolean;
+      durable: boolean;
+      isRender: boolean;
+      dataDir?: string;
+      firestoreProjectId?: string;
+      firestoreDatabaseId?: string;
+      lastCloudWriteAt: string | null;
+      lastCloudError: string | null;
+    };
+  } | null>(null);
 
   // Legacy state for compatibility
   const [lockType, setLockType] = useState<'pin' | 'pattern'>('pin');
@@ -471,24 +501,52 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
   // Handlers for Account & Security
   const handleSaveEmail = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editOwnerEmail.trim() || !editOwnerEmail.includes('@')) return;
-    setAuthorizedOwnerEmail(editOwnerEmail.trim());
-    const res = await updateOwnerSettings({ loginEmail: editOwnerEmail.trim() });
+    const cleanEmail = editOwnerEmail.trim();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setEmailSaveError('يرجى إدخال بريد إلكتروني صالح.');
+      return;
+    }
+    setEmailSaving(true);
+    setEmailSaveError('');
+    setEmailSavedSuccess(false);
+    const res = await updateOwnerSettings({ loginEmail: cleanEmail });
+    setEmailSaving(false);
     if (res.ok) {
+      setAuthorizedOwnerEmail(cleanEmail);
       setEmailSavedSuccess(true);
       setTimeout(() => setEmailSavedSuccess(false), 3000);
+    } else {
+      setEmailSaveError(res.error || 'تعذر حفظ البريد الإلكتروني على الخادم الدائم.');
     }
   };
 
   const handleSavePhone = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editOwnerPhone.trim()) return;
-    setAuthorizedOwnerPhone(editOwnerPhone.trim());
-    await updateOwnerSettings({ primaryPhone: editOwnerPhone.trim(), secondaryPhone: editOwnerPhone.trim() });
-    const siteRes = await updateSiteSettings({ supportPhone: editOwnerPhone.trim(), whatsappPhone: editOwnerPhone.trim().replace(/\D/g, '') });
+    const cleanPhone = editOwnerPhone.trim();
+    if (!cleanPhone) {
+      setPhoneSaveError('يرجى إدخال رقم هاتف صالح.');
+      return;
+    }
+    setPhoneSaving(true);
+    setPhoneSaveError('');
+    setPhoneSavedSuccess(false);
+    const ownerRes = await updateOwnerSettings({ primaryPhone: cleanPhone, secondaryPhone: cleanPhone });
+    if (!ownerRes.ok) {
+      setPhoneSaving(false);
+      setPhoneSaveError(ownerRes.error || 'تعذر حفظ رقم الهاتف في إعدادات المالك على الخادم.');
+      return;
+    }
+    const siteRes = await updateSiteSettings({
+      supportPhone: cleanPhone,
+      whatsappPhone: cleanPhone.replace(/\D/g, ''),
+    });
+    setPhoneSaving(false);
     if (siteRes.ok) {
+      setAuthorizedOwnerPhone(cleanPhone);
       setPhoneSavedSuccess(true);
       setTimeout(() => setPhoneSavedSuccess(false), 3000);
+    } else {
+      setPhoneSaveError(siteRes.error || 'تعذر حفظ رقم الهاتف في بيانات المتجر الدائمة.');
     }
   };
 
@@ -574,10 +632,12 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
       }
       setIsChangingPasscode(true);
       try {
-        const { hash } = await saveOwnerLockConfig('pin', newSecretInput.trim(), false);
-        localStorage.setItem('echox_pin_hash', hash);
-        localStorage.removeItem('echox_salt');
-        setSecretSuccessMessage('تم تغيير رمز الـ PIN لخزنة ECHOX وتشفيره بنجاح ✓');
+        const saveRes = await saveOwnerLockConfig('pin', newSecretInput.trim(), false);
+        if (!saveRes.success) {
+          setSecretErrorMessage(saveRes.error || 'تعذر حفظ الرمز على الخادم الدائم.');
+          return;
+        }
+        setSecretSuccessMessage('تم تغيير رمز الـ PIN لخزنة ECHOX وتشفيره وحفظه على الخادم بنجاح ✓');
         setCurrentSecretInput('');
         setNewSecretInput('');
         setConfirmSecretInput('');
@@ -682,43 +742,50 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
   };
 
   // Handlers for Products
-  const handleSaveProduct = (e: React.FormEvent) => {
+  const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!prodNameAr.trim() || !prodPrice) return;
+
+    setEntitySaving(true);
+    setEntityModalError('');
 
     const imgs = prodImagesText.split('\n').map(s => s.trim()).filter(Boolean);
     const selectedComp = companies.find(c => c.id === prodCompanyId);
 
-    if (editingProd) {
-      updateProduct(editingProd.id, {
-        name: { ar: prodNameAr, fr: prodNameFr || prodNameAr, en: prodNameAr },
-        description: { ar: prodDescAr || editingProd.description.ar, fr: prodDescAr, en: prodDescAr },
-        price: parseFloat(prodPrice) || 0,
-        originalPrice: prodOriginalPrice ? parseFloat(prodOriginalPrice) : undefined,
-        stock: parseInt(prodStock) || 0,
-        category: prodCategory,
-        companyId: prodCompanyId,
-        companyName: selectedComp?.name || editingProd.companyName,
-        governorate: prodGov,
-        images: imgs.length > 0 ? imgs : editingProd.images,
-        featured: prodFeatured
-      });
-    } else {
-      addProduct({
-        name: { ar: prodNameAr, fr: prodNameFr || prodNameAr, en: prodNameAr },
-        description: { ar: prodDescAr, fr: prodDescAr, en: prodDescAr },
-        category: prodCategory,
-        price: parseFloat(prodPrice) || 0,
-        originalPrice: prodOriginalPrice ? parseFloat(prodOriginalPrice) : undefined,
-        stock: parseInt(prodStock) || 0,
-        companyId: prodCompanyId,
-        companyName: selectedComp?.name || 'ECHOX Distribution',
-        governorate: prodGov,
-        images: imgs.length > 0 ? imgs : ['/assets/images/echox-logo.webp'],
-        featured: prodFeatured,
-        active: true,
-        deliveryTimeDays: 2
-      });
+    const res = editingProd
+      ? await updateProduct(editingProd.id, {
+          name: { ar: prodNameAr, fr: prodNameFr || prodNameAr, en: prodNameAr },
+          description: { ar: prodDescAr || editingProd.description.ar, fr: prodDescAr, en: prodDescAr },
+          price: parseFloat(prodPrice) || 0,
+          originalPrice: prodOriginalPrice ? parseFloat(prodOriginalPrice) : undefined,
+          stock: parseInt(prodStock) || 0,
+          category: prodCategory,
+          companyId: prodCompanyId,
+          companyName: selectedComp?.name || editingProd.companyName,
+          governorate: prodGov,
+          images: imgs.length > 0 ? imgs : editingProd.images,
+          featured: prodFeatured
+        })
+      : await addProduct({
+          name: { ar: prodNameAr, fr: prodNameFr || prodNameAr, en: prodNameAr },
+          description: { ar: prodDescAr, fr: prodDescAr, en: prodDescAr },
+          category: prodCategory,
+          price: parseFloat(prodPrice) || 0,
+          originalPrice: prodOriginalPrice ? parseFloat(prodOriginalPrice) : undefined,
+          stock: parseInt(prodStock) || 0,
+          companyId: prodCompanyId,
+          companyName: selectedComp?.name || 'ECHOX Distribution',
+          governorate: prodGov,
+          images: imgs.length > 0 ? imgs : ['/assets/images/echox-logo.webp'],
+          featured: prodFeatured,
+          active: true,
+          deliveryTimeDays: 2
+        });
+
+    setEntitySaving(false);
+    if (!res.ok) {
+      setEntityModalError(res.error || 'تعذر حفظ المنتج على الخادم الدائم.');
+      return;
     }
 
     setShowAddProdModal(false);
@@ -734,6 +801,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
   };
 
   const openEditProduct = (p: Product) => {
+    setEntityModalError('');
     setEditingProd(p);
     setProdNameAr(p.name.ar);
     setProdNameFr(p.name.fr || p.name.ar);
@@ -750,17 +818,26 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
   };
 
   // Handlers for Categories
-  const handleSaveCategory = (e: React.FormEvent) => {
+  const handleSaveCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!catLabel.trim()) return;
 
+    setEntitySaving(true);
+    setEntityModalError('');
+
     const autoId = catId.trim() ? catId.trim().toLowerCase().replace(/\s+/g, '_') : `cat_${Date.now()}`;
-    addCategory({
+    const res = await addCategory({
       id: autoId,
       label: catLabel.trim(),
       icon: catIcon.trim() || '📦',
       desc: catDesc.trim() || 'تصنيف معتمد في المتجر'
     });
+
+    setEntitySaving(false);
+    if (!res.ok) {
+      setEntityModalError(res.error || 'تعذر حفظ القسم على الخادم الدائم.');
+      return;
+    }
 
     setShowAddCategoryModal(false);
     setCatId('');
@@ -770,11 +847,14 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
   };
 
   // Handlers for Partners
-  const handleSavePartner = (e: React.FormEvent) => {
+  const handleSavePartner = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!partnerName.trim() || !partnerPhone.trim()) return;
 
-    addCompany({
+    setEntitySaving(true);
+    setEntityModalError('');
+
+    const res = await addCompany({
       name: partnerName.trim(),
       logo: partnerLogo.trim() || '/assets/images/echox-logo.webp',
       phone: partnerPhone.trim(),
@@ -783,6 +863,12 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
       governorate: partnerGov,
       description: { ar: partnerDesc.trim() || partnerName, fr: partnerDesc.trim() || partnerName, en: partnerDesc.trim() || partnerName }
     });
+
+    setEntitySaving(false);
+    if (!res.ok) {
+      setEntityModalError(res.error || 'تعذر حفظ الشريك على الخادم الدائم.');
+      return;
+    }
 
     setShowAddPartnerModal(false);
     setPartnerName('');
@@ -794,11 +880,14 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
   };
 
   // Handlers for Banners
-  const handleSaveBanner = (e: React.FormEvent) => {
+  const handleSaveBanner = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!bannerTitle.trim()) return;
 
-    addBanner({
+    setEntitySaving(true);
+    setEntityModalError('');
+
+    const res = await addBanner({
       tag: bannerTag.trim() || 'عروض حصرية',
       title: bannerTitle.trim(),
       subtitle: bannerSubtitle.trim() || 'توصيل سريع لكافة الـ24 ولاية والدفع عند المعاينة والاستلام',
@@ -806,18 +895,27 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
       bgGradient: bannerGradient
     });
 
+    setEntitySaving(false);
+    if (!res.ok) {
+      setEntityModalError(res.error || 'تعذر حفظ البانر على الخادم الدائم.');
+      return;
+    }
+
     setShowAddBannerModal(false);
     setBannerTitle('');
     setBannerSubtitle('');
   };
 
   // Handlers for Manual Order
-  const handleSaveManualOrder = (e: React.FormEvent) => {
+  const handleSaveManualOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualCustName.trim() || !manualCustPhone.trim() || !manualAmount) return;
 
+    setEntitySaving(true);
+    setEntityModalError('');
+
     const amt = parseFloat(manualAmount) || 0;
-    addManualOrder({
+    const res = await addManualOrder({
       customerName: manualCustName.trim(),
       customerPhone: manualCustPhone.trim(),
       totalAmount: amt,
@@ -835,6 +933,12 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
       notes: manualNotes.trim() || 'طلب هاتفي مباشر مسجل يدوياً'
     });
 
+    setEntitySaving(false);
+    if (!res.ok) {
+      setEntityModalError(res.error || 'تعذر تسجيل الطلب اليدوي على الخادم الدائم.');
+      return;
+    }
+
     setShowAddManualOrderModal(false);
     setManualCustName('');
     setManualCustPhone('');
@@ -844,19 +948,29 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
   };
 
   // Execute Confirmed Delete
-  const executeDelete = () => {
+  const executeDelete = async () => {
     if (!deleteConfirmModal.id) return;
 
+    setDeleteBusy(true);
+    setDeleteError('');
+
+    let res: { ok: boolean; error?: string } = { ok: false, error: 'نوع عنصر غير معروف.' };
     if (deleteConfirmModal.type === 'product') {
-      deleteProduct(deleteConfirmModal.id);
+      res = await deleteProduct(deleteConfirmModal.id);
     } else if (deleteConfirmModal.type === 'category') {
-      deleteCategory(deleteConfirmModal.id);
+      res = await deleteCategory(deleteConfirmModal.id);
     } else if (deleteConfirmModal.type === 'partner') {
-      deleteCompany(deleteConfirmModal.id);
+      res = await deleteCompany(deleteConfirmModal.id);
     } else if (deleteConfirmModal.type === 'banner') {
-      deleteBanner(deleteConfirmModal.id);
+      res = await deleteBanner(deleteConfirmModal.id);
     } else if (deleteConfirmModal.type === 'order') {
-      deleteOrder(deleteConfirmModal.id);
+      res = await deleteOrder(deleteConfirmModal.id);
+    }
+
+    setDeleteBusy(false);
+    if (!res.ok) {
+      setDeleteError(res.error || 'تعذر تنفيذ الحذف على الخادم الدائم.');
+      return;
     }
 
     setDeleteConfirmModal({ isOpen: false, type: 'product', id: '', title: '' });
@@ -1199,13 +1313,72 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
         </div>
       )}
 
+      {tabActionError && (
+        <div className="p-3.5 rounded-2xl bg-red-500/10 border border-red-500/30 text-xs font-bold text-red-600 dark:text-red-400 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span>{tabActionError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setTabActionError('')}
+            className="text-slate-400 hover:text-slate-700 cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* ========================================================= */}
       {/* 4. Tab Content Router */}
       {/* ========================================================= */}
 
       {/* Tab 1: Overview */}
-      {activeTab === 'overview' && (
+      {activeTab === 'overview' && (() => {
+        const effPersist = persistenceStatus || securityStatusInfo?.persistence;
+        const persistLabel = effPersist?.provider === 'firestore'
+          ? 'Google Cloud Firestore الدائم'
+          : effPersist?.provider === 'upstash-redis'
+          ? 'Upstash Redis السحابي الدائم'
+          : effPersist?.provider === 'persistent-disk'
+          ? 'قرص دائم على الخادم (DATA_DIR)'
+          : effPersist?.provider === 'ephemeral-render-disk'
+          ? 'تحذير: Render بدون قاعدة تخزين دائمة'
+          : 'تخزين محلي';
+        return (
         <div className="space-y-4">
+          {effPersist && (
+            <div
+              className={`p-4 rounded-3xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                effPersist.durable
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-800 dark:text-emerald-300'
+                  : 'bg-red-500/10 border-red-500/40 text-red-700 dark:text-red-300'
+              }`}
+            >
+              <div className="flex items-start gap-2.5">
+                <Database className={`w-5 h-5 shrink-0 mt-0.5 ${effPersist.durable ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`} />
+                <div className="space-y-0.5 text-xs">
+                  <div className="font-black">حالة التخزين الدائم على الخادم: {persistLabel}</div>
+                  <p className="text-[11px] opacity-90 leading-relaxed">
+                    {effPersist.durable
+                      ? 'جميع التعديلات (كلمات المرور، الشيفرات، الهاتف، المنتجات والطلبات) تُكتب وتُقرأ من مصدر دائم ولا تضيع عند إعادة تشغيل الخادم.'
+                      : 'الخادم يعمل حالياً على قرص Render المؤقت بدون قاعدة سحابية، ولذلك يرفض الخادم أي تعديلات وهمية. أضف FIREBASE_SERVICE_ACCOUNT_JSON أو UPSTASH_REDIS_REST_URL و UPSTASH_REDIS_REST_TOKEN أو DATA_DIR في إعدادات Render.'}
+                  </p>
+                  {effPersist.lastCloudError && (
+                    <p className="text-[11px] font-bold text-red-600 dark:text-red-400">
+                      آخر خطأ سحابي: {effPersist.lastCloudError}
+                    </p>
+                  )}
+                </div>
+              </div>
+              {effPersist.lastCloudWriteAt && (
+                <span className="text-[10px] font-mono shrink-0 opacity-80">
+                  آخر حفظ مؤكد: {new Date(effPersist.lastCloudWriteAt).toLocaleString('ar-TN')}
+                </span>
+              )}
+            </div>
+          )}
+
           <div className="p-4 sm:p-6 bg-[#F8FAFC] dark:bg-[#1E293B] rounded-3xl border border-[#E2E8F0] dark:border-slate-800 space-y-4">
             <h3 className="text-sm font-black flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-[#FF6B00]" />
@@ -1307,7 +1480,8 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Tab 1.2: Control Room Mobile Notifications Center */}
       {activeTab === 'notifications' && (
@@ -1333,9 +1507,44 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
       {activeTab === 'payment_management' && <PaymentManagementTab />}
 
       {/* Tab 2: Account & Security */}
-      {activeTab === 'account_security' && (
+      {activeTab === 'account_security' && (() => {
+        const effPersist = persistenceStatus || securityStatusInfo?.persistence;
+        return (
         <div className="space-y-4">
-          
+          {effPersist && (
+            <div
+              className={`p-4 rounded-3xl border space-y-1.5 ${
+                effPersist.durable
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-800 dark:text-emerald-300'
+                  : 'bg-red-500/10 border-red-500/40 text-red-700 dark:text-red-300'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2 text-xs font-black">
+                  <Database className="w-4 h-4 shrink-0" />
+                  <span>
+                    مستودع التخزين الفعلي للإعدادات والشيفرات: <strong className="font-mono">{effPersist.provider}</strong>
+                  </span>
+                </div>
+                <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full ${
+                  effPersist.durable ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'
+                }`}>
+                  {effPersist.durable ? 'دائم ومؤكد ✓' : 'غير دائم (يرفض الحفظ الوهمي)'}
+                </span>
+              </div>
+              <p className="text-[11px] opacity-90 leading-relaxed">
+                {effPersist.durable
+                  ? 'أي تعديل على البريد أو الهاتف أو رمز الوصول أو PIN يُكتب مباشرة إلى القاعدة الدائمة ويُحفظ بـ Argon2id قبل تأكيد النجاح.'
+                  : 'تنبيه هام: خادم Render لا يملك حالياً متغيرات قاعدة دائمة (FIREBASE_SERVICE_ACCOUNT_JSON أو UPSTASH_REDIS_REST_URL أو DATA_DIR)، لذا سترفض عمليات الحفظ برمز 503 بدلاً من إظهار حفظ مؤقت يزول عند إعادة التشغيل.'}
+              </p>
+              {effPersist.lastCloudError && (
+                <p className="text-[11px] font-bold text-red-600 dark:text-red-400">
+                  تفاصيل آخر خطأ تخزين: {effPersist.lastCloudError}
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Card 1: Email & Phone Settings */}
           <div className="bg-[#F8FAFC] dark:bg-[#1E293B] rounded-3xl p-4 sm:p-6 border border-[#E2E8F0] dark:border-slate-800 space-y-4">
             <div className="flex items-center gap-2 pb-3 border-b border-slate-200 dark:border-slate-700">
@@ -1365,18 +1574,25 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                 <div className="flex items-center justify-between pt-1">
                   <button
                     type="submit"
-                    className="px-4 py-2 rounded-xl bg-[#FF6B00] hover:bg-[#E05E00] text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer active:scale-95"
+                    disabled={emailSaving}
+                    className="px-4 py-2 rounded-xl bg-[#FF6B00] hover:bg-[#E05E00] text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-60 active:scale-95"
                   >
                     <Save className="w-3.5 h-3.5" />
-                    <span>حفظ وتأكيد البريد</span>
+                    <span>{emailSaving ? 'جارٍ الحفظ على الخادم...' : 'حفظ وتأكيد البريد'}</span>
                   </button>
                   {emailSavedSuccess && (
                     <span className="text-[11px] font-bold text-emerald-600 flex items-center gap-1">
                       <Check className="w-3.5 h-3.5" />
-                      <span>تم الحفظ بنجاح</span>
+                      <span>تم الحفظ على الخادم ✓</span>
                     </span>
                   )}
                 </div>
+                {emailSaveError && (
+                  <p className="text-[11px] font-bold text-red-600 dark:text-red-400 flex items-center gap-1">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{emailSaveError}</span>
+                  </p>
+                )}
               </form>
 
               {/* Form 2: Modify Sovereign Phone */}
@@ -1399,18 +1615,25 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                 <div className="flex items-center justify-between pt-1">
                   <button
                     type="submit"
-                    className="px-4 py-2 rounded-xl bg-[#0F172A] dark:bg-slate-700 hover:bg-[#FF6B00] text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer active:scale-95"
+                    disabled={phoneSaving}
+                    className="px-4 py-2 rounded-xl bg-[#0F172A] dark:bg-slate-700 hover:bg-[#FF6B00] text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-60 active:scale-95"
                   >
                     <Save className="w-3.5 h-3.5" />
-                    <span>حفظ فوري للهاتف</span>
+                    <span>{phoneSaving ? 'جارٍ الحفظ على الخادم...' : 'حفظ فوري للهاتف'}</span>
                   </button>
                   {phoneSavedSuccess && (
                     <span className="text-[11px] font-bold text-emerald-600 flex items-center gap-1">
                       <Check className="w-3.5 h-3.5" />
-                      <span>تم التحديث بنجاح</span>
+                      <span>تم التحديث الدائم ✓</span>
                     </span>
                   )}
                 </div>
+                {phoneSaveError && (
+                  <p className="text-[11px] font-bold text-red-600 dark:text-red-400 flex items-center gap-1">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{phoneSaveError}</span>
+                  </p>
+                )}
               </form>
 
             </div>
@@ -1758,7 +1981,8 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           </div>
 
         </div>
-      )}
+        );
+      })()}
 
       {/* Tab: Footer & Store Info Settings (إعدادات تذييل الصفحة وتفاصيل المتجر) */}
       {activeTab === 'footer_info' && (
@@ -2315,6 +2539,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
             <button
               type="button"
               onClick={() => {
+                setEntityModalError('');
                 setEditingProd(null);
                 setShowAddProdModal(true);
               }}
@@ -2363,7 +2588,11 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button
                       type="button"
-                      onClick={() => toggleProductActive(p.id)}
+                      onClick={async () => {
+                        setTabActionError('');
+                        const res = await toggleProductActive(p.id);
+                        if (!res.ok) setTabActionError(res.error || 'تعذر تحديث حالة المنتج على الخادم.');
+                      }}
                       className={`p-1.5 rounded-lg border text-xs cursor-pointer ${
                         p.active ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30' : 'bg-slate-200 dark:bg-slate-700 text-slate-500'
                       }`}
@@ -2535,7 +2764,10 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
             </div>
             <button
               type="button"
-              onClick={() => setShowAddBannerModal(true)}
+              onClick={() => {
+                setEntityModalError('');
+                setShowAddBannerModal(true);
+              }}
               className="px-3.5 py-2 rounded-2xl bg-[#FF6B00] hover:bg-[#E05E00] text-white text-xs font-bold flex items-center gap-1 shadow-xs cursor-pointer active:scale-95"
             >
               <Plus className="w-4 h-4" />
@@ -2570,7 +2802,11 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => toggleBannerActive(b.id)}
+                      onClick={async () => {
+                        setTabActionError('');
+                        const res = await toggleBannerActive(b.id);
+                        if (!res.ok) setTabActionError(res.error || 'تعذر تحديث حالة البانر على الخادم.');
+                      }}
                       className={`px-3 py-1 rounded-full text-xs font-bold cursor-pointer transition-colors ${
                         b.active ? 'bg-emerald-500/20 text-emerald-600' : 'bg-slate-200 dark:bg-slate-700 text-slate-500'
                       }`}
@@ -2805,30 +3041,9 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                       onChange={async e => {
                         const targetStatus = e.target.value as OrderStatus;
                         setOrderStatusError(null);
-                        const clientRes = updateOrderStatus(o.id, targetStatus);
-                        if (!clientRes.ok) {
-                          setOrderStatusError(clientRes.error || t.payments.shippingBlockedUnpaid);
-                          return;
-                        }
-                        try {
-                          const srvRes = await fetch(`/api/admin/orders/${encodeURIComponent(o.id)}/status`, {
-                            method: 'PATCH',
-                            headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
-                            credentials: 'include',
-                            body: JSON.stringify({ status: targetStatus }),
-                          });
-                          if (srvRes.status === 409) {
-                            const errData = await srvRes.json().catch(() => ({}));
-                            setOrderStatusError(errData.error || t.payments.shippingBlockedUnpaid);
-                          } else if (srvRes.status === 401 || srvRes.status === 403) {
-                            notifySessionExpired();
-                            setOrderStatusError('انتهت جلسة الأمان على الخادم — يرجى إدخال رمز الـ PIN لتجديد الجلسة.');
-                          } else if (srvRes.ok) {
-                            const okData = await srvRes.json().catch(() => ({}));
-                            if (okData?.order) updateOrderInState(okData.order);
-                          }
-                        } catch {
-                          setOrderStatusError('تعذر الاتصال بالخادم لتحديث حالة الطلب.');
+                        const res = await updateOrderStatus(o.id, targetStatus);
+                        if (!res.ok) {
+                          setOrderStatusError(res.error || t.payments.shippingBlockedUnpaid);
                         }
                       }}
                       className="text-xs py-1 px-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] font-bold text-[#0F172A] dark:text-white cursor-pointer"
@@ -2980,19 +3195,31 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                 />
               </div>
 
+              {entityModalError && (
+                <div className="p-3 rounded-2xl bg-red-500/10 border border-red-500/30 text-xs font-bold text-red-600 dark:text-red-400 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{entityModalError}</span>
+                </div>
+              )}
+
               <div className="flex items-center justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowAddProdModal(false)}
-                  className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800 dark:hover:text-white"
+                  disabled={entitySaving}
+                  onClick={() => {
+                    setEntityModalError('');
+                    setShowAddProdModal(false);
+                  }}
+                  className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800 dark:hover:text-white disabled:opacity-50"
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 rounded-xl bg-[#FF6B00] hover:bg-[#E05E00] text-white text-xs font-bold shadow-xs cursor-pointer active:scale-95"
+                  disabled={entitySaving}
+                  className="px-5 py-2.5 rounded-xl bg-[#FF6B00] hover:bg-[#E05E00] text-white text-xs font-bold shadow-xs cursor-pointer disabled:opacity-60 active:scale-95"
                 >
-                  {editingProd ? 'حفظ التعديلات' : 'إضافة المنتج فوراً'}
+                  {entitySaving ? 'جارٍ الحفظ على الخادم...' : editingProd ? 'حفظ التعديلات' : 'إضافة المنتج فوراً'}
                 </button>
               </div>
             </form>
@@ -3006,7 +3233,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           <div className="w-full max-w-sm bg-white dark:bg-[#1E293B] rounded-3xl p-5 border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700">
               <h3 className="text-sm font-black">+ إضافة قسم جديد</h3>
-              <button onClick={() => setShowAddCategoryModal(false)} className="p-1 rounded-full text-slate-400">
+              <button onClick={() => { setEntityModalError(''); setShowAddCategoryModal(false); }} className="p-1 rounded-full text-slate-400">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -3046,19 +3273,28 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                 />
               </div>
 
+              {entityModalError && (
+                <div className="p-3 rounded-2xl bg-red-500/10 border border-red-500/30 text-xs font-bold text-red-600 dark:text-red-400 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{entityModalError}</span>
+                </div>
+              )}
+
               <div className="flex items-center justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowAddCategoryModal(false)}
-                  className="px-3 py-2 text-xs font-bold text-slate-500"
+                  disabled={entitySaving}
+                  onClick={() => { setEntityModalError(''); setShowAddCategoryModal(false); }}
+                  className="px-3 py-2 text-xs font-bold text-slate-500 disabled:opacity-50"
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-[#FF6B00] hover:bg-[#E05E00] text-white text-xs font-bold shadow-xs cursor-pointer active:scale-95"
+                  disabled={entitySaving}
+                  className="px-4 py-2 rounded-xl bg-[#FF6B00] hover:bg-[#E05E00] text-white text-xs font-bold shadow-xs cursor-pointer disabled:opacity-60 active:scale-95"
                 >
-                  حفظ القسم
+                  {entitySaving ? 'جارٍ الحفظ...' : 'حفظ القسم'}
                 </button>
               </div>
             </form>
@@ -3072,7 +3308,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           <div className="w-full max-w-sm bg-white dark:bg-[#1E293B] rounded-3xl p-5 border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700">
               <h3 className="text-sm font-black">+ إضافة شريك / علامة تجارية</h3>
-              <button onClick={() => setShowAddPartnerModal(false)} className="p-1 rounded-full text-slate-400">
+              <button onClick={() => { setEntityModalError(''); setShowAddPartnerModal(false); }} className="p-1 rounded-full text-slate-400">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -3124,19 +3360,28 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                 />
               </div>
 
+              {entityModalError && (
+                <div className="p-3 rounded-2xl bg-red-500/10 border border-red-500/30 text-xs font-bold text-red-600 dark:text-red-400 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{entityModalError}</span>
+                </div>
+              )}
+
               <div className="flex items-center justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowAddPartnerModal(false)}
-                  className="px-3 py-2 text-xs font-bold text-slate-500"
+                  disabled={entitySaving}
+                  onClick={() => { setEntityModalError(''); setShowAddPartnerModal(false); }}
+                  className="px-3 py-2 text-xs font-bold text-slate-500 disabled:opacity-50"
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-[#FF6B00] hover:bg-[#E05E00] text-white text-xs font-bold shadow-xs cursor-pointer active:scale-95"
+                  disabled={entitySaving}
+                  className="px-4 py-2 rounded-xl bg-[#FF6B00] hover:bg-[#E05E00] text-white text-xs font-bold shadow-xs cursor-pointer disabled:opacity-60 active:scale-95"
                 >
-                  حفظ الشريك
+                  {entitySaving ? 'جارٍ الحفظ...' : 'حفظ الشريك'}
                 </button>
               </div>
             </form>
@@ -3150,7 +3395,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           <div className="w-full max-w-sm bg-white dark:bg-[#1E293B] rounded-3xl p-5 border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700">
               <h3 className="text-sm font-black">+ إضافة بانر ترويجي</h3>
-              <button onClick={() => setShowAddBannerModal(false)} className="p-1 rounded-full text-slate-400">
+              <button onClick={() => { setEntityModalError(''); setShowAddBannerModal(false); }} className="p-1 rounded-full text-slate-400">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -3190,19 +3435,28 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                 />
               </div>
 
+              {entityModalError && (
+                <div className="p-3 rounded-2xl bg-red-500/10 border border-red-500/30 text-xs font-bold text-red-600 dark:text-red-400 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{entityModalError}</span>
+                </div>
+              )}
+
               <div className="flex items-center justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowAddBannerModal(false)}
-                  className="px-3 py-2 text-xs font-bold text-slate-500"
+                  disabled={entitySaving}
+                  onClick={() => { setEntityModalError(''); setShowAddBannerModal(false); }}
+                  className="px-3 py-2 text-xs font-bold text-slate-500 disabled:opacity-50"
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-[#FF6B00] hover:bg-[#E05E00] text-white text-xs font-bold shadow-xs cursor-pointer active:scale-95"
+                  disabled={entitySaving}
+                  className="px-4 py-2 rounded-xl bg-[#FF6B00] hover:bg-[#E05E00] text-white text-xs font-bold shadow-xs cursor-pointer disabled:opacity-60 active:scale-95"
                 >
-                  حفظ البانر
+                  {entitySaving ? 'جارٍ الحفظ...' : 'حفظ البانر'}
                 </button>
               </div>
             </form>
@@ -3216,7 +3470,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           <div className="w-full max-w-sm bg-white dark:bg-[#1E293B] rounded-3xl p-5 border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700">
               <h3 className="text-sm font-black">+ تسجيل طلب يدوي (هاتف / واتساب)</h3>
-              <button onClick={() => setShowAddManualOrderModal(false)} className="p-1 rounded-full text-slate-400">
+              <button onClick={() => { setEntityModalError(''); setShowAddManualOrderModal(false); }} className="p-1 rounded-full text-slate-400">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -3285,19 +3539,28 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                 />
               </div>
 
+              {entityModalError && (
+                <div className="p-3 rounded-2xl bg-red-500/10 border border-red-500/30 text-xs font-bold text-red-600 dark:text-red-400 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{entityModalError}</span>
+                </div>
+              )}
+
               <div className="flex items-center justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowAddManualOrderModal(false)}
-                  className="px-3 py-2 text-xs font-bold text-slate-500"
+                  disabled={entitySaving}
+                  onClick={() => { setEntityModalError(''); setShowAddManualOrderModal(false); }}
+                  className="px-3 py-2 text-xs font-bold text-slate-500 disabled:opacity-50"
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs cursor-pointer active:scale-95"
+                  disabled={entitySaving}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs cursor-pointer disabled:opacity-60 active:scale-95"
                 >
-                  تسجيل واحتساب الطلب
+                  {entitySaving ? 'جارٍ التسجيل...' : 'تسجيل واحتساب الطلب'}
                 </button>
               </div>
             </form>
@@ -3318,20 +3581,32 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
               هل أنت متأكد من رغبتك في حذف <strong className="text-red-600">{deleteConfirmModal.title}</strong>؟ لا يمكن التراجع عن هذه العملية بعد التأكيد.
             </p>
 
+            {deleteError && (
+              <div className="p-3 rounded-2xl bg-red-500/10 border border-red-500/30 text-xs font-bold text-red-600 dark:text-red-400 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{deleteError}</span>
+              </div>
+            )}
+
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
               <button
                 type="button"
-                onClick={() => setDeleteConfirmModal({ isOpen: false, type: 'product', id: '', title: '' })}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+                disabled={deleteBusy}
+                onClick={() => {
+                  setDeleteError('');
+                  setDeleteConfirmModal({ isOpen: false, type: 'product', id: '', title: '' });
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50"
               >
                 إلغاء
               </button>
               <button
                 type="button"
-                onClick={executeDelete}
-                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-xs cursor-pointer active:scale-95"
+                disabled={deleteBusy}
+                onClick={() => void executeDelete()}
+                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-xs cursor-pointer disabled:opacity-60 active:scale-95"
               >
-                تأكيد الحذف
+                {deleteBusy ? 'جارٍ الحذف...' : 'تأكيد الحذف'}
               </button>
             </div>
           </div>

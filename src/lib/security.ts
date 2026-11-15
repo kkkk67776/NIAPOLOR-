@@ -109,10 +109,30 @@ export function setOwnerUnlocked(unlocked: boolean) {
   }
 }
 
-let activeMemorySessionToken: string | null = null;
+const ADMIN_SESSION_TOKEN_KEY = 'echox_admin_session_token';
+
+let activeMemorySessionToken: string | null = (() => {
+  try {
+    if (typeof window !== 'undefined') {
+      const saved = sessionStorage.getItem(ADMIN_SESSION_TOKEN_KEY);
+      return saved && saved.trim() ? saved.trim() : null;
+    }
+  } catch {}
+  return null;
+})();
 
 export function setMemorySessionToken(token: string | null) {
-  activeMemorySessionToken = token && token.trim() ? token.trim() : null;
+  const clean = token && token.trim() ? token.trim() : null;
+  activeMemorySessionToken = clean;
+  try {
+    if (typeof window !== 'undefined') {
+      if (clean) {
+        sessionStorage.setItem(ADMIN_SESSION_TOKEN_KEY, clean);
+      } else {
+        sessionStorage.removeItem(ADMIN_SESSION_TOKEN_KEY);
+      }
+    }
+  } catch {}
 }
 
 export function getAdminAuthHeaders(extra: Record<string, string> = {}): Record<string, string> {
@@ -125,6 +145,9 @@ export function getAdminAuthHeaders(extra: Record<string, string> = {}): Record<
 
 export function clearOwnerSecuritySession() {
   activeMemorySessionToken = null;
+  try {
+    sessionStorage.removeItem(ADMIN_SESSION_TOKEN_KEY);
+  } catch {}
   sessionStorage.removeItem(GOOGLE_USER_KEY);
   sessionStorage.removeItem(CUSTOM_CLAIMS_KEY);
   sessionStorage.removeItem(OWNER_UNLOCKED_KEY);
@@ -233,9 +256,9 @@ export async function saveOwnerLockConfig(
   lock_type: 'pattern' | 'pin',
   rawInputOrHash: string,
   isAlreadyHashed: boolean = false
-): Promise<{ success: boolean; hash: string }> {
-  const finalHash = isAlreadyHashed 
-    ? rawInputOrHash 
+): Promise<{ success: boolean; hash: string; error?: string }> {
+  const finalHash = isAlreadyHashed
+    ? rawInputOrHash
     : await hashSecurityInput(rawInputOrHash);
 
   const payload: OwnerLockConfig = {
@@ -245,23 +268,30 @@ export async function saveOwnerLockConfig(
     updated_at: new Date().toISOString(),
   };
 
-  // 1. Save to Firestore
+  try {
+    const res = await fetch('/api/security/saveLockConfig', {
+      method: 'POST',
+      headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
+      credentials: 'same-origin',
+      body: JSON.stringify(payload)
+    });
+    const data = await safeReadJson(res);
+    if (res.status === 401 || res.status === 403) {
+      notifySessionExpired();
+      return { success: false, hash: '', error: data.error || 'انتهت جلسة مركز التحكم.' };
+    }
+    if (!res.ok || !data.success) {
+      return { success: false, hash: '', error: data.error || 'تعذر حفظ إعدادات القفل بشكل دائم على الخادم.' };
+    }
+  } catch {
+    return { success: false, hash: '', error: 'تعذر الاتصال بالخادم لحفظ إعدادات القفل.' };
+  }
+
   try {
     const docRef = doc(db, 'store_settings', 'owner_security');
     await setDoc(docRef, payload, { merge: true });
-  } catch (err) {
-    console.info('[Security] Firestore direct save notice (will sync via backend):', err);
-  }
-
-  // 2. Sync to Server
-  try {
-    await fetch('/api/security/saveLockConfig', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-  } catch (err) {
-    console.warn('[Security] Server save sync notice:', err);
+  } catch {
+    // Server DB persistence already succeeded
   }
 
   return { success: true, hash: finalHash };
@@ -348,17 +378,24 @@ export async function logFailedAttemptCall(type: 'pattern' | 'pin') {
  */
 export async function resetOwnerLockConfig(): Promise<boolean> {
   try {
-    const docRef = doc(db, 'store_settings', 'owner_security');
-    await deleteDoc(docRef);
-  } catch (e) {
-    console.info('Firestore deleteDoc notice:', e);
+    const res = await fetch('/api/security/resetLockConfig', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: getAdminAuthHeaders(),
+    });
+    if (res.status === 401 || res.status === 403) {
+      notifySessionExpired();
+      return false;
+    }
+    if (!res.ok) return false;
+  } catch {
+    return false;
   }
 
   try {
-    await fetch('/api/security/resetLockConfig', { method: 'POST' });
-  } catch (e) {
-    console.warn('Server resetLockConfig notice:', e);
-  }
+    const docRef = doc(db, 'store_settings', 'owner_security');
+    await deleteDoc(docRef);
+  } catch {}
 
   clearOwnerSecuritySession();
   return true;
@@ -368,13 +405,19 @@ export async function resetOwnerLockConfig(): Promise<boolean> {
  * Logs out of all devices and clears server sessions.
  */
 export async function logoutAllDevices(): Promise<boolean> {
+  let ok = false;
   try {
-    await fetch('/api/security/logoutAllDevices', { method: 'POST' });
+    const res = await fetch('/api/security/logoutAllDevices', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: getAdminAuthHeaders(),
+    });
+    ok = res.ok;
   } catch (e) {
     console.warn('logoutAllDevices notice:', e);
   }
   clearOwnerSecuritySession();
-  return true;
+  return ok;
 }
 
 // Backward compatibility helpers
@@ -585,6 +628,12 @@ export async function updateAccessCodeServer(currentPinOrCode: string, newCode: 
         error: data.error || 'وصول مرفوض: جلسة مركز التحكم مطلوبة أو منتهية.'
       };
     }
+    if (!res.ok || !data.success) {
+      return {
+        success: false,
+        error: data.error || 'تعذر حفظ رمز الوصول الجديد بشكل دائم على الخادم.'
+      };
+    }
     return data;
   } catch {
     return { success: false, error: 'تعذر تحديث رمز الوصول على الخادم.' };
@@ -611,6 +660,12 @@ export async function updatePinServer(currentPin: string, newPin: string): Promi
         success: false,
         unauthorized: true,
         error: data.error || 'وصول مرفوض: جلسة مركز التحكم مطلوبة أو منتهية.'
+      };
+    }
+    if (!res.ok || !data.success) {
+      return {
+        success: false,
+        error: data.error || 'تعذر حفظ رمز الـ PIN الجديد بشكل دائم على الخادم.'
       };
     }
     return data;

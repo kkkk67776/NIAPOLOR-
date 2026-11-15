@@ -7,6 +7,8 @@ import {
   isCloudPersistenceEnabled,
   loadCloudJson,
   pushCloudJson,
+  saveCloudJson,
+  savePersistentJson,
 } from './cloudPersistence';
 
 export type NotificationCategory = 'order' | 'payment' | 'security' | 'activity' | 'support';
@@ -150,12 +152,14 @@ function loadDb(): NotificationsDb {
     console.warn('[Notifications] Local read notice:', err);
   }
   dbCache = buildInitialDb();
-  saveDb(dbCache);
+  try {
+    atomicWriteJsonSync(DB_FILE, dbCache);
+  } catch {}
   configureWebPush(dbCache.vapidKeys);
   return dbCache;
 }
 
-function saveDb(next: NotificationsDb): void {
+function saveDbFireAndForget(next: NotificationsDb): void {
   next.updatedAt = new Date().toISOString();
   dbCache = next;
   try {
@@ -164,6 +168,21 @@ function saveDb(next: NotificationsDb): void {
     console.warn('[Notifications] Local write notice:', err);
   }
   pushCloudJson(CLOUD_KEY, next);
+}
+
+async function saveDbStrict(next: NotificationsDb): Promise<{ ok: boolean; error?: string }> {
+  const prev = dbCache;
+  const candidate: NotificationsDb = {
+    ...next,
+    updatedAt: new Date().toISOString(),
+  };
+  const persisted = await savePersistentJson(CLOUD_KEY, DB_FILE, candidate);
+  if (!persisted.ok) {
+    dbCache = prev;
+    return { ok: false, error: persisted.error };
+  }
+  dbCache = candidate;
+  return { ok: true };
 }
 
 export async function hydrateNotificationsFromCloud(): Promise<void> {
@@ -179,7 +198,7 @@ export async function hydrateNotificationsFromCloud(): Promise<void> {
         atomicWriteJsonSync(DB_FILE, normalized);
       } catch {}
     } else {
-      pushCloudJson(CLOUD_KEY, local);
+      await saveCloudJson(CLOUD_KEY, local).catch(() => {});
     }
   } catch (err) {
     console.warn('[Notifications] Cloud hydrate notice:', err);
@@ -194,9 +213,11 @@ export function getNotificationSettings(): NotificationSettings {
   return loadDb().settings;
 }
 
-export function updateNotificationSettings(patch: Partial<NotificationSettings>): NotificationSettings {
+export async function updateNotificationSettings(
+  patch: Partial<NotificationSettings>
+): Promise<{ ok: boolean; statusCode?: number; settings?: NotificationSettings; error?: string }> {
   const db = loadDb();
-  db.settings = {
+  const nextSettings: NotificationSettings = {
     notifyOrders: typeof patch.notifyOrders === 'boolean' ? patch.notifyOrders : db.settings.notifyOrders,
     notifySecurity: typeof patch.notifySecurity === 'boolean' ? patch.notifySecurity : db.settings.notifySecurity,
     notifyActivity: typeof patch.notifyActivity === 'boolean' ? patch.notifyActivity : db.settings.notifyActivity,
@@ -206,8 +227,15 @@ export function updateNotificationSettings(patch: Partial<NotificationSettings>)
         ? patch.notifyStorefrontVisitors
         : db.settings.notifyStorefrontVisitors,
   };
-  saveDb(db);
-  return db.settings;
+  const saved = await saveDbStrict({ ...db, settings: nextSettings });
+  if (!saved.ok) {
+    return {
+      ok: false,
+      statusCode: 503,
+      error: saved.error || 'تعذر حفظ إعدادات الإشعارات في قاعدة البيانات.',
+    };
+  }
+  return { ok: true, settings: nextSettings };
 }
 
 function isValidPushSubscription(sub: any): sub is {
@@ -227,12 +255,12 @@ function isValidPushSubscription(sub: any): sub is {
   );
 }
 
-export function subscribeAdminPush(
+export async function subscribeAdminPush(
   rawSub: any,
   deviceLabel?: string
-): { ok: boolean; subscriptionsCount: number; error?: string } {
+): Promise<{ ok: boolean; statusCode?: number; subscriptionsCount: number; error?: string }> {
   if (!isValidPushSubscription(rawSub)) {
-    return { ok: false, subscriptionsCount: loadDb().adminSubscriptions.length, error: 'بيانات الاشتراك بالإشعارات غير صالحة.' };
+    return { ok: false, statusCode: 400, subscriptionsCount: loadDb().adminSubscriptions.length, error: 'بيانات الاشتراك بالإشعارات غير صالحة.' };
   }
 
   const db = loadDb();
@@ -253,28 +281,42 @@ export function subscribeAdminPush(
     lastSuccessAt: new Date().toISOString(),
   };
 
+  const nextSubs = [...db.adminSubscriptions];
   if (existingIdx >= 0) {
-    db.adminSubscriptions[existingIdx] = record;
+    nextSubs[existingIdx] = record;
   } else {
-    db.adminSubscriptions.unshift(record);
-    db.adminSubscriptions = db.adminSubscriptions.slice(0, 50);
+    nextSubs.unshift(record);
   }
-  saveDb(db);
-  return { ok: true, subscriptionsCount: db.adminSubscriptions.length };
+  const sliced = nextSubs.slice(0, 50);
+
+  const saved = await saveDbStrict({ ...db, adminSubscriptions: sliced });
+  if (!saved.ok) {
+    return {
+      ok: false,
+      statusCode: 503,
+      subscriptionsCount: db.adminSubscriptions.length,
+      error: saved.error || 'تعذر حفظ اشتراك الجهاز في قاعدة البيانات.',
+    };
+  }
+  return { ok: true, subscriptionsCount: sliced.length };
 }
 
-export function unsubscribeAdminPush(endpoint: string): { ok: boolean; subscriptionsCount: number } {
+export async function unsubscribeAdminPush(endpoint: string): Promise<{ ok: boolean; statusCode?: number; subscriptionsCount: number; error?: string }> {
   const db = loadDb();
   if (endpoint) {
-    db.adminSubscriptions = db.adminSubscriptions.filter((s) => s.endpoint !== endpoint);
-    saveDb(db);
+    const nextSubs = db.adminSubscriptions.filter((s) => s.endpoint !== endpoint);
+    const saved = await saveDbStrict({ ...db, adminSubscriptions: nextSubs });
+    if (!saved.ok) {
+      return { ok: false, statusCode: 503, subscriptionsCount: db.adminSubscriptions.length, error: saved.error };
+    }
+    return { ok: true, subscriptionsCount: nextSubs.length };
   }
   return { ok: true, subscriptionsCount: db.adminSubscriptions.length };
 }
 
-export function subscribePublicPush(rawSub: any): { ok: boolean; error?: string } {
+export async function subscribePublicPush(rawSub: any): Promise<{ ok: boolean; statusCode?: number; error?: string }> {
   if (!isValidPushSubscription(rawSub)) {
-    return { ok: false, error: 'بيانات اشتراك الإشعارات غير صالحة.' };
+    return { ok: false, statusCode: 400, error: 'بيانات اشتراك الإشعارات غير صالحة.' };
   }
   const db = loadDb();
   const id = crypto.createHash('sha256').update(rawSub.endpoint).digest('hex').slice(0, 16);
@@ -289,21 +331,25 @@ export function subscribePublicPush(rawSub: any): { ok: boolean; error?: string 
     },
     createdAt: existingIdx >= 0 ? db.publicSubscriptions[existingIdx].createdAt : new Date().toISOString(),
   };
+  const nextSubs = [...db.publicSubscriptions];
   if (existingIdx >= 0) {
-    db.publicSubscriptions[existingIdx] = record;
+    nextSubs[existingIdx] = record;
   } else {
-    db.publicSubscriptions.unshift(record);
-    db.publicSubscriptions = db.publicSubscriptions.slice(0, 500);
+    nextSubs.unshift(record);
   }
-  saveDb(db);
+  const saved = await saveDbStrict({ ...db, publicSubscriptions: nextSubs.slice(0, 500) });
+  if (!saved.ok) {
+    return { ok: false, statusCode: 503, error: saved.error };
+  }
   return { ok: true };
 }
 
-export function unsubscribePublicPush(endpoint: string): { ok: boolean } {
+export async function unsubscribePublicPush(endpoint: string): Promise<{ ok: boolean; statusCode?: number; error?: string }> {
   const db = loadDb();
   if (endpoint) {
-    db.publicSubscriptions = db.publicSubscriptions.filter((s) => s.endpoint !== endpoint);
-    saveDb(db);
+    const nextSubs = db.publicSubscriptions.filter((s) => s.endpoint !== endpoint);
+    const saved = await saveDbStrict({ ...db, publicSubscriptions: nextSubs });
+    if (!saved.ok) return { ok: false, statusCode: 503, error: saved.error };
   }
   return { ok: true };
 }
@@ -388,15 +434,15 @@ export function emitAdminNotification(input: {
 
   db.events.unshift(event);
   db.events = db.events.slice(0, 250);
-  saveDb(db);
+  saveDbFireAndForget(db);
 
   if (db.adminSubscriptions.length > 0) {
     const pushPayload = {
       id: event.id,
       title: event.title,
       body: event.body,
-      icon: '/pwa-192x192.png',
-      badge: '/pwa-192x192.png',
+      icon: '/pwa-any-192-v2.png',
+      badge: '/pwa-any-192-v2.png',
       tag: `echox-${event.category}-${event.id}`,
       url: event.url,
       severity: event.severity,
@@ -408,7 +454,7 @@ export function emitAdminNotification(input: {
     void dispatchWebPushToList(db.adminSubscriptions, pushPayload, (expired) => {
       const current = loadDb();
       current.adminSubscriptions = current.adminSubscriptions.filter((s) => !expired.includes(s.endpoint));
-      saveDb(current);
+      saveDbFireAndForget(current);
     });
   }
 
@@ -466,7 +512,7 @@ export function emitPublicStoreNotification(input: {
   };
   db.publicAnnouncements.unshift(item);
   db.publicAnnouncements = db.publicAnnouncements.slice(0, 30);
-  saveDb(db);
+  saveDbFireAndForget(db);
 
   if (db.settings.notifyStorefrontVisitors && db.publicSubscriptions.length > 0) {
     void dispatchWebPushToList(
@@ -474,8 +520,8 @@ export function emitPublicStoreNotification(input: {
       {
         title: item.title,
         body: item.body,
-        icon: '/pwa-192x192.png',
-        badge: '/pwa-192x192.png',
+        icon: '/pwa-any-192-v2.png',
+        badge: '/pwa-any-192-v2.png',
         tag: `echox-store-${item.id}`,
         url: item.url || '/',
         severity: 'info',
@@ -484,7 +530,7 @@ export function emitPublicStoreNotification(input: {
       (expired) => {
         const current = loadDb();
         current.publicSubscriptions = current.publicSubscriptions.filter((s) => !expired.includes(s.endpoint));
-        saveDb(current);
+        saveDbFireAndForget(current);
       }
     );
   }
@@ -516,24 +562,44 @@ export function getAdminNotificationsOverview(sinceIso?: string) {
   };
 }
 
-export function markAdminNotificationsRead(ids?: string[]): number {
+export async function markAdminNotificationsRead(ids?: string[]): Promise<{
+  ok: boolean;
+  statusCode?: number;
+  unreadCount: number;
+  error?: string;
+}> {
   const db = loadDb();
   let updated = 0;
-  db.events = db.events.map((e) => {
+  const nextEvents = db.events.map((e) => {
     if (!e.read && (!ids || ids.length === 0 || ids.includes(e.id))) {
       updated += 1;
       return { ...e, read: true };
     }
     return e;
   });
-  if (updated > 0) saveDb(db);
-  return db.events.reduce((sum, e) => sum + (e.read ? 0 : 1), 0);
+  if (updated > 0) {
+    const saved = await saveDbStrict({ ...db, events: nextEvents });
+    if (!saved.ok) {
+      const currentUnread = loadDb().events.reduce((sum, e) => sum + (e.read ? 0 : 1), 0);
+      return {
+        ok: false,
+        statusCode: 503,
+        unreadCount: currentUnread,
+        error: saved.error || 'تعذر حفظ حالة قراءة الإشعارات.',
+      };
+    }
+  }
+  const unreadCount = loadDb().events.reduce((sum, e) => sum + (e.read ? 0 : 1), 0);
+  return { ok: true, unreadCount };
 }
 
-export function clearAdminNotifications(): void {
+export async function clearAdminNotifications(): Promise<{ ok: boolean; statusCode?: number; error?: string }> {
   const db = loadDb();
-  db.events = [];
-  saveDb(db);
+  const saved = await saveDbStrict({ ...db, events: [] });
+  if (!saved.ok) {
+    return { ok: false, statusCode: 503, error: saved.error || 'تعذر مسح سجل الإشعارات.' };
+  }
+  return { ok: true };
 }
 
 export async function sendTestAdminPush(endpoint?: string): Promise<{
@@ -557,9 +623,10 @@ export async function sendTestAdminPush(endpoint?: string): Promise<{
     createdAt: new Date().toISOString(),
   };
 
-  db.events.unshift(event);
-  db.events = db.events.slice(0, 250);
-  saveDb(db);
+  saveDbFireAndForget({
+    ...db,
+    events: [event, ...db.events].slice(0, 250),
+  });
 
   if (targets.length === 0) {
     return { sent: 0, failed: 0, total: 0 };
@@ -571,8 +638,8 @@ export async function sendTestAdminPush(endpoint?: string): Promise<{
       id: event.id,
       title: event.title,
       body: event.body,
-      icon: '/pwa-192x192.png',
-      badge: '/pwa-192x192.png',
+      icon: '/pwa-any-192-v2.png',
+      badge: '/pwa-any-192-v2.png',
       tag: 'echox-test-push',
       url: '/owner/dashboard',
       severity: 'success',
@@ -583,7 +650,7 @@ export async function sendTestAdminPush(endpoint?: string): Promise<{
     (expired) => {
       const current = loadDb();
       current.adminSubscriptions = current.adminSubscriptions.filter((s) => !expired.includes(s.endpoint));
-      saveDb(current);
+      saveDbFireAndForget(current);
     }
   );
 

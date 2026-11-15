@@ -4,8 +4,10 @@ import {
   atomicWriteJsonSync,
   getDataFilePath,
   isCloudPersistenceEnabled,
+  isRenderRuntime,
   loadCloudJson,
-  pushCloudJson,
+  saveCloudJson,
+  savePersistentJson,
 } from './cloudPersistence';
 import type {
   Order,
@@ -208,17 +210,45 @@ function loadDatabase(): PaymentSystemDatabase {
     console.warn('[PaymentEngine] Notice loading payment DB, initializing fresh file:', err);
   }
   const initial = createInitialDb();
-  saveDatabase(initial);
+  if (!isRenderRuntime() || isCloudPersistenceEnabled()) {
+    try {
+      atomicWriteJsonSync(PAYMENT_DATA_FILE, initial);
+    } catch (err) {
+      console.warn('[PaymentEngine] Notice bootstrapping payment DB file:', err);
+    }
+  }
   return initial;
 }
 
-function saveDatabase(db: PaymentSystemDatabase): void {
-  try {
-    atomicWriteJsonSync(PAYMENT_DATA_FILE, db);
-  } catch (err) {
-    console.error('[PaymentEngine] Error persisting payment DB:', err);
+async function saveDatabaseStrict(snapshotBeforeMutation?: string): Promise<{
+  ok: boolean;
+  statusCode?: number;
+  error?: string;
+}> {
+  const res = await savePersistentJson(CLOUD_PAYMENT_KEY, PAYMENT_DATA_FILE, paymentDb);
+  if (!res.ok) {
+    if (snapshotBeforeMutation) {
+      try {
+        paymentDb = JSON.parse(snapshotBeforeMutation) as PaymentSystemDatabase;
+      } catch {
+        // fallback leave unchanged
+      }
+    }
+    return {
+      ok: false,
+      statusCode: 503,
+      error: res.error || 'تعذر تأكيد الحفظ الدائم لبيانات الدفع والطلبات.',
+    };
   }
-  pushCloudJson(CLOUD_PAYMENT_KEY, db);
+  return { ok: true };
+}
+
+function saveDatabaseBestEffort(): void {
+  void savePersistentJson(CLOUD_PAYMENT_KEY, PAYMENT_DATA_FILE, paymentDb, { allowEphemeral: true }).catch(
+    (err) => {
+      console.warn('[PaymentEngine] Best-effort telemetry save notice:', err);
+    }
+  );
 }
 
 let paymentDb: PaymentSystemDatabase = loadDatabase();
@@ -226,7 +256,11 @@ let paymentDb: PaymentSystemDatabase = loadDatabase();
 let cachedFallbackSecret: string | null = null;
 
 function getBankIntegritySecret(): string {
-  const fromEnv = (process.env.ECHOX_SECURITY_HMAC_SECRET || '').trim();
+  const fromEnv = (
+    process.env.ECHOX_SECURITY_HMAC_SECRET ||
+    process.env.ECHOX_RUNTIME_HMAC_SECRET ||
+    ''
+  ).trim();
   if (fromEnv.length >= 16) return fromEnv;
   if (cachedFallbackSecret) return cachedFallbackSecret;
 
@@ -294,24 +328,31 @@ function computeIbanFingerprint(ibanOrRib: string): string {
   return `${digest.slice(0, 4)}-${digest.slice(4, 8)}`;
 }
 
-function ensureInitialBankSeal(): void {
+export async function ensureInitialBankSealAfterHydrate(): Promise<void> {
   const legacySeal = computeBankSealWithKey(paymentDb.config.methods.bank_transfer, 'echox-bank-local-seal-v1');
   if (!paymentDb.config.bankIntegritySeal || paymentDb.config.bankIntegritySeal === legacySeal) {
     paymentDb.config.bankIntegritySeal = computeBankSeal(paymentDb.config.methods.bank_transfer);
-    saveDatabase(paymentDb);
+    if (isCloudPersistenceEnabled()) {
+      await saveCloudJson(CLOUD_PAYMENT_KEY, paymentDb).catch(() => {});
+    }
+    try {
+      atomicWriteJsonSync(PAYMENT_DATA_FILE, paymentDb);
+    } catch {}
   }
 }
 
-ensureInitialBankSeal();
-
 export async function hydratePaymentDbFromCloud(): Promise<void> {
-  if (!isCloudPersistenceEnabled()) return;
+  if (!isCloudPersistenceEnabled()) {
+    await ensureInitialBankSealAfterHydrate();
+    return;
+  }
   const remote = await loadCloudJson<Partial<PaymentSystemDatabase>>(CLOUD_PAYMENT_KEY);
   if (remote && typeof remote === 'object') {
     paymentDb = mergeDatabaseSnapshot(remote);
     const legacySeal = computeBankSealWithKey(paymentDb.config.methods.bank_transfer, 'echox-bank-local-seal-v1');
     if (!paymentDb.config.bankIntegritySeal || paymentDb.config.bankIntegritySeal === legacySeal) {
       paymentDb.config.bankIntegritySeal = computeBankSeal(paymentDb.config.methods.bank_transfer);
+      await saveCloudJson(CLOUD_PAYMENT_KEY, paymentDb).catch(() => {});
     }
     try {
       atomicWriteJsonSync(PAYMENT_DATA_FILE, paymentDb);
@@ -319,7 +360,14 @@ export async function hydratePaymentDbFromCloud(): Promise<void> {
       console.warn('[PaymentEngine] Notice syncing cloud snapshot to local file:', err);
     }
   } else {
-    pushCloudJson(CLOUD_PAYMENT_KEY, paymentDb);
+    const legacySeal = computeBankSealWithKey(paymentDb.config.methods.bank_transfer, 'echox-bank-local-seal-v1');
+    if (!paymentDb.config.bankIntegritySeal || paymentDb.config.bankIntegritySeal === legacySeal) {
+      paymentDb.config.bankIntegritySeal = computeBankSeal(paymentDb.config.methods.bank_transfer);
+    }
+    const seedRes = await saveCloudJson(CLOUD_PAYMENT_KEY, paymentDb);
+    if (!seedRes.ok) {
+      console.warn('[PaymentEngine] Initial cloud seed notice:', seedRes.error);
+    }
   }
 }
 
@@ -502,11 +550,12 @@ export function getPublicPaymentConfig(): PaymentSystemPublicConfig {
   };
 }
 
-export function syncCatalogSnapshot(
+export async function syncCatalogSnapshot(
   products: Array<{ id: string; price: number; companyId?: string; companyName?: string; active?: boolean }>,
-  options?: { replaceAll?: boolean }
-): void {
-  if (!Array.isArray(products)) return;
+  options?: { replaceAll?: boolean; allowEphemeral?: boolean }
+): Promise<{ ok: boolean; statusCode?: number; error?: string }> {
+  if (!Array.isArray(products)) return { ok: true };
+  const snapshot = JSON.stringify(paymentDb);
   const seenIds = new Set<string>();
   for (const p of products) {
     if (!p || !p.id || typeof p.price !== 'number' || !Number.isFinite(p.price) || p.price < 0) continue;
@@ -526,10 +575,14 @@ export function syncCatalogSnapshot(
       }
     });
   }
-  saveDatabase(paymentDb);
+  if (options?.allowEphemeral) {
+    saveDatabaseBestEffort();
+    return { ok: true };
+  }
+  return saveDatabaseStrict(snapshot);
 }
 
-export function updateAdminPaymentConfig(payload: {
+export async function updateAdminPaymentConfig(payload: {
   currency?: 'TND' | 'EUR' | 'USD';
   commissionRatePercent?: number;
   taxRatePercent?: number;
@@ -545,7 +598,8 @@ export function updateAdminPaymentConfig(payload: {
     walletId?: string;
     webhookSecret?: string;
   };
-}): { ok: boolean; error?: string; config?: PaymentSystemPublicConfig } {
+}): Promise<{ ok: boolean; statusCode?: number; error?: string; config?: PaymentSystemPublicConfig }> {
+  const snapshot = JSON.stringify(paymentDb);
   const cfg = paymentDb.config;
 
   if (payload.currency && ['TND', 'EUR', 'USD'].includes(payload.currency)) {
@@ -553,13 +607,13 @@ export function updateAdminPaymentConfig(payload: {
   }
   if (typeof payload.commissionRatePercent === 'number') {
     if (payload.commissionRatePercent < 0 || payload.commissionRatePercent > 50) {
-      return { ok: false, error: 'نسبة عمولة المنصة يجب أن تكون بين 0% و 50%.' };
+      return { ok: false, statusCode: 400, error: 'نسبة عمولة المنصة يجب أن تكون بين 0% و 50%.' };
     }
     cfg.commissionRatePercent = round3(payload.commissionRatePercent);
   }
   if (typeof payload.taxRatePercent === 'number') {
     if (payload.taxRatePercent < 0 || payload.taxRatePercent > 40) {
-      return { ok: false, error: 'نسبة الضريبة يجب أن تكون بين 0% و 40%.' };
+      return { ok: false, statusCode: 400, error: 'نسبة الضريبة يجب أن تكون بين 0% و 40%.' };
     }
     cfg.taxRatePercent = round3(payload.taxRatePercent);
   }
@@ -577,6 +631,7 @@ export function updateAdminPaymentConfig(payload: {
     if (identityChanged && isEnvLockedBank()) {
       return {
         ok: false,
+        statusCode: 403,
         error: 'الحساب البنكي مقفول من متغيرات البيئة (LOCKED_BANK_IBAN) لحمايته من الاختراق ولا يمكن تغييره من اللوحة.',
       };
     }
@@ -619,8 +674,10 @@ export function updateAdminPaymentConfig(payload: {
     }
     if (typeof payload.onlinePayment.enabled === 'boolean') {
       if (payload.onlinePayment.enabled && !isOnlineGatewayReady()) {
+        paymentDb = JSON.parse(snapshot) as PaymentSystemDatabase;
         return {
           ok: false,
+          statusCode: 400,
           error: 'تعذر تفعيل الدفع الإلكتروني: يجب إدخال مفتاح API ومعرّف المحفظة الحقيقيين (Wallet ID & API Key) على الخادم أولاً.',
         };
       }
@@ -630,7 +687,10 @@ export function updateAdminPaymentConfig(payload: {
 
   cfg.updatedAt = new Date().toISOString();
   appendActivity('PAYMENT_CONFIG_UPDATED', 'admin', 'Updated payment settings / methods / rates from Admin Panel.');
-  saveDatabase(paymentDb);
+  const saved = await saveDatabaseStrict(snapshot);
+  if (!saved.ok) {
+    return { ok: false, statusCode: saved.statusCode || 503, error: saved.error };
+  }
   return { ok: true, config: getPublicPaymentConfig() };
 }
 
@@ -645,7 +705,7 @@ export async function testOnlineGatewayConnection(): Promise<{ ok: boolean; mess
         ? 'Gateway credentials missing: Custom/Stripe Bridge requires API Key, Wallet ID, and Webhook HMAC Secret.'
         : 'Gateway credentials missing: Configure real Provider API Key/App Token and Wallet ID/App Secret on server first.';
     paymentDb.config.methods.online_payment.lastConnectionCheck = { checkedAt, ok: false, message: msg };
-    saveDatabase(paymentDb);
+    await saveDatabaseStrict();
     return { ok: false, message: msg, checkedAt };
   }
 
@@ -665,18 +725,18 @@ export async function testOnlineGatewayConnection(): Promise<{ ok: boolean; mess
       if (resp.status === 401 || resp.status === 403) {
         const msg = `Konnect rejected credentials (HTTP ${resp.status}). Verify API Key matches ${mode} environment.`;
         paymentDb.config.methods.online_payment.lastConnectionCheck = { checkedAt, ok: false, message: msg };
-        saveDatabase(paymentDb);
+        await saveDatabaseStrict();
         return { ok: false, message: msg, checkedAt };
       }
       const msg = `Konnect endpoint reachable (${mode}) and API key accepted (HTTP ${resp.status}).`;
       paymentDb.config.methods.online_payment.lastConnectionCheck = { checkedAt, ok: true, message: msg };
       appendActivity('GATEWAY_TEST_PASSED', 'admin', msg);
-      saveDatabase(paymentDb);
+      await saveDatabaseStrict();
       return { ok: true, message: msg, checkedAt };
     } catch (err: any) {
       const msg = `Konnect connection check failed: ${err?.message || 'Network error'}`;
       paymentDb.config.methods.online_payment.lastConnectionCheck = { checkedAt, ok: false, message: msg };
-      saveDatabase(paymentDb);
+      await saveDatabaseStrict();
       return { ok: false, message: msg, checkedAt };
     }
   }
@@ -685,7 +745,7 @@ export async function testOnlineGatewayConnection(): Promise<{ ok: boolean; mess
     if (paymentDb.config.currency !== 'TND') {
       const msg = 'Flouci Tunisia supports TND currency only. Change store currency to TND first.';
       paymentDb.config.methods.online_payment.lastConnectionCheck = { checkedAt, ok: false, message: msg };
-      saveDatabase(paymentDb);
+      await saveDatabaseStrict();
       return { ok: false, message: msg, checkedAt };
     }
     try {
@@ -700,25 +760,25 @@ export async function testOnlineGatewayConnection(): Promise<{ ok: boolean; mess
       if (resp.status === 401 || resp.status === 403) {
         const msg = `Flouci rejected App Token / App Secret (HTTP ${resp.status}).`;
         paymentDb.config.methods.online_payment.lastConnectionCheck = { checkedAt, ok: false, message: msg };
-        saveDatabase(paymentDb);
+        await saveDatabaseStrict();
         return { ok: false, message: msg, checkedAt };
       }
       const msg = `Flouci endpoint reachable and credentials format accepted (HTTP ${resp.status}).`;
       paymentDb.config.methods.online_payment.lastConnectionCheck = { checkedAt, ok: true, message: msg };
       appendActivity('GATEWAY_TEST_PASSED', 'admin', msg);
-      saveDatabase(paymentDb);
+      await saveDatabaseStrict();
       return { ok: true, message: msg, checkedAt };
     } catch (err: any) {
       const msg = `Flouci connection check failed: ${err?.message || 'Network error'}`;
       paymentDb.config.methods.online_payment.lastConnectionCheck = { checkedAt, ok: false, message: msg };
-      saveDatabase(paymentDb);
+      await saveDatabaseStrict();
       return { ok: false, message: msg, checkedAt };
     }
   }
 
   const msg = `Custom/Stripe Bridge configured with HMAC Webhook secret. Note: automatic checkout redirect requires Konnect or Flouci.`;
   paymentDb.config.methods.online_payment.lastConnectionCheck = { checkedAt, ok: true, message: msg };
-  saveDatabase(paymentDb);
+  await saveDatabaseStrict();
   return { ok: true, message: msg, checkedAt };
 }
 
@@ -793,7 +853,7 @@ async function initiateGatewaySession(params: {
           'system',
           `Konnect init failed for ${params.trackingRef}: HTTP ${initRes.status} ${JSON.stringify(initJson)}`
         );
-        saveDatabase(paymentDb);
+        saveDatabaseBestEffort();
         return {
           ok: false,
           statusCode: 502,
@@ -808,7 +868,7 @@ async function initiateGatewaySession(params: {
       };
     } catch (err: any) {
       appendActivity('ONLINE_GATEWAY_NETWORK_ERROR', 'system', `Konnect init network failure: ${err?.message}`);
-      saveDatabase(paymentDb);
+      saveDatabaseBestEffort();
       return {
         ok: false,
         statusCode: 502,
@@ -852,7 +912,7 @@ async function initiateGatewaySession(params: {
           'system',
           `Flouci init failed for ${params.trackingRef}: HTTP ${initRes.status} ${JSON.stringify(initJson)}`
         );
-        saveDatabase(paymentDb);
+        saveDatabaseBestEffort();
         return {
           ok: false,
           statusCode: 502,
@@ -867,7 +927,7 @@ async function initiateGatewaySession(params: {
       };
     } catch (err: any) {
       appendActivity('ONLINE_GATEWAY_NETWORK_ERROR', 'system', `Flouci init network failure: ${err?.message}`);
-      saveDatabase(paymentDb);
+      saveDatabaseBestEffort();
       return {
         ok: false,
         statusCode: 502,
@@ -1056,7 +1116,7 @@ export async function processServerCheckout(input: ServerCheckoutInput): Promise
     const bankPublic = getVerifiedBankTransferPublic();
     if (bankPublic.tamperDetected) {
       appendActivity('BANK_INTEGRITY_TAMPER_BLOCKED', 'system', 'Blocked bank transfer checkout due to failed HMAC integrity seal on bank account settings.');
-      saveDatabase(paymentDb);
+      saveDatabaseBestEffort();
       return {
         ok: false,
         statusCode: 403,
@@ -1077,11 +1137,14 @@ export async function processServerCheckout(input: ServerCheckoutInput): Promise
     }
   }
 
+  const checkoutSnapshot = JSON.stringify(paymentDb);
+
   // Server-authoritative item price & quantity verification
   const verifiedItems: OrderItem[] = [];
   for (const rawItem of input.items) {
     const qty = Math.floor(Number(rawItem.quantity));
     if (!Number.isFinite(qty) || qty <= 0 || qty > 1000) {
+      paymentDb = JSON.parse(checkoutSnapshot) as PaymentSystemDatabase;
       return { ok: false, statusCode: 400, error: `كمية غير صالحة للمنتج ${rawItem.productId}.` };
     }
 
@@ -1092,17 +1155,19 @@ export async function processServerCheckout(input: ServerCheckoutInput): Promise
 
     if (catalogItem) {
       if (!catalogItem.active) {
+        paymentDb = JSON.parse(checkoutSnapshot) as PaymentSystemDatabase;
         return { ok: false, statusCode: 400, error: `المنتج ${rawItem.productId} غير متاح حالياً للشراء.` };
       }
       // Tampering protection: reject if client forged lower/different unit price
       if (typeof rawItem.unitPrice === 'number' && Math.abs(rawItem.unitPrice - catalogItem.price) > 0.01) {
+        paymentDb = JSON.parse(checkoutSnapshot) as PaymentSystemDatabase;
         appendActivity(
           'TAMPER_PRICE_REJECTED',
           'system',
           `Rejected checkout tampering attempt on ${rawItem.productId}: client=${rawItem.unitPrice}, server=${catalogItem.price}`,
           rawItem.productId
         );
-        saveDatabase(paymentDb);
+        saveDatabaseBestEffort();
         return { ok: false, statusCode: 400, error: 'تم رفض الطلب: السعر المرسل لا يطابق السعر المعتمد على الخادم.' };
       }
       authoritativeUnitPrice = catalogItem.price;
@@ -1112,6 +1177,7 @@ export async function processServerCheckout(input: ServerCheckoutInput): Promise
       // Dynamic product added by admin in local storefront session; ensure positive valid price and sync
       const submittedPrice = Number(rawItem.unitPrice);
       if (!Number.isFinite(submittedPrice) || submittedPrice <= 0) {
+        paymentDb = JSON.parse(checkoutSnapshot) as PaymentSystemDatabase;
         return { ok: false, statusCode: 400, error: 'سعر المنتج غير صالح.' };
       }
       authoritativeUnitPrice = round3(submittedPrice);
@@ -1148,12 +1214,13 @@ export async function processServerCheckout(input: ServerCheckoutInput): Promise
   const totalAmount = round3(netItemsTotal + taxAmount + shippingFee);
 
   if (typeof input.clientExpectedTotal === 'number' && Math.abs(input.clientExpectedTotal - totalAmount) > 0.05) {
+    paymentDb = JSON.parse(checkoutSnapshot) as PaymentSystemDatabase;
     appendActivity(
       'TAMPER_TOTAL_REJECTED',
       'system',
       `Rejected mismatched checkout total: client=${input.clientExpectedTotal}, server=${totalAmount}`
     );
-    saveDatabase(paymentDb);
+    saveDatabaseBestEffort();
     return { ok: false, statusCode: 400, error: 'تم رفض الطلب لعدم تطابق المبلغ الإجمالي المحسوب خادمياً.' };
   }
 
@@ -1348,12 +1415,15 @@ export async function processServerCheckout(input: ServerCheckoutInput): Promise
     orderId,
     totalAmount
   );
-  saveDatabase(paymentDb);
+  const savedCheckout = await saveDatabaseStrict(checkoutSnapshot);
+  if (!savedCheckout.ok) {
+    return { ok: false, statusCode: savedCheckout.statusCode || 503, error: savedCheckout.error };
+  }
 
   return { ok: true, order, transaction, paymentUrl };
 }
 
-export function submitBankTransferProof(payload: {
+export async function submitBankTransferProof(payload: {
   trackingNumber: string;
   customerPhone?: string;
   referenceNumber: string;
@@ -1362,7 +1432,7 @@ export function submitBankTransferProof(payload: {
   receiptImageDataUrl?: string;
   notes?: string;
   isAdmin?: boolean;
-}): { ok: boolean; statusCode?: number; error?: string; order?: Order } {
+}): Promise<{ ok: boolean; statusCode?: number; error?: string; order?: Order }> {
   const cleanTrack = (payload.trackingNumber || '').trim().toUpperCase();
   const order = paymentDb.orders.find(o => o.trackingNumber.toUpperCase() === cleanTrack);
   if (!order) {
@@ -1390,6 +1460,7 @@ export function submitBankTransferProof(payload: {
     return { ok: false, statusCode: 400, error: cleanImg.error };
   }
 
+  const snapshot = JSON.stringify(paymentDb);
   const now = new Date().toISOString();
   const proof: TransferProof = {
     referenceNumber: payload.referenceNumber.trim(),
@@ -1425,17 +1496,20 @@ export function submitBankTransferProof(payload: {
     order.id,
     order.totalAmount
   );
-  saveDatabase(paymentDb);
+  const saved = await saveDatabaseStrict(snapshot);
+  if (!saved.ok) {
+    return { ok: false, statusCode: saved.statusCode || 503, error: saved.error };
+  }
   return { ok: true, order };
 }
 
-export function adminVerifyPayment(payload: {
+export async function adminVerifyPayment(payload: {
   orderId?: string;
   transactionId?: string;
   action: 'approve' | 'reject';
   reason?: string;
   adminEmail?: string;
-}): { ok: boolean; statusCode?: number; error?: string; order?: Order; transaction?: PaymentTransaction } {
+}): Promise<{ ok: boolean; statusCode?: number; error?: string; order?: Order; transaction?: PaymentTransaction }> {
   const txn = paymentDb.transactions.find(
     t => (payload.transactionId && t.id === payload.transactionId) || (payload.orderId && t.orderId === payload.orderId)
   );
@@ -1447,13 +1521,18 @@ export function adminVerifyPayment(payload: {
     return { ok: false, statusCode: 404, error: 'المعاملة المالية غير موجودة.' };
   }
 
+  if (order && (order.paymentStatus === 'Refunded' || order.paymentStatus === 'Cancelled' || order.status === 'cancelled')) {
+    return { ok: false, statusCode: 400, error: 'لا يمكن اعتماد أو تعديل معاملة لطلب ملغى أو مسترجع مسبقاً.' };
+  }
+  if (txn && (txn.status === 'Refunded' || txn.status === 'Cancelled')) {
+    return { ok: false, statusCode: 400, error: 'لا يمكن تعديل معاملة ملغاة أو مسترجعة.' };
+  }
+
+  const snapshot = JSON.stringify(paymentDb);
   const now = new Date().toISOString();
   const nextStatus: PaymentStatus = payload.action === 'approve' ? 'Paid' : 'Payment Failed';
 
   if (order) {
-    if (order.paymentStatus === 'Refunded' || order.paymentStatus === 'Cancelled' || order.status === 'cancelled') {
-      return { ok: false, statusCode: 400, error: 'لا يمكن اعتماد أو تعديل معاملة لطلب ملغى أو مسترجع مسبقاً.' };
-    }
     order.paymentStatus = nextStatus;
     order.updatedAt = now;
     if (order.subOrders) {
@@ -1465,9 +1544,6 @@ export function adminVerifyPayment(payload: {
   }
 
   if (txn) {
-    if (txn.status === 'Refunded' || txn.status === 'Cancelled') {
-      return { ok: false, statusCode: 400, error: 'لا يمكن تعديل معاملة ملغاة أو مسترجعة.' };
-    }
     txn.status = nextStatus;
     txn.failureReason = payload.action === 'reject' ? (payload.reason || 'Rejected by Admin') : undefined;
     txn.verifiedByAdmin = payload.adminEmail || 'Admin Panel';
@@ -1491,20 +1567,24 @@ export function adminVerifyPayment(payload: {
     targetOrderId,
     txn?.amount || order?.totalAmount
   );
-  saveDatabase(paymentDb);
+  const saved = await saveDatabaseStrict(snapshot);
+  if (!saved.ok) {
+    return { ok: false, statusCode: saved.statusCode || 503, error: saved.error };
+  }
   return { ok: true, order, transaction: txn };
 }
 
-export function adminProcessRefundOrCancel(payload: {
+export async function adminProcessRefundOrCancel(payload: {
   orderId: string;
   action: 'refund' | 'cancel' | 'reject_refund';
   reason?: string;
-}): { ok: boolean; statusCode?: number; error?: string; order?: Order } {
+}): Promise<{ ok: boolean; statusCode?: number; error?: string; order?: Order }> {
   const order = paymentDb.orders.find(o => o.id === payload.orderId || o.trackingNumber === payload.orderId);
   if (!order) {
     return { ok: false, statusCode: 404, error: 'الطلب غير موجود بالنظام المالي.' };
   }
 
+  const snapshot = JSON.stringify(paymentDb);
   const now = new Date().toISOString();
   const txn = paymentDb.transactions.find(t => t.orderId === order.id);
 
@@ -1516,7 +1596,10 @@ export function adminProcessRefundOrCancel(payload: {
       req.updatedAt = now;
     }
     appendActivity('REFUND_REQUEST_REJECTED', 'admin', `Rejected refund request for ${order.trackingNumber}.`, order.id);
-    saveDatabase(paymentDb);
+    const savedReject = await saveDatabaseStrict(snapshot);
+    if (!savedReject.ok) {
+      return { ok: false, statusCode: savedReject.statusCode || 503, error: savedReject.error };
+    }
     return { ok: true, order };
   }
 
@@ -1591,15 +1674,18 @@ export function adminProcessRefundOrCancel(payload: {
     order.id,
     order.totalAmount
   );
-  saveDatabase(paymentDb);
+  const saved = await saveDatabaseStrict(snapshot);
+  if (!saved.ok) {
+    return { ok: false, statusCode: saved.statusCode || 503, error: saved.error };
+  }
   return { ok: true, order };
 }
 
-export function createCustomerRefundOrCancelRequest(payload: {
+export async function createCustomerRefundOrCancelRequest(payload: {
   trackingNumber: string;
   customerPhone?: string;
   reason: string;
-}): { ok: boolean; statusCode?: number; error?: string; refundRequest?: RefundRequest } {
+}): Promise<{ ok: boolean; statusCode?: number; error?: string; refundRequest?: RefundRequest }> {
   const cleanTrack = (payload.trackingNumber || '').trim().toUpperCase();
   const order = paymentDb.orders.find(o => o.trackingNumber.toUpperCase() === cleanTrack);
   if (!order) {
@@ -1611,6 +1697,7 @@ export function createCustomerRefundOrCancelRequest(payload: {
     return { ok: false, statusCode: 403, error: 'رقم الهاتف غير مطابق للطلب.' };
   }
 
+  const snapshot = JSON.stringify(paymentDb);
   const now = new Date().toISOString();
   const req: RefundRequest = {
     id: `refreq_${Date.now()}`,
@@ -1628,7 +1715,10 @@ export function createCustomerRefundOrCancelRequest(payload: {
 
   paymentDb.refundRequests = [req, ...paymentDb.refundRequests];
   appendActivity('CUSTOMER_REFUND_REQUESTED', 'customer', `Refund/cancellation requested for ${order.trackingNumber}: ${req.reason}`, order.id, order.totalAmount);
-  saveDatabase(paymentDb);
+  const saved = await saveDatabaseStrict(snapshot);
+  if (!saved.ok) {
+    return { ok: false, statusCode: saved.statusCode || 503, error: saved.error };
+  }
   return { ok: true, refundRequest: req };
 }
 
@@ -1638,12 +1728,12 @@ export function canOrderShip(order: Pick<Order, 'paymentMethod' | 'paymentStatus
   return order.paymentStatus === 'Paid' || order.paymentStatus === 'paid';
 }
 
-export function adminUpdateOrderStatus(orderId: string, status: OrderStatus, note?: string): {
+export async function adminUpdateOrderStatus(orderId: string, status: OrderStatus, note?: string): Promise<{
   ok: boolean;
   statusCode?: number;
   error?: string;
   order?: Order;
-} {
+}> {
   const order = paymentDb.orders.find(o => o.id === orderId || o.trackingNumber === orderId);
   if (!order) {
     return { ok: false, statusCode: 404, error: 'الطلب غير موجود.' };
@@ -1666,6 +1756,7 @@ export function adminUpdateOrderStatus(orderId: string, status: OrderStatus, not
     };
   }
 
+  const snapshot = JSON.stringify(paymentDb);
   const now = new Date().toISOString();
   order.status = status;
   order.updatedAt = now;
@@ -1711,15 +1802,21 @@ export function adminUpdateOrderStatus(orderId: string, status: OrderStatus, not
   }
 
   appendActivity('ORDER_STATUS_UPDATED', 'admin', `Order ${order.trackingNumber} transitioned to "${status}".`, order.id);
-  saveDatabase(paymentDb);
+  const saved = await saveDatabaseStrict(snapshot);
+  if (!saved.ok) {
+    return { ok: false, statusCode: saved.statusCode || 503, error: saved.error };
+  }
   return { ok: true, order };
 }
 
-export function adminSettleVendorPayout(vendorId: string, settlementNote?: string): {
+export async function adminSettleVendorPayout(vendorId: string, settlementNote?: string): Promise<{
   ok: boolean;
+  statusCode?: number;
+  error?: string;
   settledCount: number;
   settledTotal: number;
-} {
+}> {
+  const snapshot = JSON.stringify(paymentDb);
   const now = new Date().toISOString();
   let settledCount = 0;
   let settledTotal = 0;
@@ -1752,7 +1849,10 @@ export function adminSettleVendorPayout(vendorId: string, settlementNote?: strin
       vendorId,
       settledTotal
     );
-    saveDatabase(paymentDb);
+    const saved = await saveDatabaseStrict(snapshot);
+    if (!saved.ok) {
+      return { ok: false, statusCode: saved.statusCode || 503, error: saved.error, settledCount: 0, settledTotal: 0 };
+    }
   }
 
   return { ok: true, settledCount, settledTotal };
@@ -1791,12 +1891,12 @@ export function getScopedVendorFinancials(vendorId: string) {
   };
 }
 
-export function adminCreateManualOrder(input: Partial<Order>): {
+export async function adminCreateManualOrder(input: Partial<Order>): Promise<{
   ok: boolean;
   statusCode?: number;
   error?: string;
   order?: Order;
-} {
+}> {
   const customerName = (input.customerName || '').trim();
   const customerPhone = (input.customerPhone || '').trim();
   const amount = round3(Number(input.totalAmount ?? input.subtotal ?? 0));
@@ -1805,6 +1905,7 @@ export function adminCreateManualOrder(input: Partial<Order>): {
     return { ok: false, statusCode: 400, error: 'بيانات الطلب اليدوي غير مكتملة أو غير صالحة.' };
   }
 
+  const snapshot = JSON.stringify(paymentDb);
   const now = new Date().toISOString();
   const orderId = input.id && input.id.startsWith('ord_')
     ? input.id
@@ -1880,21 +1981,25 @@ export function adminCreateManualOrder(input: Partial<Order>): {
     created.id,
     created.totalAmount
   );
-  saveDatabase(paymentDb);
+  const saved = await saveDatabaseStrict(snapshot);
+  if (!saved.ok) {
+    return { ok: false, statusCode: saved.statusCode || 503, error: saved.error };
+  }
   return { ok: true, order: created };
 }
 
-export function adminDeleteOrder(orderId: string): {
+export async function adminDeleteOrder(orderId: string): Promise<{
   ok: boolean;
   statusCode?: number;
   error?: string;
-} {
+}> {
   const cleanId = (orderId || '').trim();
   const target = paymentDb.orders.find(o => o.id === cleanId || o.trackingNumber === cleanId);
   if (!target) {
     return { ok: false, statusCode: 404, error: 'الطلب غير موجود على الخادم.' };
   }
 
+  const snapshot = JSON.stringify(paymentDb);
   paymentDb.orders = paymentDb.orders.filter(o => o.id !== target.id);
   paymentDb.transactions = paymentDb.transactions.filter(t => t.orderId !== target.id);
   paymentDb.vendorLedgers = paymentDb.vendorLedgers.filter(v => v.orderId !== target.id);
@@ -1907,7 +2012,10 @@ export function adminDeleteOrder(orderId: string): {
     target.id,
     target.totalAmount
   );
-  saveDatabase(paymentDb);
+  const saved = await saveDatabaseStrict(snapshot);
+  if (!saved.ok) {
+    return { ok: false, statusCode: saved.statusCode || 503, error: saved.error };
+  }
   return { ok: true };
 }
 
@@ -2033,7 +2141,7 @@ export async function handlePaymentWebhook(payload: {
   if (!isSilentKonnectGet && secrets.webhookSecret && secrets.webhookSecret.trim().length > 0) {
     if (!signatureHeader) {
       appendActivity('WEBHOOK_UNAUTHORIZED', 'webhook', `Rejected ${provider} webhook missing signature header.`);
-      saveDatabase(paymentDb);
+      saveDatabaseBestEffort();
       return { ok: false, statusCode: 401, message: 'Missing webhook signature header.' };
     }
     const cleanSig = signatureHeader.trim().replace(/^sha256=/i, '');
@@ -2052,12 +2160,12 @@ export async function handlePaymentWebhook(payload: {
     const expBuf = Buffer.from(expectedHmac);
     if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
       appendActivity('WEBHOOK_SIGNATURE_INVALID', 'webhook', `Rejected ${provider} webhook with invalid HMAC signature.`);
-      saveDatabase(paymentDb);
+      saveDatabaseBestEffort();
       return { ok: false, statusCode: 403, message: 'Invalid webhook signature.' };
     }
   } else if (!secrets.apiKey) {
     appendActivity('WEBHOOK_REJECTED_UNCONFIGURED', 'webhook', `Rejected ${provider} webhook because gateway credentials are not configured.`);
-    saveDatabase(paymentDb);
+    saveDatabaseBestEffort();
     return { ok: false, statusCode: 503, message: 'Gateway not configured on server.' };
   }
 
@@ -2101,7 +2209,7 @@ export async function handlePaymentWebhook(payload: {
     payRefParam !== (txn?.externalPaymentId || supTxn?.externalPaymentId)
   ) {
     appendActivity('TAMPER_WEBHOOK_REF_MISMATCH', 'webhook', `Rejected mismatched payment_ref (${payRefParam}) on ${trackingOrRef}.`);
-    saveDatabase(paymentDb);
+    saveDatabaseBestEffort();
     return { ok: false, statusCode: 403, message: 'Payment reference mismatch.' };
   }
 
@@ -2117,7 +2225,7 @@ export async function handlePaymentWebhook(payload: {
     if (!check.ok) {
       if (check.statusCode === 403) {
         appendActivity('TAMPER_WEBHOOK_AMOUNT_MISMATCH', 'webhook', `${provider} security violation on ${trackingOrRef}: ${check.reason}`);
-        saveDatabase(paymentDb);
+        saveDatabaseBestEffort();
         return { ok: false, statusCode: 403, message: check.reason || 'Payment integrity verification failed.' };
       }
       return { ok: false, statusCode: check.statusCode || 502, message: check.reason || 'Gateway verification error.' };
@@ -2137,6 +2245,7 @@ export async function handlePaymentWebhook(payload: {
     return { ok: true, statusCode: 200, message: 'Payment is still pending confirmation.' };
   }
 
+  const snapshot = JSON.stringify(paymentDb);
   const nextStatus: PaymentStatus = verifiedStatus === 'completed' ? 'Paid' : 'Payment Failed';
   const targetRefLabel = txn ? txn.trackingNumber : supTxn!.supportReference;
 
@@ -2160,7 +2269,10 @@ export async function handlePaymentWebhook(payload: {
     txn ? txn.orderId : supTxn!.id,
     targetAmount
   );
-  saveDatabase(paymentDb);
+  const saved = await saveDatabaseStrict(snapshot);
+  if (!saved.ok) {
+    return { ok: false, statusCode: saved.statusCode || 503, message: saved.error || 'Failed persisting webhook transaction.' };
+  }
   return { ok: true, statusCode: 200, message: `Webhook processed: ${nextStatus}` };
 }
 
@@ -2219,28 +2331,34 @@ export async function verifyGatewayReturn(params: {
       expectedCurrency: txn ? txn.currency : supTxn!.currency,
     });
     if (check.ok && check.status === 'completed') {
+      const snapshot = JSON.stringify(paymentDb);
       if (txn) {
         const order = markOrderPaymentFromGateway(txn, 'Paid', `${targetProvider} return verify`);
         appendActivity('GATEWAY_RETURN_VERIFIED_PAID', 'system', `Verified ${txn.trackingNumber} as Paid on return.`, txn.orderId, txn.amount);
-        saveDatabase(paymentDb);
+        const saved = await saveDatabaseStrict(snapshot);
+        if (!saved.ok) return { ok: false, statusCode: 503, error: saved.error };
         return { ok: true, kind: 'order', paymentStatus: 'Paid', order };
       } else if (supTxn) {
         supTxn.status = 'Paid';
         supTxn.updatedAt = new Date().toISOString();
         appendActivity('SUPPORT_RETURN_VERIFIED_PAID', 'system', `Verified support ${supTxn.supportReference} as Paid on return.`, supTxn.id, supTxn.amount);
-        saveDatabase(paymentDb);
+        const saved = await saveDatabaseStrict(snapshot);
+        if (!saved.ok) return { ok: false, statusCode: 503, error: saved.error };
         return { ok: true, kind: 'support', paymentStatus: 'Paid', supportTransaction: supTxn };
       }
     }
     if (check.ok && check.status === 'failed') {
+      const snapshot = JSON.stringify(paymentDb);
       if (txn) {
         const order = markOrderPaymentFromGateway(txn, 'Payment Failed', `${targetProvider} return verify`, check.reason);
-        saveDatabase(paymentDb);
+        const saved = await saveDatabaseStrict(snapshot);
+        if (!saved.ok) return { ok: false, statusCode: 503, error: saved.error };
         return { ok: true, kind: 'order', paymentStatus: 'Payment Failed', order };
       } else if (supTxn) {
         supTxn.status = 'Payment Failed';
         supTxn.updatedAt = new Date().toISOString();
-        saveDatabase(paymentDb);
+        const saved = await saveDatabaseStrict(snapshot);
+        if (!saved.ok) return { ok: false, statusCode: 503, error: saved.error };
         return { ok: true, kind: 'support', paymentStatus: 'Payment Failed', supportTransaction: supTxn };
       }
     }
@@ -2338,6 +2456,7 @@ export async function createSupportContribution(payload: {
     provider = gatewayInit.provider;
   }
 
+  const snapshot = JSON.stringify(paymentDb);
   const supTxn: SupportTransaction = {
     id: `sup_${Date.now()}_${crypto.randomBytes(2).toString('hex')}`,
     supportReference: supportRef,
@@ -2364,17 +2483,20 @@ export async function createSupportContribution(payload: {
     supTxn.id,
     amt
   );
-  saveDatabase(paymentDb);
+  const saved = await saveDatabaseStrict(snapshot);
+  if (!saved.ok) {
+    return { ok: false, statusCode: saved.statusCode || 503, error: saved.error };
+  }
 
   return { ok: true, supportTransaction: supTxn, paymentUrl };
 }
 
-export function adminVerifySupportTransaction(id: string, action: 'approve' | 'reject'): {
+export async function adminVerifySupportTransaction(id: string, action: 'approve' | 'reject'): Promise<{
   ok: boolean;
   statusCode?: number;
   error?: string;
   supportTransaction?: SupportTransaction;
-} {
+}> {
   const sup = paymentDb.supportTransactions.find(s => s.id === id || s.supportReference === id);
   if (!sup) {
     return { ok: false, statusCode: 404, error: 'معاملة الدعم غير موجودة.' };
@@ -2382,6 +2504,7 @@ export function adminVerifySupportTransaction(id: string, action: 'approve' | 'r
   if (sup.status === 'Refunded' || sup.status === 'Cancelled') {
     return { ok: false, statusCode: 400, error: 'لا يمكن تعديل معاملة دعم ملغاة أو مسترجعة.' };
   }
+  const snapshot = JSON.stringify(paymentDb);
   const now = new Date().toISOString();
   sup.status = action === 'approve' ? 'Paid' : 'Payment Failed';
   sup.updatedAt = now;
@@ -2392,6 +2515,9 @@ export function adminVerifySupportTransaction(id: string, action: 'approve' | 'r
     sup.id,
     sup.amount
   );
-  saveDatabase(paymentDb);
+  const saved = await saveDatabaseStrict(snapshot);
+  if (!saved.ok) {
+    return { ok: false, statusCode: saved.statusCode || 503, error: saved.error };
+  }
   return { ok: true, supportTransaction: sup };
 }

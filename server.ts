@@ -28,6 +28,7 @@ import {
   createSupportContribution,
   adminVerifySupportTransaction,
   hydratePaymentDbFromCloud,
+  ensureInitialBankSealAfterHydrate,
   getActiveCatalogProductIds,
   isBankIdentityChange,
   isEnvLockedBank,
@@ -43,11 +44,14 @@ import {
 } from './server/storeEngine';
 import {
   atomicWriteJsonSync,
+  deletePersistentJson,
   flushCloudWrites,
   getDataFilePath,
+  getPersistenceStatus,
   isCloudPersistenceEnabled,
   loadCloudJson,
-  pushCloudJson,
+  saveCloudJson,
+  savePersistentJson,
 } from './server/cloudPersistence';
 import {
   adminSendChatReply,
@@ -169,7 +173,6 @@ function isAllowedOrigin(origin: string): boolean {
   if (!origin) return false;
   if (
     origin === 'https://echoxstore.pages.dev' ||
-    origin === 'https://echox-store-final.pages.dev' ||
     origin === 'https://echox-store.onrender.com' ||
     origin === process.env.SITE_URL ||
     origin === process.env.VITE_SITE_URL ||
@@ -227,11 +230,14 @@ app.use((req: Request, res: Response, next) => {
 // Infrastructure health check endpoint
 app.get('/api/health', (_req: Request, res: Response) => {
   res.setHeader('Cache-Control', 'no-store');
+  const persistence = getPersistenceStatus();
   return res.json({
     status: 'ok',
     service: 'echox-store-api',
     uptimeSeconds: Math.floor(process.uptime()),
-    storageMode: isCloudPersistenceEnabled() ? 'upstash-redis+local-atomic' : 'local-atomic-disk',
+    storageMode: persistence.storageMode,
+    durablePersistence: persistence.durable,
+    persistence,
     securityEngine: 'Argon2id + HMAC-SHA256',
     timestamp: new Date().toISOString(),
   });
@@ -347,6 +353,7 @@ function loadOrCreateHmacSecret(): string {
 }
 
 let runtimeHmacSecret = loadOrCreateHmacSecret();
+process.env.ECHOX_RUNTIME_HMAC_SECRET = runtimeHmacSecret;
 const CLOUD_HMAC_KEY = 'echox:security_hmac_secret';
 
 function getHmacSecret(): string {
@@ -354,18 +361,22 @@ function getHmacSecret(): string {
 }
 
 async function initHmacSecretFromCloud(): Promise<void> {
-  if ((process.env.ECHOX_SECURITY_HMAC_SECRET || '').trim().length >= 16) return;
+  if ((process.env.ECHOX_SECURITY_HMAC_SECRET || '').trim().length >= 16) {
+    process.env.ECHOX_RUNTIME_HMAC_SECRET = runtimeHmacSecret;
+    return;
+  }
   if (!isCloudPersistenceEnabled()) return;
   try {
     const cloudVal = await loadCloudJson<{ secret?: string }>(CLOUD_HMAC_KEY);
     if (cloudVal && typeof cloudVal.secret === 'string' && cloudVal.secret.length >= 32) {
       runtimeHmacSecret = cloudVal.secret;
+      process.env.ECHOX_RUNTIME_HMAC_SECRET = runtimeHmacSecret;
       try {
         fs.writeFileSync(getDataFilePath('.hmac_secret'), runtimeHmacSecret, { encoding: 'utf-8', mode: 0o600 });
       } catch {}
       return;
     }
-    pushCloudJson(CLOUD_HMAC_KEY, { secret: runtimeHmacSecret, updatedAt: new Date().toISOString() });
+    await saveCloudJson(CLOUD_HMAC_KEY, { secret: runtimeHmacSecret, updatedAt: new Date().toISOString() });
   } catch (err) {
     console.warn('[Security] Cloud HMAC sync notice:', err);
   }
@@ -603,13 +614,11 @@ interface CentralSecurityConfig {
 
 let centralSecurityConfig: CentralSecurityConfig | null = null;
 
-function persistCentralSecurityConfig(cfg: CentralSecurityConfig): void {
-  try {
-    atomicWriteJsonSync(CENTRAL_SECURITY_FILE, cfg);
-  } catch (err) {
-    console.warn('[Security] Notice persisting central security config:', err);
-  }
-  pushCloudJson(CLOUD_SECURITY_KEY, cfg);
+async function persistCentralSecurityConfig(
+  cfg: CentralSecurityConfig,
+  allowEphemeral = false
+) {
+  return savePersistentJson(CLOUD_SECURITY_KEY, CENTRAL_SECURITY_FILE, cfg, { allowEphemeral });
 }
 
 async function initCentralSecurityConfig(): Promise<CentralSecurityConfig> {
@@ -630,7 +639,7 @@ async function initCentralSecurityConfig(): Promise<CentralSecurityConfig> {
       if (data && data.access_code_argon2 && data.pin_argon2) {
         centralSecurityConfig = data;
         if (isCloudPersistenceEnabled()) {
-          pushCloudJson(CLOUD_SECURITY_KEY, data);
+          await saveCloudJson(CLOUD_SECURITY_KEY, data);
         }
         return data;
       }
@@ -646,7 +655,7 @@ async function initCentralSecurityConfig(): Promise<CentralSecurityConfig> {
     history: [{ type: 'INITIALIZED', timestamp: new Date().toISOString() }]
   };
 
-  persistCentralSecurityConfig(config);
+  await persistCentralSecurityConfig(config, true);
   centralSecurityConfig = config;
   return config;
 }
@@ -723,19 +732,11 @@ app.get('/api/owner/me', (req: Request, res: Response) => {
 // 5. verifySecurityCode (Verified directly against Argon2id PIN hash)
 app.post('/api/security/verifyCode', async (req: Request, res: Response) => {
   try {
-    const cookies = parseCookies(req);
-    const cookieVal = cookies['__session'];
-
-    if (!cookieVal) {
-      return res.status(401).json({ error: 'يرجى تسجيل الدخول بحساب Google ورمز الهاتف أولاً.' });
+    const session = resolveSessionRecord(req);
+    if (!session) {
+      return res.status(401).json({ error: 'جلسة غير صالحة أو منتهية.' });
     }
 
-    const rawSessionId = verifySignedSession(cookieVal);
-    if (!rawSessionId || !activeSessions.has(rawSessionId)) {
-      return res.status(401).json({ error: 'جلسة غير صالحة.' });
-    }
-
-    const session = activeSessions.get(rawSessionId)!;
     const ip = getClientIp(req);
     const lockState = checkLockout('verifyCode', ip);
     if (lockState.locked) {
@@ -777,10 +778,30 @@ app.post('/api/security/verifyCode', async (req: Request, res: Response) => {
     }
 
     resetBucket('verifyCode', ip);
-    session.codeVerified = true;
+    const activeSess = activeSessions.get(session.rawSessionId);
+    if (activeSess) {
+      activeSess.codeVerified = true;
+    } else {
+      activeSessions.set(session.rawSessionId, {
+        email: session.email,
+        owner: true,
+        codeVerified: true,
+        expiresAt: session.expiresAt,
+        ip,
+        userAgent: req.headers['user-agent'] || 'Browser',
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    const issuedAt = Date.now();
+    const signedCookie = signSessionId(session.rawSessionId, issuedAt, session.expiresAt, true);
+    res.setHeader('Set-Cookie', [
+      buildSessionCookie(req, signedCookie, Math.max(60, Math.floor((session.expiresAt - issuedAt) / 1000)))
+    ]);
 
     return res.json({
       success: true,
+      sessionToken: signedCookie,
       message: 'تم التحقق من شيفرة الحماية السيادية بنجاح وتم فك قفل لوحة المالك.',
       codeVerified: true
     });
@@ -793,20 +814,8 @@ app.post('/api/security/verifyCode', async (req: Request, res: Response) => {
 
 // 6. updateSecurityCode (Owner can change their PIN through Argon2id)
 app.post('/api/security/updateCode', async (req: Request, res: Response) => {
+  if (!requireAdminAuth(req, res)) return;
   try {
-    const cookies = parseCookies(req);
-    const cookieVal = cookies['__session'];
-    const rawSessionId = verifySignedSession(cookieVal);
-
-    if (!rawSessionId) {
-      return res.status(401).json({ error: 'غير مصرح.' });
-    }
-
-    const session = activeSessions.get(rawSessionId);
-    if (!session || !session.codeVerified) {
-      return res.status(403).json({ error: 'يجب تأكيد شيفرة الأمان الحالية أولاً.' });
-    }
-
     if (!centralSecurityConfig) {
       await initCentralSecurityConfig();
     }
@@ -821,6 +830,11 @@ app.post('/api/security/updateCode', async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'شيفرة الأمان الحالية غير صحيحة.' });
     }
 
+    const snapshot: CentralSecurityConfig = {
+      ...centralSecurityConfig!,
+      history: [...(centralSecurityConfig!.history || [])],
+    };
+
     const newHash = await argon2.hash(String(newCode).trim(), { type: argon2.argon2id });
     centralSecurityConfig!.pin_argon2 = newHash;
     centralSecurityConfig!.updated_at = new Date().toISOString();
@@ -828,11 +842,16 @@ app.post('/api/security/updateCode', async (req: Request, res: Response) => {
       { type: 'PIN_CHANGED', timestamp: new Date().toISOString() },
       ...(centralSecurityConfig!.history || [])
     ].slice(0, 10);
-    persistCentralSecurityConfig(centralSecurityConfig!);
+
+    const persistRes = await persistCentralSecurityConfig(centralSecurityConfig!);
+    if (!persistRes.ok) {
+      centralSecurityConfig = snapshot;
+      return res.status(503).json({ success: false, error: persistRes.error || 'تعذر حفظ شيفرة الأمان بشكل دائم على الخادم.' });
+    }
 
     return res.json({
       success: true,
-      message: 'تم تحديث شيفرة الحماية السيادية وتشفيرها بنجاح.'
+      message: 'تم تحديث شيفرة الحماية السيادية وتشفيرها وحفظها بنجاح.'
     });
 
   } catch (err: any) {
@@ -842,15 +861,24 @@ app.post('/api/security/updateCode', async (req: Request, res: Response) => {
 });
 
 // 7. emergencyLockdown (Panic button: instantly revokes all active sessions)
-app.post('/api/security/emergencyLockdown', (req: Request, res: Response) => {
+app.post('/api/security/emergencyLockdown', async (req: Request, res: Response) => {
   if (!requireAdminAuth(req, res)) return;
   try {
+    if (centralSecurityConfig) {
+      const snapshot: CentralSecurityConfig = {
+        ...centralSecurityConfig,
+        history: [...(centralSecurityConfig.history || [])],
+      };
+      centralSecurityConfig.min_session_valid_after = Date.now() + 1;
+      const persistRes = await persistCentralSecurityConfig(centralSecurityConfig);
+      if (!persistRes.ok) {
+        centralSecurityConfig = snapshot;
+        return res.status(503).json({ success: false, error: persistRes.error || 'تعذر حفظ حالة الإغلاق الأمني على الخادم.' });
+      }
+    }
+
     const sessionCount = activeSessions.size;
     activeSessions.clear();
-    if (centralSecurityConfig) {
-      centralSecurityConfig.min_session_valid_after = Date.now() + 1;
-      persistCentralSecurityConfig(centralSecurityConfig);
-    }
 
     res.setHeader('Set-Cookie', [
       buildSessionCookie(req, '', 0)
@@ -911,6 +939,7 @@ app.post('/api/owner/logout', (req: Request, res: Response) => {
 // 📱 OS-LEVEL PHONE LOCK (LEGACY COMPAT APIS)
 // ==========================================
 const OWNER_LOCK_FILE = getDataFilePath('owner_lock_config.json');
+const CLOUD_OWNER_LOCK_KEY = 'echox:owner_lock_config';
 
 interface OwnerLockConfigData {
   lock_type: 'pattern' | 'pin';
@@ -937,9 +966,28 @@ function loadOwnerLockConfig(): OwnerLockConfigData | null {
 
 let ownerLockConfig = loadOwnerLockConfig();
 
+async function hydrateOwnerLockConfigFromCloud(): Promise<void> {
+  if (!isCloudPersistenceEnabled()) return;
+  try {
+    const cloudData = await loadCloudJson<OwnerLockConfigData>(CLOUD_OWNER_LOCK_KEY);
+    if (cloudData && (cloudData.lock_hash || cloudData.code_hash)) {
+      ownerLockConfig = cloudData;
+      try {
+        atomicWriteJsonSync(OWNER_LOCK_FILE, cloudData);
+      } catch {}
+    } else if (ownerLockConfig && (ownerLockConfig.lock_hash || ownerLockConfig.code_hash)) {
+      await saveCloudJson(CLOUD_OWNER_LOCK_KEY, ownerLockConfig);
+    }
+  } catch (err) {
+    console.warn('[LockConfig] Cloud hydration notice:', err);
+  }
+}
+
 // 1. GET /api/security/ownerLockConfig
 app.get('/api/security/ownerLockConfig', (req: Request, res: Response) => {
-  ownerLockConfig = loadOwnerLockConfig();
+  if (!ownerLockConfig) {
+    ownerLockConfig = loadOwnerLockConfig();
+  }
   const ip = getClientIp(req);
   const lockState = checkLockout('osLock', ip);
 
@@ -969,7 +1017,7 @@ app.get('/api/security/ownerLockConfig', (req: Request, res: Response) => {
 });
 
 // 2. POST /api/security/saveLockConfig (Admin authenticated)
-app.post('/api/security/saveLockConfig', (req: Request, res: Response) => {
+app.post('/api/security/saveLockConfig', async (req: Request, res: Response) => {
   if (!requireAdminAuth(req, res)) return;
   try {
     const { lock_type = 'pattern', lock_hash, code_hash } = req.body || {};
@@ -979,6 +1027,7 @@ app.post('/api/security/saveLockConfig', (req: Request, res: Response) => {
       return res.status(400).json({ error: 'الرمز المشفر (Hash) مطلوب.' });
     }
 
+    const previous = ownerLockConfig;
     const currentAttempts = ownerLockConfig?.failed_attempts || [];
     const newConfig: OwnerLockConfigData = {
       lock_type: lock_type === 'pin' ? 'pin' : 'pattern',
@@ -988,12 +1037,19 @@ app.post('/api/security/saveLockConfig', (req: Request, res: Response) => {
       failed_attempts: currentAttempts.slice(0, 5)
     };
 
-    atomicWriteJsonSync(OWNER_LOCK_FILE, newConfig);
+    const persistRes = await savePersistentJson(CLOUD_OWNER_LOCK_KEY, OWNER_LOCK_FILE, newConfig);
+    if (!persistRes.ok) {
+      ownerLockConfig = previous;
+      return res.status(503).json({
+        success: false,
+        error: persistRes.error || 'تعذر حفظ إعدادات القفل بشكل دائم على الخادم.',
+      });
+    }
     ownerLockConfig = newConfig;
 
     return res.json({
       success: true,
-      message: 'تم حفظ إعدادات قفل الهاتف المشفرة بنجاح.',
+      message: 'تم حفظ إعدادات قفل الهاتف المشفرة بشكل دائم بنجاح.',
       config: { ...newConfig, lock_hash: '', code_hash: '' }
     });
   } catch (err: any) {
@@ -1003,7 +1059,7 @@ app.post('/api/security/saveLockConfig', (req: Request, res: Response) => {
 });
 
 // 3. POST /api/security/verifyLockHash
-app.post('/api/security/verifyLockHash', (req: Request, res: Response) => {
+app.post('/api/security/verifyLockHash', async (req: Request, res: Response) => {
   try {
     const ip = getClientIp(req);
     const lockState = checkLockout('osLock', ip);
@@ -1016,7 +1072,9 @@ app.post('/api/security/verifyLockHash', (req: Request, res: Response) => {
       });
     }
 
-    ownerLockConfig = loadOwnerLockConfig();
+    if (!ownerLockConfig) {
+      ownerLockConfig = loadOwnerLockConfig();
+    }
     const storedHash = ownerLockConfig?.lock_hash || ownerLockConfig?.code_hash;
 
     if (!storedHash) {
@@ -1042,9 +1100,7 @@ app.post('/api/security/verifyLockHash', (req: Request, res: Response) => {
 
       if (ownerLockConfig) {
         ownerLockConfig.failed_attempts = newAttempts;
-        try {
-          atomicWriteJsonSync(OWNER_LOCK_FILE, ownerLockConfig);
-        } catch {}
+        void savePersistentJson(CLOUD_OWNER_LOCK_KEY, OWNER_LOCK_FILE, ownerLockConfig, { allowEphemeral: true });
       }
 
       if (fail.locked) {
@@ -1067,13 +1123,17 @@ app.post('/api/security/verifyLockHash', (req: Request, res: Response) => {
 
     resetBucket('osLock', ip);
 
-    const cookies = parseCookies(req);
-    const cookieVal = cookies['__session'];
-    if (cookieVal) {
-      const rawSessionId = verifySignedSession(cookieVal);
-      if (rawSessionId && activeSessions.has(rawSessionId)) {
-        activeSessions.get(rawSessionId)!.codeVerified = true;
+    const session = resolveSessionRecord(req);
+    if (session) {
+      const activeSess = activeSessions.get(session.rawSessionId);
+      if (activeSess) {
+        activeSess.codeVerified = true;
       }
+      const issuedAt = Date.now();
+      const signedCookie = signSessionId(session.rawSessionId, issuedAt, session.expiresAt, true);
+      res.setHeader('Set-Cookie', [
+        buildSessionCookie(req, signedCookie, Math.max(60, Math.floor((session.expiresAt - issuedAt) / 1000)))
+      ]);
     }
 
     return res.json({
@@ -1094,7 +1154,9 @@ app.post('/api/security/logFailedAttempt', (req: Request, res: Response) => {
     const { type = 'pattern' } = req.body || {};
     const fail = recordFailedAttempt('osLock', ip, 5, 30000);
 
-    ownerLockConfig = loadOwnerLockConfig();
+    if (!ownerLockConfig) {
+      ownerLockConfig = loadOwnerLockConfig();
+    }
     const currentAttempts = ownerLockConfig?.failed_attempts || [];
     const newAttempts = [
       { timestamp: new Date().toISOString(), type: String(type) },
@@ -1103,9 +1165,7 @@ app.post('/api/security/logFailedAttempt', (req: Request, res: Response) => {
 
     if (ownerLockConfig) {
       ownerLockConfig.failed_attempts = newAttempts;
-      try {
-        atomicWriteJsonSync(OWNER_LOCK_FILE, ownerLockConfig);
-      } catch {}
+      void savePersistentJson(CLOUD_OWNER_LOCK_KEY, OWNER_LOCK_FILE, ownerLockConfig, { allowEphemeral: true });
     }
 
     return res.json({
@@ -1121,11 +1181,12 @@ app.post('/api/security/logFailedAttempt', (req: Request, res: Response) => {
 });
 
 // 5. POST /api/security/resetLockConfig (Admin authenticated)
-app.post('/api/security/resetLockConfig', (req: Request, res: Response) => {
+app.post('/api/security/resetLockConfig', async (req: Request, res: Response) => {
   if (!requireAdminAuth(req, res)) return;
   try {
-    if (fs.existsSync(OWNER_LOCK_FILE)) {
-      fs.unlinkSync(OWNER_LOCK_FILE);
+    const delRes = await deletePersistentJson(CLOUD_OWNER_LOCK_KEY, OWNER_LOCK_FILE);
+    if (!delRes.ok) {
+      return res.status(503).json({ success: false, error: delRes.error || 'تعذر حذف إعدادات القفل من الخادم.' });
     }
     ownerLockConfig = null;
     resetBucket('osLock', getClientIp(req));
@@ -1140,14 +1201,22 @@ app.post('/api/security/resetLockConfig', (req: Request, res: Response) => {
 });
 
 // 6. POST /api/security/logoutAllDevices (Admin authenticated)
-app.post('/api/security/logoutAllDevices', (req: Request, res: Response) => {
+app.post('/api/security/logoutAllDevices', async (req: Request, res: Response) => {
   if (!requireAdminAuth(req, res)) return;
+  if (centralSecurityConfig) {
+    const snapshot: CentralSecurityConfig = {
+      ...centralSecurityConfig,
+      history: [...(centralSecurityConfig.history || [])],
+    };
+    centralSecurityConfig.min_session_valid_after = Date.now() + 1;
+    const persistRes = await persistCentralSecurityConfig(centralSecurityConfig);
+    if (!persistRes.ok) {
+      centralSecurityConfig = snapshot;
+      return res.status(503).json({ success: false, error: persistRes.error || 'تعذر حفظ إنهاء الجلسات على الخادم.' });
+    }
+  }
   const count = activeSessions.size;
   activeSessions.clear();
-  if (centralSecurityConfig) {
-    centralSecurityConfig.min_session_valid_after = Date.now() + 1;
-    persistCentralSecurityConfig(centralSecurityConfig);
-  }
   res.setHeader('Set-Cookie', [
     buildSessionCookie(req, '', 0)
   ]);
@@ -1397,6 +1466,11 @@ app.post('/api/security/updateAccessCode', async (req: Request, res: Response) =
       return res.status(400).json({ error: 'يجب أن يتكون رمز الوصول الجديد من 4 خانات على الأقل.' });
     }
 
+    const snapshot: CentralSecurityConfig = {
+      ...centralSecurityConfig!,
+      history: [...(centralSecurityConfig!.history || [])],
+    };
+
     const newHash = await argon2.hash(cleanNew, { type: argon2.argon2id });
     centralSecurityConfig!.access_code_argon2 = newHash;
     centralSecurityConfig!.updated_at = new Date().toISOString();
@@ -1405,7 +1479,15 @@ app.post('/api/security/updateAccessCode', async (req: Request, res: Response) =
       ...(centralSecurityConfig!.history || [])
     ].slice(0, 10);
 
-    persistCentralSecurityConfig(centralSecurityConfig!);
+    const persistRes = await persistCentralSecurityConfig(centralSecurityConfig!);
+    if (!persistRes.ok) {
+      centralSecurityConfig = snapshot;
+      return res.status(503).json({
+        success: false,
+        error: persistRes.error || 'تعذر حفظ رمز الوصول الجديد بشكل دائم على الخادم.',
+      });
+    }
+
     resetBucket('accessCode', ip);
     emitAdminNotification({
       category: 'security',
@@ -1417,7 +1499,7 @@ app.post('/api/security/updateAccessCode', async (req: Request, res: Response) =
 
     return res.json({
       success: true,
-      message: 'تم تحديث رمز الوصول السري بنجاح وتشفيره ببصمة Argon2id فورياً.'
+      message: 'تم تحديث رمز الوصول السري وحفظه بشكل دائم وتشفيره ببصمة Argon2id فورياً.'
     });
 
   } catch (err: any) {
@@ -1455,6 +1537,11 @@ app.post('/api/security/updatePin', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'يجب أن يتكون رمز الـ PIN الجديد من 6 أرقام بالضبط.' });
     }
 
+    const snapshot: CentralSecurityConfig = {
+      ...centralSecurityConfig!,
+      history: [...(centralSecurityConfig!.history || [])],
+    };
+
     const newHash = await argon2.hash(cleanNew, { type: argon2.argon2id });
     centralSecurityConfig!.pin_argon2 = newHash;
     centralSecurityConfig!.updated_at = new Date().toISOString();
@@ -1463,19 +1550,24 @@ app.post('/api/security/updatePin', async (req: Request, res: Response) => {
       ...(centralSecurityConfig!.history || [])
     ].slice(0, 10);
 
-    persistCentralSecurityConfig(centralSecurityConfig!);
+    const persistRes = await persistCentralSecurityConfig(centralSecurityConfig!);
+    if (!persistRes.ok) {
+      centralSecurityConfig = snapshot;
+      return res.status(503).json({
+        success: false,
+        error: persistRes.error || 'تعذر حفظ رمز الـ PIN الجديد بشكل دائم على الخادم.',
+      });
+    }
 
-    try {
-      const legacyLock: OwnerLockConfigData = {
-        lock_type: 'pin',
-        lock_hash: newHash,
-        code_hash: newHash,
-        updated_at: new Date().toISOString(),
-        failed_attempts: []
-      };
-      atomicWriteJsonSync(OWNER_LOCK_FILE, legacyLock);
-      ownerLockConfig = legacyLock;
-    } catch {}
+    const legacyLock: OwnerLockConfigData = {
+      lock_type: 'pin',
+      lock_hash: newHash,
+      code_hash: newHash,
+      updated_at: new Date().toISOString(),
+      failed_attempts: []
+    };
+    await savePersistentJson(CLOUD_OWNER_LOCK_KEY, OWNER_LOCK_FILE, legacyLock, { allowEphemeral: true });
+    ownerLockConfig = legacyLock;
 
     resetBucket('pin', ip);
     emitAdminNotification({
@@ -1488,7 +1580,7 @@ app.post('/api/security/updatePin', async (req: Request, res: Response) => {
 
     return res.json({
       success: true,
-      message: 'تم تحديث رمز PIN بنجاح وتشفيره ببصمة Argon2id فورياً.'
+      message: 'تم تحديث رمز PIN وحفظه بشكل دائم وتشفيره ببصمة Argon2id فورياً.'
     });
 
   } catch (err: any) {
@@ -1529,11 +1621,14 @@ app.get('/api/security/sessions', (req: Request, res: Response) => {
 
 // 6. Security System Status
 app.get('/api/security/systemStatus', (_req: Request, res: Response) => {
+  const persistence = getPersistenceStatus();
   return res.json({
     argon2idEnabled: true,
     hashingAlgorithm: 'Argon2id (m=65536, t=3, p=4)',
     serverSideEnforced: true,
-    storageMode: isCloudPersistenceEnabled() ? 'upstash-redis+local-atomic' : 'local-atomic-disk',
+    storageMode: persistence.storageMode,
+    durablePersistence: persistence.durable,
+    persistence,
     activeSessionsCount: activeSessions.size,
     accessCodeConfigured: true,
     pinConfigured: true,
@@ -1564,10 +1659,13 @@ app.get('/api/payments/config', (_req: Request, res: Response) => {
 });
 
 // 2. Catalog Price Sync (Admin only can overwrite catalog prices)
-app.post('/api/admin/payments/catalog-sync', (req: Request, res: Response) => {
+app.post('/api/admin/payments/catalog-sync', async (req: Request, res: Response) => {
   if (!requireAdminAuth(req, res)) return;
   const { products } = req.body || {};
-  syncCatalogSnapshot(products);
+  const result = await syncCatalogSnapshot(products);
+  if (!result.ok) {
+    return res.status(result.statusCode || 503).json({ success: false, error: result.error });
+  }
   return res.json({ success: true });
 });
 
@@ -1618,17 +1716,16 @@ app.post('/api/payments/checkout', async (req: Request, res: Response) => {
 });
 
 // 4. Customer Submit Bank Transfer Proof (Rate limited per IP)
-app.post('/api/payments/bank-transfer/proof', (req: Request, res: Response) => {
+app.post('/api/payments/bank-transfer/proof', async (req: Request, res: Response) => {
   const ip = getClientIp(req);
   const rate = checkSlidingWindowLimit('bankProof', ip, 20, 60 * 1000);
   if (!rate.allowed) {
     return res.status(429).json({ success: false, error: `تم تجاوز حد الإرسال، يرجى الانتظار ${rate.retryAfterSeconds} ثانية.` });
   }
-  const cookieVal = extractSessionTokenFromReq(req);
-  const rawSid = cookieVal ? verifySignedSession(cookieVal) : null;
-  const isAdmin = Boolean(rawSid && activeSessions.get(rawSid)?.codeVerified);
+  const sess = resolveSessionRecord(req);
+  const isAdmin = Boolean(sess && sess.codeVerified);
 
-  const result = submitBankTransferProof({
+  const result = await submitBankTransferProof({
     ...(req.body || {}),
     isAdmin,
   });
@@ -1654,13 +1751,13 @@ app.post('/api/payments/bank-transfer/proof', (req: Request, res: Response) => {
 });
 
 // 5. Customer Request Cancellation / Refund
-app.post('/api/payments/request-refund', (req: Request, res: Response) => {
+app.post('/api/payments/request-refund', async (req: Request, res: Response) => {
   const ip = getClientIp(req);
   const rate = checkSlidingWindowLimit('refundReq', ip, 15, 60 * 1000);
   if (!rate.allowed) {
     return res.status(429).json({ success: false, error: `تم تجاوز الحد المسموح، يرجى الانتظار ${rate.retryAfterSeconds} ثانية.` });
   }
-  const result = createCustomerRefundOrCancelRequest(req.body || {});
+  const result = await createCustomerRefundOrCancelRequest(req.body || {});
   if (!result.ok) {
     return res.status(result.statusCode || 400).json({ success: false, error: result.error });
   }
@@ -1850,9 +1947,9 @@ app.put('/api/admin/payments/config', async (req: Request, res: Response) => {
     resetBucket('bankPinConfirm', ip);
   }
 
-  const result = updateAdminPaymentConfig(body);
+  const result = await updateAdminPaymentConfig(body);
   if (!result.ok) {
-    return res.status(400).json({ success: false, error: result.error });
+    return res.status(result.statusCode || 400).json({ success: false, error: result.error });
   }
   emitAdminNotification({
     category: 'activity',
@@ -1875,10 +1972,10 @@ app.get('/api/admin/payments/overview', (req: Request, res: Response) => {
   return res.json(getAdminPaymentOverview());
 });
 
-app.post('/api/admin/payments/verify', (req: Request, res: Response) => {
+app.post('/api/admin/payments/verify', async (req: Request, res: Response) => {
   const admin = requireAdminAuth(req, res);
   if (!admin) return;
-  const result = adminVerifyPayment({
+  const result = await adminVerifyPayment({
     ...(req.body || {}),
     adminEmail: admin.email,
   });
@@ -1888,29 +1985,32 @@ app.post('/api/admin/payments/verify', (req: Request, res: Response) => {
   return res.json({ success: true, order: result.order, transaction: result.transaction });
 });
 
-app.post('/api/admin/payments/refund', (req: Request, res: Response) => {
+app.post('/api/admin/payments/refund', async (req: Request, res: Response) => {
   if (!requireAdminAuth(req, res)) return;
-  const result = adminProcessRefundOrCancel(req.body || {});
+  const result = await adminProcessRefundOrCancel(req.body || {});
   if (!result.ok) {
     return res.status(result.statusCode || 400).json({ success: false, error: result.error });
   }
   return res.json({ success: true, order: result.order });
 });
 
-app.post('/api/admin/payments/vendor-payout', (req: Request, res: Response) => {
+app.post('/api/admin/payments/vendor-payout', async (req: Request, res: Response) => {
   if (!requireAdminAuth(req, res)) return;
   const { vendorId, settlementNote } = req.body || {};
   if (!vendorId) {
     return res.status(400).json({ success: false, error: 'معرف البائع مطلوب.' });
   }
-  const result = adminSettleVendorPayout(vendorId, settlementNote);
+  const result = await adminSettleVendorPayout(vendorId, settlementNote);
+  if (!result.ok) {
+    return res.status(result.statusCode || 503).json({ success: false, error: result.error });
+  }
   return res.json({ success: true, ...result });
 });
 
-app.post('/api/admin/support/verify', (req: Request, res: Response) => {
+app.post('/api/admin/support/verify', async (req: Request, res: Response) => {
   if (!requireAdminAuth(req, res)) return;
   const { id, action } = req.body || {};
-  const result = adminVerifySupportTransaction(id, action);
+  const result = await adminVerifySupportTransaction(id, action);
   if (!result.ok) {
     return res.status(result.statusCode || 400).json({ success: false, error: result.error });
   }
@@ -1938,9 +2038,9 @@ app.get('/api/admin/orders', (req: Request, res: Response) => {
   return res.json({ success: true, orders: overview.orders || [] });
 });
 
-app.post('/api/admin/orders', (req: Request, res: Response) => {
+app.post('/api/admin/orders', async (req: Request, res: Response) => {
   if (!requireAdminAuth(req, res)) return;
-  const result = adminCreateManualOrder(req.body || {});
+  const result = await adminCreateManualOrder(req.body || {});
   if (!result.ok) {
     return res.status(result.statusCode || 400).json({ success: false, error: result.error });
   }
@@ -1956,19 +2056,19 @@ app.post('/api/admin/orders', (req: Request, res: Response) => {
   return res.json({ success: true, order: result.order });
 });
 
-app.patch('/api/admin/orders/:orderId/status', (req: Request, res: Response) => {
+app.patch('/api/admin/orders/:orderId/status', async (req: Request, res: Response) => {
   if (!requireAdminAuth(req, res)) return;
   const { status, note } = req.body || {};
-  const result = adminUpdateOrderStatus(req.params.orderId, status, note);
+  const result = await adminUpdateOrderStatus(req.params.orderId, status, note);
   if (!result.ok) {
     return res.status(result.statusCode || 409).json({ success: false, error: result.error });
   }
   return res.json({ success: true, order: result.order });
 });
 
-app.delete('/api/admin/orders/:orderId', (req: Request, res: Response) => {
+app.delete('/api/admin/orders/:orderId', async (req: Request, res: Response) => {
   if (!requireAdminAuth(req, res)) return;
-  const result = adminDeleteOrder(req.params.orderId);
+  const result = await adminDeleteOrder(req.params.orderId);
   if (!result.ok) {
     return res.status(result.statusCode || 404).json({ success: false, error: result.error });
   }
@@ -1985,7 +2085,7 @@ app.get('/api/chat/session/:sessionId', (req: Request, res: Response) => {
   return res.json({ success: true, thread });
 });
 
-app.post('/api/chat/session/:sessionId/message', (req: Request, res: Response) => {
+app.post('/api/chat/session/:sessionId/message', async (req: Request, res: Response) => {
   const ip = getClientIp(req);
   const rate = checkSlidingWindowLimit('supportChat', ip, 30, 60 * 1000);
   if (!rate.allowed) {
@@ -1995,7 +2095,7 @@ app.post('/api/chat/session/:sessionId/message', (req: Request, res: Response) =
     });
   }
   const { language, customerLabel, customerText, autoReplyText, suggestedProducts, actionView } = req.body || {};
-  const result = recordCustomerChatExchange({
+  const result = await recordCustomerChatExchange({
     sessionId: req.params.sessionId,
     language,
     customerLabel,
@@ -2005,7 +2105,7 @@ app.post('/api/chat/session/:sessionId/message', (req: Request, res: Response) =
     actionView,
   });
   if (!result.ok) {
-    return res.status(400).json({ success: false, error: result.error });
+    return res.status(result.statusCode || 400).json({ success: false, error: result.error });
   }
   emitAdminNotification({
     category: 'support',
@@ -2022,35 +2122,44 @@ app.get('/api/admin/chat/threads', (req: Request, res: Response) => {
   return res.json({ success: true, ...listAdminChatThreads() });
 });
 
-app.post('/api/admin/chat/threads/:sessionId/reply', (req: Request, res: Response) => {
+app.post('/api/admin/chat/threads/:sessionId/reply', async (req: Request, res: Response) => {
   if (!requireAdminAuth(req, res)) return;
   const { replyText } = req.body || {};
-  const result = adminSendChatReply({
+  const result = await adminSendChatReply({
     sessionId: req.params.sessionId,
     replyText,
   });
   if (!result.ok) {
-    return res.status(400).json({ success: false, error: result.error });
+    return res.status(result.statusCode || 400).json({ success: false, error: result.error });
   }
   return res.json({ success: true, thread: result.thread, message: result.message });
 });
 
-app.post('/api/admin/chat/threads/:sessionId/read', (req: Request, res: Response) => {
+app.post('/api/admin/chat/threads/:sessionId/read', async (req: Request, res: Response) => {
   if (!requireAdminAuth(req, res)) return;
-  markThreadReadByOwner(req.params.sessionId);
+  const result = await markThreadReadByOwner(req.params.sessionId);
+  if (!result.ok) {
+    return res.status(result.statusCode || 503).json({ success: false, error: result.error });
+  }
   return res.json({ success: true });
 });
 
-app.delete('/api/admin/chat/threads/:sessionId', (req: Request, res: Response) => {
+app.delete('/api/admin/chat/threads/:sessionId', async (req: Request, res: Response) => {
   if (!requireAdminAuth(req, res)) return;
-  deleteChatThread(req.params.sessionId);
+  const result = await deleteChatThread(req.params.sessionId);
+  if (!result.ok) {
+    return res.status(result.statusCode || 503).json({ success: false, error: result.error });
+  }
   return res.json({ success: true });
 });
 
-app.put('/api/admin/chat/config', (req: Request, res: Response) => {
+app.put('/api/admin/chat/config', async (req: Request, res: Response) => {
   if (!requireAdminAuth(req, res)) return;
-  const updated = updateChatConfig(req.body || {});
-  return res.json({ success: true, config: updated });
+  const result = await updateChatConfig(req.body || {});
+  if (!result.ok) {
+    return res.status(result.statusCode || 503).json({ success: false, error: result.error });
+  }
+  return res.json({ success: true, config: result.config });
 });
 
 // ==========================================
@@ -2070,18 +2179,25 @@ app.get('/api/admin/store/state', (req: Request, res: Response) => {
   return res.json({
     success: true,
     ...getAdminStoreState(),
+    persistenceStatus: getPersistenceStatus(),
   });
 });
 
-app.put('/api/admin/store/state', (req: Request, res: Response) => {
+app.put('/api/admin/store/state', async (req: Request, res: Response) => {
   if (!requireAdminAuth(req, res)) return;
   const prevState = getPublicStoreState();
-  const result = updateAdminStoreState(req.body || {});
+  const result = await updateAdminStoreState(req.body || {});
   if (!result.ok) {
-    return res.status(400).json({ success: false, error: result.error });
+    return res.status(result.statusCode || 400).json({ success: false, error: result.error });
   }
   // Keep server-side payment catalog prices in exact sync with edited products
-  syncCatalogSnapshot(result.state.products, { replaceAll: true });
+  const catalogSync = await syncCatalogSnapshot(result.state.products, { replaceAll: true });
+  if (!catalogSync.ok) {
+    return res.status(catalogSync.statusCode || 503).json({
+      success: false,
+      error: catalogSync.error || 'تعذر مزامنة أسعار الكاتالوج في محرك الدفع.',
+    });
+  }
 
   const changedSections: string[] = [];
   if (Array.isArray(req.body?.products)) changedSections.push('المنتجات');
@@ -2095,7 +2211,7 @@ app.put('/api/admin/store/state', (req: Request, res: Response) => {
     category: 'activity',
     severity: 'info',
     title: '⚙️ تحديث في غرفة التحكم',
-    body: changedSections.length > 0 ? `تم تحديث: ${changedSections.join('، ')}` : 'تم حفظ تعديلات المتجر.',
+    body: changedSections.length > 0 ? `تم تحديث وحفظ: ${changedSections.join('، ')}` : 'تم حفظ تعديلات المتجر بشكل دائم.',
     url: '/owner/dashboard',
   });
 
@@ -2124,18 +2240,19 @@ app.put('/api/admin/store/state', (req: Request, res: Response) => {
   return res.json({
     success: true,
     ...result.state,
+    persistenceStatus: getPersistenceStatus(),
   });
 });
 
-app.post('/api/store/products/:productId/reviews', (req: Request, res: Response) => {
+app.post('/api/store/products/:productId/reviews', async (req: Request, res: Response) => {
   const ip = getClientIp(req);
   const rate = checkSlidingWindowLimit('productReview', ip, 15, 60 * 1000);
   if (!rate.allowed) {
     return res.status(429).json({ success: false, error: `تم تجاوز الحد المسموح، يرجى الانتظار ${rate.retryAfterSeconds} ثانية.` });
   }
-  const result = addPublicProductReview(req.params.productId, req.body || {});
+  const result = await addPublicProductReview(req.params.productId, req.body || {});
   if (!result.ok) {
-    return res.status(400).json({ success: false, error: result.error });
+    return res.status(result.statusCode || 400).json({ success: false, error: result.error });
   }
   emitAdminNotification({
     category: 'activity',
@@ -2147,15 +2264,15 @@ app.post('/api/store/products/:productId/reviews', (req: Request, res: Response)
   return res.json({ success: true, product: result.product });
 });
 
-app.post('/api/store/inquiries', (req: Request, res: Response) => {
+app.post('/api/store/inquiries', async (req: Request, res: Response) => {
   const ip = getClientIp(req);
   const rate = checkSlidingWindowLimit('inquiries', ip, 10, 60 * 1000);
   if (!rate.allowed) {
     return res.status(429).json({ success: false, error: `تم تجاوز الحد المسموح، يرجى الانتظار ${rate.retryAfterSeconds} ثانية.` });
   }
-  const result = addPublicInquiry(req.body || {});
+  const result = await addPublicInquiry(req.body || {});
   if (!result.ok) {
-    return res.status(400).json({ success: false, error: result.error });
+    return res.status(result.statusCode || 400).json({ success: false, error: result.error });
   }
   emitAdminNotification({
     category: 'support',
@@ -2167,11 +2284,11 @@ app.post('/api/store/inquiries', (req: Request, res: Response) => {
   return res.json({ success: true, inquiry: result.inquiry });
 });
 
-app.post('/api/admin/store/inquiries/:inquiryId/reply', (req: Request, res: Response) => {
+app.post('/api/admin/store/inquiries/:inquiryId/reply', async (req: Request, res: Response) => {
   if (!requireAdminAuth(req, res)) return;
-  const result = adminReplyToInquiry(req.params.inquiryId, req.body?.reply || '');
+  const result = await adminReplyToInquiry(req.params.inquiryId, req.body?.reply || '');
   if (!result.ok) {
-    return res.status(400).json({ success: false, error: result.error });
+    return res.status(result.statusCode || 400).json({ success: false, error: result.error });
   }
   return res.json({ success: true, inquiry: result.inquiry });
 });
@@ -2188,16 +2305,20 @@ app.get('/api/notifications/public', (_req: Request, res: Response) => {
   });
 });
 
-app.post('/api/notifications/public/subscribe', (req: Request, res: Response) => {
-  const result = subscribePublicPush(req.body?.subscription);
+app.post('/api/notifications/public/subscribe', async (req: Request, res: Response) => {
+  const result = await subscribePublicPush(req.body?.subscription);
   if (!result.ok) {
-    return res.status(400).json({ success: false, error: result.error });
+    return res.status(result.statusCode || 400).json({ success: false, error: result.error });
   }
   return res.json({ success: true });
 });
 
-app.post('/api/notifications/public/unsubscribe', (req: Request, res: Response) => {
-  return res.json(unsubscribePublicPush(String(req.body?.endpoint || '')));
+app.post('/api/notifications/public/unsubscribe', async (req: Request, res: Response) => {
+  const result = await unsubscribePublicPush(String(req.body?.endpoint || ''));
+  if (!result.ok) {
+    return res.status(result.statusCode || 503).json({ success: false, error: result.error });
+  }
+  return res.json({ success: true });
 });
 
 app.get('/api/admin/notifications', (req: Request, res: Response) => {
@@ -2210,36 +2331,49 @@ app.get('/api/admin/notifications', (req: Request, res: Response) => {
   });
 });
 
-app.post('/api/admin/notifications/subscribe', (req: Request, res: Response) => {
+app.post('/api/admin/notifications/subscribe', async (req: Request, res: Response) => {
   if (!requireAdminAuth(req, res)) return;
-  const result = subscribeAdminPush(req.body?.subscription, req.body?.deviceLabel);
+  const result = await subscribeAdminPush(req.body?.subscription, req.body?.deviceLabel);
   if (!result.ok) {
-    return res.status(400).json({ success: false, error: result.error });
+    return res.status(result.statusCode || 400).json({ success: false, error: result.error });
   }
   return res.json({ success: true, subscriptionsCount: result.subscriptionsCount });
 });
 
-app.post('/api/admin/notifications/unsubscribe', (req: Request, res: Response) => {
+app.post('/api/admin/notifications/unsubscribe', async (req: Request, res: Response) => {
   if (!requireAdminAuth(req, res)) return;
-  return res.json(unsubscribeAdminPush(String(req.body?.endpoint || '')));
+  const result = await unsubscribeAdminPush(String(req.body?.endpoint || ''));
+  if (!result.ok) {
+    return res.status(result.statusCode || 503).json({ success: false, error: result.error });
+  }
+  return res.json({ success: true });
 });
 
-app.put('/api/admin/notifications/settings', (req: Request, res: Response) => {
+app.put('/api/admin/notifications/settings', async (req: Request, res: Response) => {
   if (!requireAdminAuth(req, res)) return;
-  const settings = updateNotificationSettings(req.body || {});
-  return res.json({ success: true, settings });
+  const result = await updateNotificationSettings(req.body || {});
+  if (!result.ok) {
+    return res.status(result.statusCode || 503).json({ success: false, error: result.error });
+  }
+  return res.json({ success: true, settings: result.settings });
 });
 
-app.post('/api/admin/notifications/read', (req: Request, res: Response) => {
+app.post('/api/admin/notifications/read', async (req: Request, res: Response) => {
   if (!requireAdminAuth(req, res)) return;
   const ids = Array.isArray(req.body?.ids) ? req.body.ids : undefined;
-  const unreadCount = markAdminNotificationsRead(ids);
-  return res.json({ success: true, unreadCount });
+  const result = await markAdminNotificationsRead(ids);
+  if (!result.ok) {
+    return res.status(result.statusCode || 503).json({ success: false, error: result.error });
+  }
+  return res.json({ success: true, unreadCount: result.unreadCount });
 });
 
-app.delete('/api/admin/notifications', (req: Request, res: Response) => {
+app.delete('/api/admin/notifications', async (req: Request, res: Response) => {
   if (!requireAdminAuth(req, res)) return;
-  clearAdminNotifications();
+  const result = await clearAdminNotifications();
+  if (!result.ok) {
+    return res.status(result.statusCode || 503).json({ success: false, error: result.error });
+  }
   return res.json({ success: true });
 });
 
@@ -2251,17 +2385,28 @@ app.post('/api/admin/notifications/test', async (req: Request, res: Response) =>
 
 // --- PRODUCTION STATIC OR VITE DEV MIDDLEWARE ---
 async function startServer() {
+  // Hydrate shared HMAC secret FIRST so signed sessions and sealed bank hashes stay consistent
+  await initHmacSecretFromCloud().catch((err) => console.error('[Security] HMAC cloud init notice:', err));
+  process.env.ECHOX_RUNTIME_HMAC_SECRET = runtimeHmacSecret;
+
   await Promise.all([
-    initHmacSecretFromCloud().catch((err) => console.error('[Security] HMAC cloud init notice:', err)),
     initCentralSecurityConfig().catch((err) => console.error('[Security] Init notice:', err)),
+    hydrateOwnerLockConfigFromCloud().catch((err) => console.error('[LockConfig] Cloud hydrate notice:', err)),
     hydratePaymentDbFromCloud().catch((err) => console.error('[PaymentEngine] Cloud hydrate notice:', err)),
     hydrateChatDbFromCloud().catch((err) => console.error('[ChatEngine] Cloud hydrate notice:', err)),
     hydrateStoreStateFromCloud().catch((err) => console.error('[StoreEngine] Cloud hydrate notice:', err)),
     hydrateNotificationsFromCloud().catch((err) => console.error('[Notifications] Cloud hydrate notice:', err)),
   ]);
 
+  ensureInitialBankSealAfterHydrate();
+
   // Synchronize authoritative payment catalog with persisted store products on startup
-  syncCatalogSnapshot(getPublicStoreState().products, { replaceAll: true });
+  await syncCatalogSnapshot(getPublicStoreState().products, { replaceAll: true, allowEphemeral: true });
+
+  const persistence = getPersistenceStatus();
+  console.log(
+    `[Persistence] Provider=${persistence.provider} | Durable=${persistence.durable} | Cloud=${persistence.cloudEnabled} | DataDir=${persistence.dataDir}`
+  );
 
   const isProd = process.env.NODE_ENV === 'production';
   const distDir = path.resolve(process.cwd(), 'dist');
@@ -2274,7 +2419,22 @@ async function startServer() {
         immutable: true,
       })
     );
-    app.use(express.static(distDir));
+    app.use(
+      express.static(distDir, {
+        setHeaders: (res, filePath) => {
+          const base = path.basename(filePath);
+          if (base === 'sw.js') {
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+            res.setHeader('Service-Worker-Allowed', '/');
+          } else if (base === 'manifest.webmanifest' || base === 'manifest.json') {
+            res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+            res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+          } else if (base.startsWith('pwa-') || base.startsWith('apple-touch-icon')) {
+            res.setHeader('Cache-Control', 'public, max-age=3600, must-revalidate');
+          }
+        },
+      })
+    );
     app.get('*', (req: Request, res: Response) => {
       if (req.path.startsWith('/api/')) {
         return res.status(404).json({ success: false, error: 'Endpoint not found' });

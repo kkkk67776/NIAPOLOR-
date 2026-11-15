@@ -57,6 +57,17 @@
         "updated_at": { "type": "string", "description": "Last configuration update ISO timestamp" }
       },
       "required": ["lock_type", "lock_hash"]
+    },
+    "SystemState": {
+      "title": "SystemState",
+      "description": "Server-only serialized durable state documents managed strictly by the Express backend service account",
+      "type": "object",
+      "properties": {
+        "key": { "type": "string", "description": "State namespace key" },
+        "payloadJson": { "type": "string", "description": "JSON-serialized module state snapshot" },
+        "updatedAt": { "type": "string", "description": "Last authoritative write ISO timestamp" }
+      },
+      "required": ["key", "payloadJson", "updatedAt"]
     }
   },
   "firestore": {
@@ -75,6 +86,10 @@
     "/store_settings/{settingId}": {
       "schema": { "$ref": "#/entities/OwnerSecurity" },
       "description": "Store configuration including owner OS-level security lock"
+    },
+    "/echox_system_state/{docId}": {
+      "schema": { "$ref": "#/entities/SystemState" },
+      "description": "Server-only durable storage for storefront, security hashes, payments, chat, and notifications"
     }
   }
 }

@@ -83,6 +83,12 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // 🔒 Server-Only Durable System State (Argon2id hashes, store state, payments, chat, push subscriptions)
+    // Accessed exclusively by Render Express backend via Firebase Service Account OAuth2 JWT.
+    match /echox_system_state/{docId} {
+      allow read, write: if false;
+    }
+
     // 🔒 Security Audit Trail: Read-only for Sovereign Owner, write strictly via secure backend
     match /security_audit_logs/{logId} {
       allow get, list: if isOwner();

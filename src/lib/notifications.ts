@@ -149,8 +149,11 @@ export function registerEchoxServiceWorker(): Promise<ServiceWorkerRegistration 
   }
   if (!swRegistrationPromise) {
     swRegistrationPromise = navigator.serviceWorker
-      .register('/sw.js', { scope: '/' })
-      .then((reg) => reg)
+      .register('/sw.js', { scope: '/', updateViaCache: 'none' })
+      .then((reg) => {
+        reg.update().catch(() => {});
+        return reg;
+      })
       .catch((err) => {
         console.warn('[PWA] Service Worker registration notice:', err);
         swRegistrationPromise = null;
@@ -485,7 +488,7 @@ export async function unsubscribeAdminPushClient(): Promise<{ ok: boolean }> {
 
 export async function updateAdminNotificationSettings(
   patch: Partial<NotificationSettings>
-): Promise<{ ok: boolean; settings?: NotificationSettings }> {
+): Promise<{ ok: boolean; settings?: NotificationSettings; error?: string }> {
   try {
     const res = await fetch('/api/admin/notifications/settings', {
       method: 'PUT',
@@ -496,17 +499,20 @@ export async function updateAdminNotificationSettings(
     const data = await res.json().catch(() => ({}));
     if (res.status === 401 || res.status === 403) {
       notifySessionExpired();
-      return { ok: false };
+      return { ok: false, error: data.error || 'انتهت جلسة مركز التحكم.' };
     }
-    return { ok: Boolean(data.success), settings: data.settings };
+    if (!res.ok || !data.success) {
+      return { ok: false, error: data.error || 'تعذر حفظ تفضيلات الإشعارات على الخادم.' };
+    }
+    return { ok: true, settings: data.settings };
   } catch {
-    return { ok: false };
+    return { ok: false, error: 'تعذر الاتصال بالخادم.' };
   }
 }
 
 export async function markAdminNotificationsReadClient(
   ids?: string[]
-): Promise<{ ok: boolean; unreadCount?: number }> {
+): Promise<{ ok: boolean; unreadCount?: number; error?: string }> {
   try {
     const res = await fetch('/api/admin/notifications/read', {
       method: 'POST',
@@ -517,28 +523,35 @@ export async function markAdminNotificationsReadClient(
     const data = await res.json().catch(() => ({}));
     if (res.status === 401 || res.status === 403) {
       notifySessionExpired();
-      return { ok: false };
+      return { ok: false, error: data.error || 'انتهت جلسة مركز التحكم.' };
     }
-    return { ok: Boolean(data.success), unreadCount: Number(data.unreadCount ?? 0) };
+    if (!res.ok || !data.success) {
+      return { ok: false, error: data.error || 'تعذر تحديث حالة قراءة الإشعارات.' };
+    }
+    return { ok: true, unreadCount: Number(data.unreadCount ?? 0) };
   } catch {
-    return { ok: false };
+    return { ok: false, error: 'تعذر الاتصال بالخادم.' };
   }
 }
 
-export async function clearAdminNotificationsClient(): Promise<{ ok: boolean }> {
+export async function clearAdminNotificationsClient(): Promise<{ ok: boolean; error?: string }> {
   try {
     const res = await fetch('/api/admin/notifications', {
       method: 'DELETE',
       credentials: 'same-origin',
       headers: getAdminAuthHeaders(),
     });
+    const data = await res.json().catch(() => ({}));
     if (res.status === 401 || res.status === 403) {
       notifySessionExpired();
-      return { ok: false };
+      return { ok: false, error: data.error || 'انتهت جلسة مركز التحكم.' };
     }
-    return { ok: res.ok };
+    if (!res.ok || !data.success) {
+      return { ok: false, error: data.error || 'تعذر مسح سجل الإشعارات.' };
+    }
+    return { ok: true };
   } catch {
-    return { ok: false };
+    return { ok: false, error: 'تعذر الاتصال بالخادم.' };
   }
 }
 
@@ -584,8 +597,8 @@ export async function showLocalNotificationFallback(event: AdminNotificationEven
     if (reg) {
       await reg.showNotification(event.title, {
         body: event.body,
-        icon: '/pwa-192x192.png',
-        badge: '/pwa-192x192.png',
+        icon: '/pwa-any-192-v2.png',
+        badge: '/pwa-any-192-v2.png',
         tag: `echox-${event.id}`,
         dir: 'rtl',
         lang: 'ar',

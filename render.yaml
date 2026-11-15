@@ -13,3 +13,9 @@ services:
         value: https://echox-store.onrender.com
       - key: ECHOX_SECURITY_HMAC_SECRET
         generateValue: true
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false

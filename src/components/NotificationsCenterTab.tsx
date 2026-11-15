@@ -146,7 +146,7 @@ export const NotificationsCenterTab: React.FC<NotificationsCenterTabProps> = ({
       onEventsUpdated({ settings: res.settings });
     } else {
       onEventsUpdated({ settings });
-      setFeedback({ type: 'error', text: 'تعذر حفظ تفضيل الإشعارات.' });
+      setFeedback({ type: 'error', text: res.error || 'تعذر حفظ تفضيل الإشعارات.' });
     }
     setSavingSettingsKey(null);
   };
@@ -158,6 +158,8 @@ export const NotificationsCenterTab: React.FC<NotificationsCenterTabProps> = ({
         events: events.map((ev) => ({ ...ev, read: true })),
         unreadCount: 0,
       });
+    } else {
+      setFeedback({ type: 'error', text: res.error || 'تعذر تحديث حالة التنبيهات على الخادم.' });
     }
   };
 
@@ -170,6 +172,8 @@ export const NotificationsCenterTab: React.FC<NotificationsCenterTabProps> = ({
         events: events.map((ev) => (ev.id === id ? { ...ev, read: true } : ev)),
         unreadCount: res.unreadCount ?? Math.max(0, unreadCount - 1),
       });
+    } else {
+      setFeedback({ type: 'error', text: res.error || 'تعذر تعليم التنبيه كمقروء على الخادم.' });
     }
   };
 
@@ -179,6 +183,8 @@ export const NotificationsCenterTab: React.FC<NotificationsCenterTabProps> = ({
     if (res.ok) {
       onEventsUpdated({ events: [], unreadCount: 0 });
       setFeedback({ type: 'info', text: 'تم مسح سجل إشعارات مركز التحكم.' });
+    } else {
+      setFeedback({ type: 'error', text: res.error || 'تعذر مسح سجل الإشعارات على الخادم.' });
     }
   };
 

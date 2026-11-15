@@ -4,7 +4,8 @@ import {
   getDataFilePath,
   isCloudPersistenceEnabled,
   loadCloudJson,
-  pushCloudJson,
+  saveCloudJson,
+  savePersistentJson,
 } from './cloudPersistence';
 import {
   INITIAL_COMPANIES,
@@ -138,19 +139,16 @@ function loadStoreState(): StorefrontDatabase {
     console.warn('[StoreEngine] Notice loading store state, using initial data:', err);
   }
   const initial = createInitialStoreState();
-  saveStoreState(initial, false);
+  try {
+    atomicWriteJsonSync(STORE_DATA_FILE, initial);
+  } catch (err) {
+    console.warn('[StoreEngine] Notice bootstrapping store state file:', err);
+  }
   return initial;
 }
 
-function saveStoreState(state: StorefrontDatabase, pushCloud = true): void {
-  try {
-    atomicWriteJsonSync(STORE_DATA_FILE, state);
-  } catch (err) {
-    console.error('[StoreEngine] Error persisting store state:', err);
-  }
-  if (pushCloud) {
-    pushCloudJson(CLOUD_STORE_KEY, state);
-  }
+async function persistStoreState(state: StorefrontDatabase) {
+  return savePersistentJson(CLOUD_STORE_KEY, STORE_DATA_FILE, state);
 }
 
 let storeDb: StorefrontDatabase = loadStoreState();
@@ -166,7 +164,10 @@ export async function hydrateStoreStateFromCloud(): Promise<void> {
       console.warn('[StoreEngine] Notice syncing cloud store snapshot to disk:', err);
     }
   } else {
-    pushCloudJson(CLOUD_STORE_KEY, storeDb);
+    const seedRes = await saveCloudJson(CLOUD_STORE_KEY, storeDb);
+    if (!seedRes.ok) {
+      console.warn('[StoreEngine] Initial cloud seed notice:', seedRes.error);
+    }
   }
 }
 
@@ -189,15 +190,17 @@ export function getAdminStoreState() {
   };
 }
 
-export function updateAdminStoreState(patch: Partial<StorefrontDatabase>): {
+export async function updateAdminStoreState(patch: Partial<StorefrontDatabase>): Promise<{
   ok: boolean;
+  statusCode?: number;
   error?: string;
   state: ReturnType<typeof getAdminStoreState>;
-} {
+}> {
   if (!patch || typeof patch !== 'object') {
-    return { ok: false, error: 'بيانات غير صالحة.', state: getAdminStoreState() };
+    return { ok: false, statusCode: 400, error: 'بيانات غير صالحة.', state: getAdminStoreState() };
   }
 
+  const prev = storeDb;
   const next: StorefrontDatabase = {
     ...storeDb,
     updatedAt: new Date().toISOString(),
@@ -243,24 +246,34 @@ export function updateAdminStoreState(patch: Partial<StorefrontDatabase>): {
     next.inquiries = patch.inquiries;
   }
 
+  const persisted = await persistStoreState(next);
+  if (!persisted.ok) {
+    storeDb = prev;
+    return {
+      ok: false,
+      statusCode: 503,
+      error: persisted.error || 'تعذر تأكيد الحفظ الدائم في قاعدة البيانات.',
+      state: getAdminStoreState(),
+    };
+  }
+
   storeDb = next;
-  saveStoreState(storeDb, true);
   return { ok: true, state: getAdminStoreState() };
 }
 
-export function addPublicProductReview(
+export async function addPublicProductReview(
   productId: string,
   reviewInput: { authorName: string; rating: number; comment: string; verifiedPurchase?: boolean }
-): { ok: boolean; error?: string; product?: Product } {
+): Promise<{ ok: boolean; statusCode?: number; error?: string; product?: Product }> {
   const prod = storeDb.products.find((p) => p.id === productId);
   if (!prod) {
-    return { ok: false, error: 'المنتج غير موجود.' };
+    return { ok: false, statusCode: 404, error: 'المنتج غير موجود.' };
   }
   const rating = Math.min(5, Math.max(1, Math.round(Number(reviewInput.rating) || 5)));
   const comment = (reviewInput.comment || '').trim().slice(0, 1000);
   const authorName = (reviewInput.authorName || '').trim().slice(0, 80) || 'حريف ECHOX';
   if (!comment) {
-    return { ok: false, error: 'يرجى كتابة نص التقييم.' };
+    return { ok: false, statusCode: 400, error: 'يرجى كتابة نص التقييم.' };
   }
   const newRev = {
     id: `rev_${Date.now()}`,
@@ -281,22 +294,26 @@ export function addPublicProductReview(
     rating: newRating,
     reviewCount: updatedReviews.length,
   };
-  storeDb = {
+  const next: StorefrontDatabase = {
     ...storeDb,
     products: storeDb.products.map((p) => (p.id === productId ? updatedProduct : p)),
     updatedAt: new Date().toISOString(),
   };
-  saveStoreState(storeDb, true);
+  const persisted = await persistStoreState(next);
+  if (!persisted.ok) {
+    return { ok: false, statusCode: 503, error: persisted.error || 'تعذر حفظ التقييم على الخادم.' };
+  }
+  storeDb = next;
   return { ok: true, product: updatedProduct };
 }
 
-export function addPublicInquiry(input: {
+export async function addPublicInquiry(input: {
   senderName: string;
   email: string;
   phone: string;
   subject: string;
   message: string;
-}): { ok: boolean; error?: string; inquiry?: ContactInquiry } {
+}): Promise<{ ok: boolean; statusCode?: number; error?: string; inquiry?: ContactInquiry }> {
   const senderName = (input.senderName || '').trim().slice(0, 120);
   const phone = (input.phone || '').trim().slice(0, 30);
   const email = (input.email || '').trim().slice(0, 120);
@@ -304,7 +321,7 @@ export function addPublicInquiry(input: {
   const message = (input.message || '').trim().slice(0, 2000);
 
   if (!senderName || !phone || !message) {
-    return { ok: false, error: 'يرجى إكمال الاسم ورقم الهاتف ونص الرسالة.' };
+    return { ok: false, statusCode: 400, error: 'يرجى إكمال الاسم ورقم الهاتف ونص الرسالة.' };
   }
 
   const inquiry: ContactInquiry = {
@@ -318,27 +335,32 @@ export function addPublicInquiry(input: {
     read: false,
   };
 
-  storeDb = {
+  const next: StorefrontDatabase = {
     ...storeDb,
     inquiries: [inquiry, ...storeDb.inquiries].slice(0, 200),
     updatedAt: new Date().toISOString(),
   };
-  saveStoreState(storeDb, true);
+  const persisted = await persistStoreState(next);
+  if (!persisted.ok) {
+    return { ok: false, statusCode: 503, error: persisted.error || 'تعذر حفظ الاستفسار على الخادم.' };
+  }
+  storeDb = next;
   return { ok: true, inquiry };
 }
 
-export function adminReplyToInquiry(inquiryId: string, reply: string): {
+export async function adminReplyToInquiry(inquiryId: string, reply: string): Promise<{
   ok: boolean;
+  statusCode?: number;
   error?: string;
   inquiry?: ContactInquiry;
-} {
+}> {
   const cleanReply = (reply || '').trim().slice(0, 2000);
   if (!cleanReply) {
-    return { ok: false, error: 'يرجى كتابة نص الرد.' };
+    return { ok: false, statusCode: 400, error: 'يرجى كتابة نص الرد.' };
   }
   const existing = storeDb.inquiries.find((i) => i.id === inquiryId);
   if (!existing) {
-    return { ok: false, error: 'الرسالة غير موجودة.' };
+    return { ok: false, statusCode: 404, error: 'الرسالة غير موجودة.' };
   }
   const updated: ContactInquiry = {
     ...existing,
@@ -346,11 +368,15 @@ export function adminReplyToInquiry(inquiryId: string, reply: string): {
     reply: cleanReply,
     repliedAt: new Date().toISOString(),
   };
-  storeDb = {
+  const next: StorefrontDatabase = {
     ...storeDb,
     inquiries: storeDb.inquiries.map((i) => (i.id === inquiryId ? updated : i)),
     updatedAt: new Date().toISOString(),
   };
-  saveStoreState(storeDb, true);
+  const persisted = await persistStoreState(next);
+  if (!persisted.ok) {
+    return { ok: false, statusCode: 503, error: persisted.error || 'تعذر حفظ الرد في قاعدة البيانات.' };
+  }
+  storeDb = next;
   return { ok: true, inquiry: updated };
 }
