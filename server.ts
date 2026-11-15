@@ -50,6 +50,7 @@ import {
   getPersistenceStatus,
   isCloudPersistenceEnabled,
   loadCloudJson,
+  probeCloudPersistenceConnection,
   saveCloudJson,
   savePersistentJson,
 } from './server/cloudPersistence';
@@ -2220,7 +2221,7 @@ app.put('/api/admin/store/state', async (req: Request, res: Response) => {
     if (newest) {
       emitPublicStoreNotification({
         tag: 'منتج جديد',
-        title: `🆕 منتج جديد في ECHOX Store: ${newest.name.ar}`,
+        title: `🆕 منتج جديد في ECHOX Store: ${newest.name?.ar || newest.name?.en || newest.name?.fr || 'منتج جديد'}`,
         body: `متوفر الآن بسعر ${newest.price} د.ت — اطلبه الآن مع التوصيل لكافة الولايات.`,
         url: `/?product=${encodeURIComponent(newest.id)}`,
       });
@@ -2403,9 +2404,10 @@ async function startServer() {
   // Synchronize authoritative payment catalog with persisted store products on startup
   await syncCatalogSnapshot(getPublicStoreState().products, { replaceAll: true, allowEphemeral: true });
 
+  await probeCloudPersistenceConnection().catch(() => null);
   const persistence = getPersistenceStatus();
   console.log(
-    `[Persistence] Provider=${persistence.provider} | Durable=${persistence.durable} | Cloud=${persistence.cloudEnabled} | DataDir=${persistence.dataDir}`
+    `[Persistence] Provider=${persistence.provider} | Durable=${persistence.durable} | Cloud=${persistence.cloudEnabled} | DataDir=${persistence.dataDir}${persistence.lastCloudError ? ` | Notice=${persistence.lastCloudError}` : ''}`
   );
 
   const isProd = process.env.NODE_ENV === 'production';

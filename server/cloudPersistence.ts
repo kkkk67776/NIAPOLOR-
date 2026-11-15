@@ -80,54 +80,317 @@ function readAppletFirebaseConfig(): { projectId: string; databaseId: string } {
   };
 }
 
-function parseServiceAccountFromEnv(): ServiceAccountCreds | null {
-  const { projectId: fallbackProject } = readAppletFirebaseConfig();
+let cachedEnvCredsSignature = '';
+let cachedEnvCredsResult: ServiceAccountCreds | null = null;
+let cachedEnvCredsError: string | null = null;
 
-  const rawJsonEnv = (process.env.FIREBASE_SERVICE_ACCOUNT_JSON || '').trim();
-  if (rawJsonEnv) {
-    try {
-      const jsonText = rawJsonEnv.startsWith('{')
-        ? rawJsonEnv
-        : Buffer.from(rawJsonEnv, 'base64').toString('utf-8');
-      const parsed = JSON.parse(jsonText) as Record<string, string>;
-      if (parsed.client_email && parsed.private_key) {
-        return {
-          clientEmail: parsed.client_email.trim(),
-          privateKey: parsed.private_key.replace(/\\n/g, '\n'),
-          projectId: (parsed.project_id || fallbackProject).trim(),
-          tokenUri: (parsed.token_uri || 'https://oauth2.googleapis.com/token').trim(),
-        };
+function stripBomAndZeroWidth(input: string): string {
+  return input
+    .replace(/^\uFEFF/, '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2018\u2019]/g, "'")
+    .trim();
+}
+
+function unwrapOuterQuotes(input: string): string {
+  let current = input.trim();
+  for (let i = 0; i < 3; i++) {
+    if (
+      (current.startsWith("'") && current.endsWith("'") && current.length >= 2) ||
+      (current.startsWith('"') && current.endsWith('"') && current.length >= 2) ||
+      (current.startsWith('`') && current.endsWith('`') && current.length >= 2)
+    ) {
+      // Only unwrap outer quotes if inner looks like JSON, key=val, or base64 (or double-encoded JSON string)
+      const inner = current.slice(1, -1).trim();
+      if (current.startsWith('"') && inner.startsWith('{\\"')) {
+        // Double-encoded JSON string will be parsed cleanly by JSON.parse directly
+        break;
       }
-    } catch (err) {
-      lastCloudError = `FIREBASE_SERVICE_ACCOUNT_JSON غير صالح: ${(err as Error)?.message || err}`;
+      current = inner;
+    } else {
+      break;
+    }
+  }
+  return current;
+}
+
+function escapeLiteralNewlinesInsideJsonStrings(raw: string): string {
+  let out = '';
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if (escaped) {
+      out += ch;
+      escaped = false;
+      continue;
+    }
+    if (ch === '\\') {
+      out += ch;
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      out += ch;
+      continue;
+    }
+    if (inString && ch === '\n') {
+      out += '\\n';
+      continue;
+    }
+    if (inString && ch === '\r') {
+      continue;
+    }
+    out += ch;
+  }
+  return out;
+}
+
+function tryParseJsonObject(raw: string): Record<string, unknown> | null {
+  const attempts: string[] = [];
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  attempts.push(trimmed);
+
+  // Repair smart curly quotes pasted from mobile / rich-text notes
+  const normalizedQuotes = trimmed
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2018\u2019]/g, "'");
+  if (normalizedQuotes !== trimmed) {
+    attempts.push(normalizedQuotes);
+  }
+
+  // Handle escaped JSON snippet (e.g. {\"type\":\"service_account\",...})
+  if (trimmed.includes('\\"')) {
+    attempts.push(
+      trimmed
+        .replace(/\\"/g, '"')
+        .replace(/\\\\n/g, '\\n')
+    );
+  }
+
+  // Handle multi-line JSON pasted with literal raw newlines inside string values
+  if (trimmed.startsWith('{') && /[\r\n]/.test(trimmed)) {
+    attempts.push(escapeLiteralNewlinesInsideJsonStrings(trimmed));
+  }
+
+  for (const candidate of attempts) {
+    try {
+      let parsed: unknown = JSON.parse(candidate);
+      // Handle double-encoded JSON string: "\"{\\\"type\\\":...}\""
+      if (typeof parsed === 'string') {
+        const inner = parsed.trim();
+        if (inner.startsWith('{')) {
+          parsed = JSON.parse(inner);
+        }
+      }
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // try next repair strategy
+    }
+  }
+  return null;
+}
+
+function tryDecodeBase64JsonObject(raw: string): Record<string, unknown> | null {
+  const withoutDataUri = raw.replace(/^data:[^;]+;base64,/i, '').trim();
+  const compact = withoutDataUri.replace(/\s+/g, '');
+  // Must strictly look like Base64 / Base64URL and never plain JSON starting with quotes/braces
+  if (!compact || compact.length < 24 || !/^[A-Za-z0-9+/_=-]+$/.test(compact)) {
+    return null;
+  }
+  try {
+    const standardB64 = compact.replace(/-/g, '+').replace(/_/g, '/');
+    const decoded = Buffer.from(standardB64, 'base64').toString('utf-8');
+    // Reject binary corruption (replacement characters \uFFFD)
+    if (!decoded || decoded.includes('\uFFFD')) {
+      return null;
+    }
+    const cleanDecoded = stripBomAndZeroWidth(decoded);
+    if (!cleanDecoded.startsWith('{')) {
+      return null;
+    }
+    return tryParseJsonObject(cleanDecoded);
+  } catch {
+    return null;
+  }
+}
+
+function normalizePrivateKeyPem(rawKey: string): string | null {
+  let key = stripBomAndZeroWidth(rawKey);
+  key = unwrapOuterQuotes(key);
+  if (!key) return null;
+
+  // Support Base64-encoded PEM if user encoded only FIREBASE_PRIVATE_KEY
+  if (!key.includes('BEGIN ') && /^[A-Za-z0-9+/_=\s-]+$/.test(key) && key.length > 64) {
+    try {
+      const decoded = Buffer.from(key.replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf-8');
+      if (decoded.includes('BEGIN ') && !decoded.includes('\uFFFD')) {
+        key = decoded;
+      }
+    } catch {
+      // ignore
     }
   }
 
-  const clientEmail = (process.env.FIREBASE_CLIENT_EMAIL || '').trim();
-  const privateKey = (process.env.FIREBASE_PRIVATE_KEY || '').trim();
-  if (clientEmail && privateKey) {
-    return {
-      clientEmail,
-      privateKey: privateKey.replace(/\\n/g, '\n'),
-      projectId: fallbackProject,
-      tokenUri: 'https://oauth2.googleapis.com/token',
-    };
+  key = key
+    .replace(/\\\\r\\\\n/g, '\n')
+    .replace(/\\\\n/g, '\n')
+    .replace(/\\r\\n/g, '\n')
+    .replace(/\\n/g, '\n')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .trim();
+
+  // Re-wrap flattened PEM headers if spaces replaced newlines
+  const pemMatch = key.match(
+    /^(-----BEGIN [A-Z0-9 ]+-----)([\s\S]+)(-----END [A-Z0-9 ]+-----)$/
+  );
+  if (pemMatch) {
+    const header = pemMatch[1];
+    const body = pemMatch[2].replace(/\s+/g, '');
+    const footer = pemMatch[3];
+    const wrappedBody = body.match(/.{1,64}/g)?.join('\n') || body;
+    key = `${header}\n${wrappedBody}\n${footer}\n`;
   }
 
-  const credPath = (process.env.GOOGLE_APPLICATION_CREDENTIALS || '').trim();
+  try {
+    crypto.createPrivateKey({ key, format: 'pem' });
+    return key;
+  } catch {
+    return null;
+  }
+}
+
+function sanitizeSafeErrorMessage(err: unknown, prefix: string): string {
+  const raw = (err as Error)?.message || String(err || '');
+  // Never leak private keys, bearer tokens, or email fragments into UI/logs
+  const cleaned = raw
+    .replace(/-----BEGIN[\s\S]*?-----END[^-\n]*-----/g, '[REDACTED_PEM]')
+    .replace(/ya29\.[A-Za-z0-9\-_]+/g, '[REDACTED_TOKEN]')
+    .replace(/[A-Za-z0-9+/]{40,}={0,2}/g, '[REDACTED_B64]')
+    .slice(0, 180);
+  return `${prefix}: ${cleaned}`;
+}
+
+function parseServiceAccountFromEnv(): ServiceAccountCreds | null {
+  const { projectId: fallbackProject } = readAppletFirebaseConfig();
+  const rawJsonEnvInput = process.env.FIREBASE_SERVICE_ACCOUNT_JSON || '';
+  const rawEmailInput = process.env.FIREBASE_CLIENT_EMAIL || '';
+  const rawKeyInput = process.env.FIREBASE_PRIVATE_KEY || '';
+  const rawCredPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || '';
+
+  const signature = `${fallbackProject}|${rawJsonEnvInput}|${rawEmailInput}|${rawKeyInput}|${rawCredPath}`;
+  if (signature === cachedEnvCredsSignature) {
+    if (cachedEnvCredsError && !lastCloudError) {
+      lastCloudError = cachedEnvCredsError;
+    }
+    return cachedEnvCredsResult;
+  }
+
+  cachedEnvCredsSignature = signature;
+  cachedEnvCredsResult = null;
+  cachedEnvCredsError = null;
+
+  const setParseFailure = (safeMsg: string) => {
+    cachedEnvCredsError = safeMsg;
+    lastCloudError = safeMsg;
+  };
+
+  let rawJsonEnv = stripBomAndZeroWidth(rawJsonEnvInput);
+  if (rawJsonEnv) {
+    // Strip accidental "FIREBASE_SERVICE_ACCOUNT_JSON=" prefix if copied from .env
+    rawJsonEnv = rawJsonEnv.replace(/^(?:export\s+)?FIREBASE_SERVICE_ACCOUNT_JSON\s*=\s*/i, '').trim();
+    rawJsonEnv = unwrapOuterQuotes(rawJsonEnv);
+
+    let parsed: Record<string, unknown> | null = null;
+    if (rawJsonEnv.startsWith('{') || rawJsonEnv.startsWith('"{\\"')) {
+      parsed = tryParseJsonObject(rawJsonEnv);
+    } else {
+      parsed = tryDecodeBase64JsonObject(rawJsonEnv) || tryParseJsonObject(rawJsonEnv);
+    }
+
+    if (!parsed) {
+      setParseFailure(
+        'FIREBASE_SERVICE_ACCOUNT_JSON غير صالح: تأكد من لصق محتوى ملف Service Account JSON كاملاً في Render بدون علامات اقتباس مفردة أو مزدوجة خارجية وبدون ترميز تالف.'
+      );
+    } else {
+      const clientEmail = typeof parsed.client_email === 'string' ? parsed.client_email.trim() : '';
+      const rawPrivateKey = typeof parsed.private_key === 'string' ? parsed.private_key : '';
+      if (!clientEmail || !clientEmail.includes('@') || !rawPrivateKey) {
+        setParseFailure(
+          'FIREBASE_SERVICE_ACCOUNT_JSON يفتقد حقول الخدمة المطلوبة (client_email أو private_key). تأكد أنه ملف Service Account وليس إعدادات Web App.'
+        );
+      } else {
+        const normalizedKey = normalizePrivateKeyPem(rawPrivateKey);
+        if (!normalizedKey) {
+          setParseFailure(
+            'حقل private_key داخل FIREBASE_SERVICE_ACCOUNT_JSON غير صالح أو مبتور. أعد نسخ ملف JSON الأصلي كاملاً من Firebase Console.'
+          );
+        } else {
+          const creds: ServiceAccountCreds = {
+            clientEmail,
+            privateKey: normalizedKey,
+            projectId:
+              (typeof parsed.project_id === 'string' && parsed.project_id.trim()) || fallbackProject,
+            tokenUri:
+              (typeof parsed.token_uri === 'string' && parsed.token_uri.trim()) ||
+              'https://oauth2.googleapis.com/token',
+          };
+          cachedEnvCredsResult = creds;
+          if (lastCloudError && lastCloudError.includes('FIREBASE_SERVICE_ACCOUNT_JSON')) {
+            lastCloudError = null;
+          }
+          return creds;
+        }
+      }
+    }
+  }
+
+  const clientEmail = unwrapOuterQuotes(stripBomAndZeroWidth(rawEmailInput));
+  const rawPrivateKey = stripBomAndZeroWidth(rawKeyInput);
+  if (clientEmail && rawPrivateKey) {
+    const normalizedKey = normalizePrivateKeyPem(rawPrivateKey);
+    if (!normalizedKey) {
+      setParseFailure('FIREBASE_PRIVATE_KEY غير صالح أو مبتور (تأكد من تضمين BEGIN/END PRIVATE KEY كاملاً).');
+    } else {
+      const creds: ServiceAccountCreds = {
+        clientEmail,
+        privateKey: normalizedKey,
+        projectId: fallbackProject,
+        tokenUri: 'https://oauth2.googleapis.com/token',
+      };
+      cachedEnvCredsResult = creds;
+      lastCloudError = null;
+      return creds;
+    }
+  }
+
+  const credPath = rawCredPath.trim();
   if (credPath && fs.existsSync(credPath)) {
     try {
       const parsed = JSON.parse(fs.readFileSync(credPath, 'utf-8')) as Record<string, string>;
       if (parsed.client_email && parsed.private_key) {
-        return {
-          clientEmail: parsed.client_email.trim(),
-          privateKey: parsed.private_key.replace(/\\n/g, '\n'),
-          projectId: (parsed.project_id || fallbackProject).trim(),
-          tokenUri: (parsed.token_uri || 'https://oauth2.googleapis.com/token').trim(),
-        };
+        const normalizedKey = normalizePrivateKeyPem(parsed.private_key);
+        if (normalizedKey) {
+          const creds: ServiceAccountCreds = {
+            clientEmail: parsed.client_email.trim(),
+            privateKey: normalizedKey,
+            projectId: (parsed.project_id || fallbackProject).trim(),
+            tokenUri: (parsed.token_uri || 'https://oauth2.googleapis.com/token').trim(),
+          };
+          cachedEnvCredsResult = creds;
+          lastCloudError = null;
+          return creds;
+        }
       }
     } catch {
-      // ignore invalid file
+      // ignore invalid credentials file path
     }
   }
 
@@ -183,8 +446,9 @@ export function getPersistenceStatus(): PersistenceStatus {
   const hasDataDir = Boolean((process.env.DATA_DIR || '').trim());
   const isRender = isRenderRuntime();
   const { projectId, databaseId } = readAppletFirebaseConfig();
+  const serviceAccount = parseServiceAccountFromEnv();
 
-  if (isFirestoreServiceAccountEnabled()) {
+  if (serviceAccount) {
     return {
       provider: 'firestore',
       storageMode: 'firestore+local-atomic',
@@ -192,7 +456,7 @@ export function getPersistenceStatus(): PersistenceStatus {
       durable: true,
       isRender,
       dataDir: getDataDir(),
-      firestoreProjectId: projectId,
+      firestoreProjectId: serviceAccount.projectId || projectId,
       firestoreDatabaseId: databaseId,
       lastCloudWriteAt,
       lastCloudError,
@@ -348,11 +612,22 @@ async function loadFromFirestore<T>(key: string): Promise<T | null> {
       headers: { Authorization: `Bearer ${token}` },
       signal: controller.signal,
     });
-    if (res.status === 404) return null;
+    if (res.status === 404) {
+      // Distinguish "document not created yet" from "Firestore database does not exist"
+      const bodyText = await res.text().catch(() => '');
+      if (/database .* does not exist/i.test(bodyText)) {
+        lastCloudError = 'قاعدة بيانات Firestore المحددة غير موجودة أو المعرّف (firestoreDatabaseId) غير مطابق.';
+        console.error(`[CloudPersistence][Firestore] Database mismatch for ${key}`);
+      } else {
+        lastCloudError = null;
+      }
+      return null;
+    }
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
       throw new Error(`Firestore read HTTP ${res.status}: ${errText.slice(0, 160)}`);
     }
+    lastCloudError = null;
     const doc = (await res.json()) as {
       fields?: { payloadJson?: { stringValue?: string } };
     };
@@ -360,16 +635,59 @@ async function loadFromFirestore<T>(key: string): Promise<T | null> {
     if (!raw || typeof raw !== 'string') return null;
     return JSON.parse(raw) as T;
   } catch (err) {
-    console.warn(`[CloudPersistence][Firestore] Notice loading ${key}:`, (err as Error)?.message || err);
+    lastCloudError = sanitizeSafeErrorMessage(err, 'فشل الاتصال أو صلاحيات القراءة في Firestore');
+    console.warn(`[CloudPersistence][Firestore] Notice loading ${key}:`, lastCloudError);
     return null;
   } finally {
     clearTimeout(timer);
   }
 }
 
+export async function probeCloudPersistenceConnection(): Promise<{
+  ok: boolean;
+  provider: PersistenceProvider;
+  error?: string;
+}> {
+  const status = getPersistenceStatus();
+  if (status.provider === 'firestore') {
+    const creds = parseServiceAccountFromEnv();
+    if (!creds) {
+      return { ok: false, provider: status.provider, error: lastCloudError || 'Invalid service account.' };
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 7000);
+    try {
+      const token = await getFirestoreAccessToken(creds);
+      const url = buildFirestoreDocUrl(creds, 'echox:central_security_config');
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${token}` },
+        signal: controller.signal,
+      });
+      if (res.ok) {
+        lastCloudError = null;
+        return { ok: true, provider: 'firestore' };
+      }
+      const errText = await res.text().catch(() => '');
+      if (res.status === 404 && !/database .* does not exist/i.test(errText)) {
+        lastCloudError = null;
+        return { ok: true, provider: 'firestore' };
+      }
+      throw new Error(`HTTP ${res.status}: ${errText.slice(0, 140)}`);
+    } catch (err) {
+      const msg = sanitizeSafeErrorMessage(err, 'فشل فحص اتصال Firestore أو صلاحيات حساب الخدمة');
+      lastCloudError = msg;
+      return { ok: false, provider: 'firestore', error: msg };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return { ok: status.durable, provider: status.provider, error: lastCloudError || undefined };
+}
+
 async function saveToFirestore(key: string, data: unknown): Promise<{ ok: boolean; error?: string }> {
   const creds = parseServiceAccountFromEnv();
-  if (!creds) return { ok: false, error: 'Firestore service account credentials not configured.' };
+  if (!creds) return { ok: false, error: lastCloudError || 'Firestore service account credentials not configured.' };
 
   const serialized = JSON.stringify(data);
   if (Buffer.byteLength(serialized, 'utf8') > 950_000) {
@@ -408,7 +726,7 @@ async function saveToFirestore(key: string, data: unknown): Promise<{ ok: boolea
     lastCloudError = null;
     return { ok: true };
   } catch (err) {
-    const msg = `فشل الحفظ في قاعدة بيانات Firestore: ${(err as Error)?.message || String(err)}`;
+    const msg = sanitizeSafeErrorMessage(err, 'فشل الحفظ في قاعدة بيانات Firestore');
     lastCloudError = msg;
     console.error(`[CloudPersistence][Firestore] Write error for ${key}:`, msg);
     return { ok: false, error: msg };
