@@ -35,7 +35,7 @@ const firebaseConfig = {
   projectId: getSafeConfig(import.meta.env.VITE_FIREBASE_PROJECT_ID, firebaseConfigJson.projectId, "gen-lang-client-0499444627"),
   storageBucket: getSafeConfig(import.meta.env.VITE_FIREBASE_STORAGE_BUCKET, firebaseConfigJson.storageBucket, "gen-lang-client-0499444627.firebasestorage.app"),
   messagingSenderId: getSafeConfig(import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID, firebaseConfigJson.messagingSenderId, "977393142069"),
-  appId: getSafeConfig(import.meta.env.VITE_FIREBASE_APP_ID, firebaseConfigJson.appId, "1:977393142069:web:9fc62b5cd1bbd0488f247c"),
+  appId: getSafeConfig(import.meta.env.VITE_FIREBASE_APP_ID, firebaseConfigJson.appId, "1:977393142069:web:52b2370312330f528f247c"),
 };
 
 console.log('[Firebase Init] Initializing Firebase with Project:', firebaseConfig.projectId, '| Database ID:', firestoreDatabaseId);
