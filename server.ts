@@ -32,6 +32,7 @@ import {
   getActiveCatalogProductIds,
   isBankIdentityChange,
   isEnvLockedBank,
+  syncPaymentDbIfStale,
 } from './server/paymentEngine';
 import {
   getPublicStoreState,
@@ -41,6 +42,7 @@ import {
   addPublicInquiry,
   adminReplyToInquiry,
   hydrateStoreStateFromCloud,
+  syncStoreStateIfStale,
 } from './server/storeEngine';
 import {
   atomicWriteJsonSync,
@@ -51,6 +53,7 @@ import {
   isCloudPersistenceEnabled,
   loadCloudJson,
   probeCloudPersistenceConnection,
+  pushCloudJson,
   saveCloudJson,
   savePersistentJson,
 } from './server/cloudPersistence';
@@ -63,6 +66,7 @@ import {
   listAdminChatThreads,
   markThreadReadByOwner,
   recordCustomerChatExchange,
+  syncChatDbIfStale,
   updateChatConfig,
 } from './server/chatEngine';
 import {
@@ -78,6 +82,7 @@ import {
   sendTestAdminPush,
   subscribeAdminPush,
   subscribePublicPush,
+  syncNotificationsIfStale,
   unsubscribeAdminPush,
   unsubscribePublicPush,
   updateNotificationSettings,
@@ -228,9 +233,24 @@ app.use((req: Request, res: Response, next) => {
   next();
 });
 
+app.use('/api', async (_req, _res, next) => {
+  try {
+    await ensureServerInitialized();
+  } catch (err) {
+    console.warn('[Init] Middleware initialization notice:', err);
+  }
+  next();
+});
+
+app.use('/api/admin', async (_req, _res, next) => {
+  await syncCentralSecurityIfStale(true).catch(() => null);
+  next();
+});
+
 // Infrastructure health check endpoint
-app.get('/api/health', (_req: Request, res: Response) => {
+app.get('/api/health', async (_req: Request, res: Response) => {
   res.setHeader('Cache-Control', 'no-store');
+  await syncCentralSecurityIfStale().catch(() => null);
   const persistence = getPersistenceStatus();
   return res.json({
     status: 'ok',
@@ -400,6 +420,37 @@ interface RateLimitBucket {
 }
 
 const ipRateBuckets = new Map<string, RateLimitBucket>();
+const CLOUD_RATE_LIMITS_KEY = 'echox:security_rate_limits';
+
+function syncRateLimitsToCloudAsync(): void {
+  if (!isCloudPersistenceEnabled()) return;
+  const now = Date.now();
+  const active: Record<string, RateLimitBucket> = {};
+  ipRateBuckets.forEach((b, k) => {
+    if (b.lockoutUntil > now || (b.attempts > 0 && now - b.lastSeen < 15 * 60 * 1000)) {
+      active[k] = b;
+    }
+  });
+  pushCloudJson(CLOUD_RATE_LIMITS_KEY, { buckets: active, updatedAt: new Date().toISOString() });
+}
+
+async function hydrateRateLimitsFromCloud(): Promise<void> {
+  if (!isCloudPersistenceEnabled()) return;
+  try {
+    const remote = await loadCloudJson<{ buckets?: Record<string, RateLimitBucket> }>(CLOUD_RATE_LIMITS_KEY);
+    if (remote?.buckets && typeof remote.buckets === 'object') {
+      const now = Date.now();
+      Object.entries(remote.buckets).forEach(([k, b]) => {
+        if (b && (b.lockoutUntil > now || (b.attempts > 0 && now - b.lastSeen < 15 * 60 * 1000))) {
+          const cur = ipRateBuckets.get(k);
+          if (!cur || b.lastSeen > cur.lastSeen) {
+            ipRateBuckets.set(k, b);
+          }
+        }
+      });
+    }
+  } catch {}
+}
 
 function getBucket(namespace: string, ip: string): RateLimitBucket {
   const key = `${namespace}:${ip}`;
@@ -434,12 +485,14 @@ function recordFailedAttempt(namespace: string, ip: string, maxAttempts: number,
   bucket.attempts += 1;
   if (bucket.attempts >= maxAttempts) {
     bucket.lockoutUntil = Date.now() + lockoutMs;
+    syncRateLimitsToCloudAsync();
     return {
       locked: true,
       remainingSeconds: Math.ceil(lockoutMs / 1000),
       attemptsLeft: 0,
     };
   }
+  syncRateLimitsToCloudAsync();
   return {
     locked: false,
     remainingSeconds: 0,
@@ -448,7 +501,9 @@ function recordFailedAttempt(namespace: string, ip: string, maxAttempts: number,
 }
 
 function resetBucket(namespace: string, ip: string): void {
-  ipRateBuckets.delete(`${namespace}:${ip}`);
+  if (ipRateBuckets.delete(`${namespace}:${ip}`)) {
+    syncRateLimitsToCloudAsync();
+  }
 }
 
 function checkSlidingWindowLimit(namespace: string, ip: string, maxRequests: number, windowMs: number): { allowed: boolean; retryAfterSeconds: number } {
@@ -614,17 +669,21 @@ interface CentralSecurityConfig {
 }
 
 let centralSecurityConfig: CentralSecurityConfig | null = null;
+let lastSecurityCloudSyncAt = 0;
 
 async function persistCentralSecurityConfig(
   cfg: CentralSecurityConfig,
   allowEphemeral = false
 ) {
-  return savePersistentJson(CLOUD_SECURITY_KEY, CENTRAL_SECURITY_FILE, cfg, { allowEphemeral });
+  const res = await savePersistentJson(CLOUD_SECURITY_KEY, CENTRAL_SECURITY_FILE, cfg, { allowEphemeral });
+  if (res.ok) lastSecurityCloudSyncAt = Date.now();
+  return res;
 }
 
 async function initCentralSecurityConfig(): Promise<CentralSecurityConfig> {
   if (isCloudPersistenceEnabled()) {
     const cloudCfg = await loadCloudJson<CentralSecurityConfig>(CLOUD_SECURITY_KEY);
+    lastSecurityCloudSyncAt = Date.now();
     if (cloudCfg && cloudCfg.access_code_argon2 && cloudCfg.pin_argon2) {
       centralSecurityConfig = cloudCfg;
       try {
@@ -659,6 +718,23 @@ async function initCentralSecurityConfig(): Promise<CentralSecurityConfig> {
   await persistCentralSecurityConfig(config, true);
   centralSecurityConfig = config;
   return config;
+}
+
+async function syncCentralSecurityIfStale(force = false, maxAgeMs = 3000): Promise<void> {
+  if (!centralSecurityConfig) {
+    await initCentralSecurityConfig();
+    return;
+  }
+  if (!isCloudPersistenceEnabled()) return;
+  if (!force && Date.now() - lastSecurityCloudSyncAt < maxAgeMs) return;
+  const cloudCfg = await loadCloudJson<CentralSecurityConfig>(CLOUD_SECURITY_KEY);
+  lastSecurityCloudSyncAt = Date.now();
+  if (cloudCfg && cloudCfg.access_code_argon2 && cloudCfg.pin_argon2) {
+    centralSecurityConfig = cloudCfg;
+    try {
+      atomicWriteJsonSync(CENTRAL_SECURITY_FILE, cloudCfg);
+    } catch {}
+  }
 }
 
 function parseCookies(req: Request): Record<string, string> {
@@ -715,7 +791,8 @@ app.post('/api/createOwnerSession', async (req: Request, res: Response) => {
 });
 
 // 4. owner/me (Route Guard Server Verification)
-app.get('/api/owner/me', (req: Request, res: Response) => {
+app.get('/api/owner/me', async (req: Request, res: Response) => {
+  await syncCentralSecurityIfStale(true).catch(() => {});
   const session = resolveSessionRecord(req);
   if (!session || session.email !== OWNER_EMAIL || !session.owner) {
     return res.status(401).json({ authenticated: false, error: 'جلسة منتهية أو غير مصرح بها.' });
@@ -1245,9 +1322,7 @@ app.post('/api/security/verifyAccessCode', async (req: Request, res: Response) =
       });
     }
 
-    if (!centralSecurityConfig) {
-      await initCentralSecurityConfig();
-    }
+    await syncCentralSecurityIfStale(true);
 
     const { code } = req.body || {};
     if (!code || typeof code !== 'string') {
@@ -1333,9 +1408,7 @@ app.post('/api/security/verifyPin', async (req: Request, res: Response) => {
       });
     }
 
-    if (!centralSecurityConfig) {
-      await initCentralSecurityConfig();
-    }
+    await syncCentralSecurityIfStale(true);
 
     const { pin } = req.body || {};
     if (!pin || typeof pin !== 'string') {
@@ -1655,7 +1728,8 @@ function requireAdminAuth(req: Request, res: Response): { email: string } | null
 }
 
 // 1. Public Payment Config (never exposes server secrets)
-app.get('/api/payments/config', (_req: Request, res: Response) => {
+app.get('/api/payments/config', async (_req: Request, res: Response) => {
+  await syncPaymentDbIfStale(false).catch(() => {});
   return res.json(getPublicPaymentConfig());
 });
 
@@ -1839,11 +1913,12 @@ app.get('/api/payments/verify-return', async (req: Request, res: Response) => {
 });
 
 // 7. Scoped Vendor Financial Ledger View (Strict Vendor Data Isolation)
-app.get('/api/vendor/:vendorId/financials', (req: Request, res: Response) => {
+app.get('/api/vendor/:vendorId/financials', async (req: Request, res: Response) => {
   const vendorId = String(req.params.vendorId || '').trim();
   if (!vendorId) {
     return res.status(400).json({ error: 'معرف البائع مطلوب.' });
   }
+  await syncPaymentDbIfStale(false).catch(() => {});
   return res.json(getScopedVendorFinancials(vendorId));
 });
 
@@ -1883,8 +1958,9 @@ app.post('/api/support/contribute', async (req: Request, res: Response) => {
 });
 
 // 9. Admin Panel Payment Management Routes (Protected by requireAdminAuth)
-app.get('/api/admin/payments/config', (req: Request, res: Response) => {
+app.get('/api/admin/payments/config', async (req: Request, res: Response) => {
   if (!requireAdminAuth(req, res)) return;
+  await syncPaymentDbIfStale(true).catch(() => {});
   return res.json(getPublicPaymentConfig());
 });
 
@@ -1968,8 +2044,9 @@ app.post('/api/admin/payments/test-gateway', async (req: Request, res: Response)
   return res.json(check);
 });
 
-app.get('/api/admin/payments/overview', (req: Request, res: Response) => {
+app.get('/api/admin/payments/overview', async (req: Request, res: Response) => {
   if (!requireAdminAuth(req, res)) return;
+  await syncPaymentDbIfStale(true).catch(() => {});
   return res.json(getAdminPaymentOverview());
 });
 
@@ -2018,13 +2095,14 @@ app.post('/api/admin/support/verify', async (req: Request, res: Response) => {
   return res.json({ success: true, supportTransaction: result.supportTransaction });
 });
 
-app.get('/api/payments/track/:code', (req: Request, res: Response) => {
+app.get('/api/payments/track/:code', async (req: Request, res: Response) => {
   const ip = getClientIp(req);
   const rate = checkSlidingWindowLimit('trackOrder', ip, 40, 60 * 1000);
   if (!rate.allowed) {
     return res.status(429).json({ success: false, error: `تم تجاوز الحد المسموح، يرجى الانتظار ${rate.retryAfterSeconds} ثانية.` });
   }
   res.setHeader('Cache-Control', 'no-store');
+  await syncPaymentDbIfStale(true).catch(() => {});
   const result = trackPublicOrder(req.params.code);
   if (!result.ok) {
     return res.status(result.statusCode || 404).json({ success: false, error: result.error });
@@ -2032,9 +2110,10 @@ app.get('/api/payments/track/:code', (req: Request, res: Response) => {
   return res.json({ success: true, order: result.order });
 });
 
-app.get('/api/admin/orders', (req: Request, res: Response) => {
+app.get('/api/admin/orders', async (req: Request, res: Response) => {
   if (!requireAdminAuth(req, res)) return;
   res.setHeader('Cache-Control', 'no-store');
+  await syncPaymentDbIfStale(true).catch(() => {});
   const overview = getAdminPaymentOverview();
   return res.json({ success: true, orders: overview.orders || [] });
 });
@@ -2077,11 +2156,13 @@ app.delete('/api/admin/orders/:orderId', async (req: Request, res: Response) => 
 });
 
 // 10. Live Customer Support Chat Routes
-app.get('/api/chat/config', (_req: Request, res: Response) => {
+app.get('/api/chat/config', async (_req: Request, res: Response) => {
+  await syncChatDbIfStale(false).catch(() => {});
   return res.json({ success: true, config: getPublicChatConfig() });
 });
 
-app.get('/api/chat/session/:sessionId', (req: Request, res: Response) => {
+app.get('/api/chat/session/:sessionId', async (req: Request, res: Response) => {
+  await syncChatDbIfStale(false).catch(() => {});
   const thread = getChatThread(req.params.sessionId);
   return res.json({ success: true, thread });
 });
@@ -2118,8 +2199,9 @@ app.post('/api/chat/session/:sessionId/message', async (req: Request, res: Respo
   return res.json({ success: true, thread: result.thread });
 });
 
-app.get('/api/admin/chat/threads', (req: Request, res: Response) => {
+app.get('/api/admin/chat/threads', async (req: Request, res: Response) => {
   if (!requireAdminAuth(req, res)) return;
+  await syncChatDbIfStale(true).catch(() => {});
   return res.json({ success: true, ...listAdminChatThreads() });
 });
 
@@ -2166,17 +2248,19 @@ app.put('/api/admin/chat/config', async (req: Request, res: Response) => {
 // ==========================================
 // 🏪 SERVER-SYNCHRONIZED STOREFRONT STATE APIS
 // ==========================================
-app.get('/api/store/state', (_req: Request, res: Response) => {
+app.get('/api/store/state', async (_req: Request, res: Response) => {
   res.setHeader('Cache-Control', 'no-store');
+  await syncStoreStateIfStale(false).catch(() => {});
   return res.json({
     success: true,
     ...getPublicStoreState(),
   });
 });
 
-app.get('/api/admin/store/state', (req: Request, res: Response) => {
+app.get('/api/admin/store/state', async (req: Request, res: Response) => {
   if (!requireAdminAuth(req, res)) return;
   res.setHeader('Cache-Control', 'no-store');
+  await syncStoreStateIfStale(true).catch(() => {});
   return res.json({
     success: true,
     ...getAdminStoreState(),
@@ -2297,8 +2381,9 @@ app.post('/api/admin/store/inquiries/:inquiryId/reply', async (req: Request, res
 // ==========================================
 // 🔔 MOBILE WEB PUSH & CONTROL ROOM NOTIFICATIONS
 // ==========================================
-app.get('/api/notifications/public', (_req: Request, res: Response) => {
+app.get('/api/notifications/public', async (_req: Request, res: Response) => {
   res.setHeader('Cache-Control', 'no-store');
+  await syncNotificationsIfStale(false).catch(() => {});
   return res.json({
     success: true,
     vapidPublicKey: getVapidPublicKey(),
@@ -2322,9 +2407,10 @@ app.post('/api/notifications/public/unsubscribe', async (req: Request, res: Resp
   return res.json({ success: true });
 });
 
-app.get('/api/admin/notifications', (req: Request, res: Response) => {
+app.get('/api/admin/notifications', async (req: Request, res: Response) => {
   if (!requireAdminAuth(req, res)) return;
   res.setHeader('Cache-Control', 'no-store');
+  await syncNotificationsIfStale(true).catch(() => {});
   const since = typeof req.query.since === 'string' ? req.query.since : undefined;
   return res.json({
     success: true,
@@ -2384,22 +2470,34 @@ app.post('/api/admin/notifications/test', async (req: Request, res: Response) =>
   return res.json({ success: true, ...result });
 });
 
-// --- PRODUCTION STATIC OR VITE DEV MIDDLEWARE ---
+// --- SERVER INITIALIZATION & EXPORT (Supports both Render/Dev standalone & Serverless Node adapters) ---
+let initPromise: Promise<void> | null = null;
+
+async function ensureServerInitialized(): Promise<void> {
+  if (!initPromise) {
+    initPromise = (async () => {
+      // Hydrate shared HMAC secret FIRST so signed sessions and sealed bank hashes stay consistent
+      await initHmacSecretFromCloud().catch((err) => console.error('[Security] HMAC cloud init notice:', err));
+      process.env.ECHOX_RUNTIME_HMAC_SECRET = runtimeHmacSecret;
+
+      await Promise.all([
+        initCentralSecurityConfig().catch((err) => console.error('[Security] Init notice:', err)),
+        hydrateRateLimitsFromCloud().catch((err) => console.error('[Security] Rate limit hydrate notice:', err)),
+        hydrateOwnerLockConfigFromCloud().catch((err) => console.error('[LockConfig] Cloud hydrate notice:', err)),
+        hydratePaymentDbFromCloud().catch((err) => console.error('[PaymentEngine] Cloud hydrate notice:', err)),
+        hydrateChatDbFromCloud().catch((err) => console.error('[ChatEngine] Cloud hydrate notice:', err)),
+        hydrateStoreStateFromCloud().catch((err) => console.error('[StoreEngine] Cloud hydrate notice:', err)),
+        hydrateNotificationsFromCloud().catch((err) => console.error('[Notifications] Cloud hydrate notice:', err)),
+      ]);
+
+      ensureInitialBankSealAfterHydrate();
+    })();
+  }
+  return initPromise;
+}
+
 async function startServer() {
-  // Hydrate shared HMAC secret FIRST so signed sessions and sealed bank hashes stay consistent
-  await initHmacSecretFromCloud().catch((err) => console.error('[Security] HMAC cloud init notice:', err));
-  process.env.ECHOX_RUNTIME_HMAC_SECRET = runtimeHmacSecret;
-
-  await Promise.all([
-    initCentralSecurityConfig().catch((err) => console.error('[Security] Init notice:', err)),
-    hydrateOwnerLockConfigFromCloud().catch((err) => console.error('[LockConfig] Cloud hydrate notice:', err)),
-    hydratePaymentDbFromCloud().catch((err) => console.error('[PaymentEngine] Cloud hydrate notice:', err)),
-    hydrateChatDbFromCloud().catch((err) => console.error('[ChatEngine] Cloud hydrate notice:', err)),
-    hydrateStoreStateFromCloud().catch((err) => console.error('[StoreEngine] Cloud hydrate notice:', err)),
-    hydrateNotificationsFromCloud().catch((err) => console.error('[Notifications] Cloud hydrate notice:', err)),
-  ]);
-
-  ensureInitialBankSealAfterHydrate();
+  await ensureServerInitialized();
 
   // Synchronize authoritative payment catalog with persisted store products on startup
   await syncCatalogSnapshot(getPublicStoreState().products, { replaceAll: true, allowEphemeral: true });
@@ -2472,4 +2570,15 @@ async function startServer() {
   });
 }
 
-startServer();
+const isServerlessRuntime = Boolean(
+  process.env.VERCEL === '1' ||
+    process.env.AWS_LAMBDA_FUNCTION_NAME ||
+    process.env.ECHOX_DISABLE_LISTEN === '1'
+);
+
+if (!isServerlessRuntime) {
+  startServer();
+}
+
+export { app, ensureServerInitialized };
+export default app;

@@ -1,6 +1,9 @@
+import { EdgeEnv, isEdgePersistenceConfigured } from './_lib/firestoreEdge';
+import { getEdgeActiveProductIds } from './_lib/storeEdge';
+
 interface PagesFunctionContext {
   request: Request;
-  env: Record<string, string | undefined>;
+  env: EdgeEnv;
 }
 
 const DEFAULT_RENDER_BACKEND = 'https://echox-store.onrender.com';
@@ -30,7 +33,16 @@ function escapeXml(str: string): string {
     .replace(/'/g, '&apos;');
 }
 
-async function fetchLiveProductIds(backendOrigin: string): Promise<string[]> {
+async function fetchLiveProductIds(env: EdgeEnv, backendOrigin: string): Promise<string[]> {
+  if (isEdgePersistenceConfigured(env)) {
+    try {
+      const edgeIds = await getEdgeActiveProductIds(env);
+      if (edgeIds && edgeIds.length > 0) return edgeIds;
+    } catch {
+      // fall through to backend origin or fallback
+    }
+  }
+
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 2500);
@@ -48,7 +60,7 @@ async function fetchLiveProductIds(backendOrigin: string): Promise<string[]> {
       if (ids.length > 0) return ids;
     }
   } catch {
-    // Fallback cleanly if Render backend is waking up
+    // Fallback cleanly if backend is waking up
   }
   return FALLBACK_PRODUCT_IDS;
 }
@@ -59,7 +71,7 @@ export async function onRequestGet(context: PagesFunctionContext): Promise<Respo
   const backendOrigin = (context.env.BACKEND_ORIGIN || DEFAULT_RENDER_BACKEND).trim().replace(/\/$/, '');
   const lastmod = new Date().toISOString().slice(0, 10);
 
-  const productIds = await fetchLiveProductIds(backendOrigin);
+  const productIds = await fetchLiveProductIds(context.env, backendOrigin);
   const productRoutes = productIds.map((id) => ({
     loc: `/?product=${encodeURIComponent(id)}`,
     changefreq: 'weekly',

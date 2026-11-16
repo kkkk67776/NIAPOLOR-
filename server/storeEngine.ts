@@ -152,10 +152,12 @@ async function persistStoreState(state: StorefrontDatabase) {
 }
 
 let storeDb: StorefrontDatabase = loadStoreState();
+let lastStoreCloudSyncAt = 0;
 
 export async function hydrateStoreStateFromCloud(): Promise<void> {
   if (!isCloudPersistenceEnabled()) return;
   const remote = await loadCloudJson<Partial<StorefrontDatabase>>(CLOUD_STORE_KEY);
+  lastStoreCloudSyncAt = Date.now();
   if (remote && typeof remote === 'object') {
     storeDb = mergeStoreState(remote);
     try {
@@ -168,6 +170,19 @@ export async function hydrateStoreStateFromCloud(): Promise<void> {
     if (!seedRes.ok) {
       console.warn('[StoreEngine] Initial cloud seed notice:', seedRes.error);
     }
+  }
+}
+
+export async function syncStoreStateIfStale(force = false, maxAgeMs = 2500): Promise<void> {
+  if (!isCloudPersistenceEnabled()) return;
+  if (!force && Date.now() - lastStoreCloudSyncAt < maxAgeMs) return;
+  const remote = await loadCloudJson<Partial<StorefrontDatabase>>(CLOUD_STORE_KEY);
+  lastStoreCloudSyncAt = Date.now();
+  if (remote && typeof remote === 'object') {
+    storeDb = mergeStoreState(remote);
+    try {
+      atomicWriteJsonSync(STORE_DATA_FILE, storeDb);
+    } catch {}
   }
 }
 
@@ -196,6 +211,7 @@ export async function updateAdminStoreState(patch: Partial<StorefrontDatabase>):
   error?: string;
   state: ReturnType<typeof getAdminStoreState>;
 }> {
+  await syncStoreStateIfStale(true);
   if (!patch || typeof patch !== 'object') {
     return { ok: false, statusCode: 400, error: 'بيانات غير صالحة.', state: getAdminStoreState() };
   }
@@ -258,6 +274,7 @@ export async function updateAdminStoreState(patch: Partial<StorefrontDatabase>):
   }
 
   storeDb = next;
+  lastStoreCloudSyncAt = Date.now();
   return { ok: true, state: getAdminStoreState() };
 }
 
@@ -265,6 +282,7 @@ export async function addPublicProductReview(
   productId: string,
   reviewInput: { authorName: string; rating: number; comment: string; verifiedPurchase?: boolean }
 ): Promise<{ ok: boolean; statusCode?: number; error?: string; product?: Product }> {
+  await syncStoreStateIfStale(true);
   const prod = storeDb.products.find((p) => p.id === productId);
   if (!prod) {
     return { ok: false, statusCode: 404, error: 'المنتج غير موجود.' };
@@ -304,6 +322,7 @@ export async function addPublicProductReview(
     return { ok: false, statusCode: 503, error: persisted.error || 'تعذر حفظ التقييم على الخادم.' };
   }
   storeDb = next;
+  lastStoreCloudSyncAt = Date.now();
   return { ok: true, product: updatedProduct };
 }
 
@@ -314,6 +333,7 @@ export async function addPublicInquiry(input: {
   subject: string;
   message: string;
 }): Promise<{ ok: boolean; statusCode?: number; error?: string; inquiry?: ContactInquiry }> {
+  await syncStoreStateIfStale(true);
   const senderName = (input.senderName || '').trim().slice(0, 120);
   const phone = (input.phone || '').trim().slice(0, 30);
   const email = (input.email || '').trim().slice(0, 120);
@@ -345,6 +365,7 @@ export async function addPublicInquiry(input: {
     return { ok: false, statusCode: 503, error: persisted.error || 'تعذر حفظ الاستفسار على الخادم.' };
   }
   storeDb = next;
+  lastStoreCloudSyncAt = Date.now();
   return { ok: true, inquiry };
 }
 
@@ -354,6 +375,7 @@ export async function adminReplyToInquiry(inquiryId: string, reply: string): Pro
   error?: string;
   inquiry?: ContactInquiry;
 }> {
+  await syncStoreStateIfStale(true);
   const cleanReply = (reply || '').trim().slice(0, 2000);
   if (!cleanReply) {
     return { ok: false, statusCode: 400, error: 'يرجى كتابة نص الرد.' };
@@ -378,5 +400,6 @@ export async function adminReplyToInquiry(inquiryId: string, reply: string): Pro
     return { ok: false, statusCode: 503, error: persisted.error || 'تعذر حفظ الرد في قاعدة البيانات.' };
   }
   storeDb = next;
+  lastStoreCloudSyncAt = Date.now();
   return { ok: true, inquiry: updated };
 }

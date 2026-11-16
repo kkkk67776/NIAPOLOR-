@@ -173,7 +173,7 @@ export default function Header(_props: HeaderProps) {
             className="flex items-center gap-2 cursor-pointer group"
           >
             <img 
-              src="/assets/images/echox-logo.webp" 
+              src={isDarkMode ? '/assets/aistudio/file_000000003d20821088780f690ee97fed_f8e408f8.png' : '/assets/images/echox-logo.webp'} 
               alt="ECHOX Store" 
               className="w-8 h-8 rounded-full object-contain border border-[#FF6B00]/30 group-hover:scale-105 transition-transform"
             />
@@ -374,7 +374,7 @@ export default function Header(_props: HeaderProps) {
               <div className="flex items-center justify-between mb-6 pb-4 border-b border-[#E2E8F0] dark:border-slate-800">
                 <div className="flex items-center gap-2">
                   <img 
-                    src="/assets/images/echox-logo.webp" 
+                    src={isDarkMode ? '/assets/aistudio/file_000000003d20821088780f690ee97fed_f8e408f8.png' : '/assets/images/echox-logo.webp'} 
                     alt="ECHOX Store" 
                     className="w-7 h-7 rounded-full object-contain border border-[#FF6B00]/30"
                   />

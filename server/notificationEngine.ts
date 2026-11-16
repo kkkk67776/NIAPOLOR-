@@ -81,6 +81,7 @@ const DEFAULT_SETTINGS: NotificationSettings = {
 };
 
 let dbCache: NotificationsDb | null = null;
+let lastNotifCloudSyncAt = 0;
 const securityDebounceMap = new Map<string, number>();
 
 function configureWebPush(keys: { publicKey: string; privateKey: string }) {
@@ -162,6 +163,7 @@ function loadDb(): NotificationsDb {
 function saveDbFireAndForget(next: NotificationsDb): void {
   next.updatedAt = new Date().toISOString();
   dbCache = next;
+  lastNotifCloudSyncAt = Date.now();
   try {
     atomicWriteJsonSync(DB_FILE, next);
   } catch (err) {
@@ -182,6 +184,7 @@ async function saveDbStrict(next: NotificationsDb): Promise<{ ok: boolean; error
     return { ok: false, error: persisted.error };
   }
   dbCache = candidate;
+  lastNotifCloudSyncAt = Date.now();
   return { ok: true };
 }
 
@@ -190,6 +193,7 @@ export async function hydrateNotificationsFromCloud(): Promise<void> {
   if (!isCloudPersistenceEnabled()) return;
   try {
     const cloud = await loadCloudJson<Partial<NotificationsDb>>(CLOUD_KEY);
+    lastNotifCloudSyncAt = Date.now();
     if (cloud && typeof cloud === 'object') {
       const normalized = normalizeDb(cloud);
       dbCache = normalized;
@@ -205,6 +209,26 @@ export async function hydrateNotificationsFromCloud(): Promise<void> {
   }
 }
 
+export async function syncNotificationsIfStale(force = false, maxAgeMs = 2500): Promise<void> {
+  loadDb();
+  if (!isCloudPersistenceEnabled()) return;
+  if (!force && Date.now() - lastNotifCloudSyncAt < maxAgeMs) return;
+  try {
+    const cloud = await loadCloudJson<Partial<NotificationsDb>>(CLOUD_KEY);
+    lastNotifCloudSyncAt = Date.now();
+    if (cloud && typeof cloud === 'object') {
+      const normalized = normalizeDb(cloud);
+      dbCache = normalized;
+      configureWebPush(normalized.vapidKeys);
+      try {
+        atomicWriteJsonSync(DB_FILE, normalized);
+      } catch {}
+    }
+  } catch (err) {
+    console.warn('[Notifications] Cloud sync notice:', err);
+  }
+}
+
 export function getVapidPublicKey(): string {
   return loadDb().vapidKeys.publicKey;
 }
@@ -216,6 +240,7 @@ export function getNotificationSettings(): NotificationSettings {
 export async function updateNotificationSettings(
   patch: Partial<NotificationSettings>
 ): Promise<{ ok: boolean; statusCode?: number; settings?: NotificationSettings; error?: string }> {
+  await syncNotificationsIfStale(true);
   const db = loadDb();
   const nextSettings: NotificationSettings = {
     notifyOrders: typeof patch.notifyOrders === 'boolean' ? patch.notifyOrders : db.settings.notifyOrders,
@@ -263,6 +288,7 @@ export async function subscribeAdminPush(
     return { ok: false, statusCode: 400, subscriptionsCount: loadDb().adminSubscriptions.length, error: 'بيانات الاشتراك بالإشعارات غير صالحة.' };
   }
 
+  await syncNotificationsIfStale(true);
   const db = loadDb();
   const id = crypto.createHash('sha256').update(rawSub.endpoint).digest('hex').slice(0, 16);
   const cleanLabel = String(deviceLabel || 'جهاز المالك').slice(0, 80);
@@ -302,6 +328,7 @@ export async function subscribeAdminPush(
 }
 
 export async function unsubscribeAdminPush(endpoint: string): Promise<{ ok: boolean; statusCode?: number; subscriptionsCount: number; error?: string }> {
+  await syncNotificationsIfStale(true);
   const db = loadDb();
   if (endpoint) {
     const nextSubs = db.adminSubscriptions.filter((s) => s.endpoint !== endpoint);
@@ -318,6 +345,7 @@ export async function subscribePublicPush(rawSub: any): Promise<{ ok: boolean; s
   if (!isValidPushSubscription(rawSub)) {
     return { ok: false, statusCode: 400, error: 'بيانات اشتراك الإشعارات غير صالحة.' };
   }
+  await syncNotificationsIfStale(true);
   const db = loadDb();
   const id = crypto.createHash('sha256').update(rawSub.endpoint).digest('hex').slice(0, 16);
   const existingIdx = db.publicSubscriptions.findIndex((s) => s.endpoint === rawSub.endpoint);
@@ -345,6 +373,7 @@ export async function subscribePublicPush(rawSub: any): Promise<{ ok: boolean; s
 }
 
 export async function unsubscribePublicPush(endpoint: string): Promise<{ ok: boolean; statusCode?: number; error?: string }> {
+  await syncNotificationsIfStale(true);
   const db = loadDb();
   if (endpoint) {
     const nextSubs = db.publicSubscriptions.filter((s) => s.endpoint !== endpoint);
@@ -568,6 +597,7 @@ export async function markAdminNotificationsRead(ids?: string[]): Promise<{
   unreadCount: number;
   error?: string;
 }> {
+  await syncNotificationsIfStale(true);
   const db = loadDb();
   let updated = 0;
   const nextEvents = db.events.map((e) => {
@@ -594,6 +624,7 @@ export async function markAdminNotificationsRead(ids?: string[]): Promise<{
 }
 
 export async function clearAdminNotifications(): Promise<{ ok: boolean; statusCode?: number; error?: string }> {
+  await syncNotificationsIfStale(true);
   const db = loadDb();
   const saved = await saveDbStrict({ ...db, events: [] });
   if (!saved.ok) {

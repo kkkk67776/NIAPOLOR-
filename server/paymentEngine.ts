@@ -240,10 +240,12 @@ async function saveDatabaseStrict(snapshotBeforeMutation?: string): Promise<{
       error: res.error || 'تعذر تأكيد الحفظ الدائم لبيانات الدفع والطلبات.',
     };
   }
+  lastPaymentCloudSyncAt = Date.now();
   return { ok: true };
 }
 
 function saveDatabaseBestEffort(): void {
+  lastPaymentCloudSyncAt = Date.now();
   void savePersistentJson(CLOUD_PAYMENT_KEY, PAYMENT_DATA_FILE, paymentDb, { allowEphemeral: true }).catch(
     (err) => {
       console.warn('[PaymentEngine] Best-effort telemetry save notice:', err);
@@ -252,6 +254,7 @@ function saveDatabaseBestEffort(): void {
 }
 
 let paymentDb: PaymentSystemDatabase = loadDatabase();
+let lastPaymentCloudSyncAt = 0;
 
 let cachedFallbackSecret: string | null = null;
 
@@ -347,6 +350,7 @@ export async function hydratePaymentDbFromCloud(): Promise<void> {
     return;
   }
   const remote = await loadCloudJson<Partial<PaymentSystemDatabase>>(CLOUD_PAYMENT_KEY);
+  lastPaymentCloudSyncAt = Date.now();
   if (remote && typeof remote === 'object') {
     paymentDb = mergeDatabaseSnapshot(remote);
     const legacySeal = computeBankSealWithKey(paymentDb.config.methods.bank_transfer, 'echox-bank-local-seal-v1');
@@ -368,6 +372,19 @@ export async function hydratePaymentDbFromCloud(): Promise<void> {
     if (!seedRes.ok) {
       console.warn('[PaymentEngine] Initial cloud seed notice:', seedRes.error);
     }
+  }
+}
+
+export async function syncPaymentDbIfStale(force = false, maxAgeMs = 2500): Promise<void> {
+  if (!isCloudPersistenceEnabled()) return;
+  if (!force && Date.now() - lastPaymentCloudSyncAt < maxAgeMs) return;
+  const remote = await loadCloudJson<Partial<PaymentSystemDatabase>>(CLOUD_PAYMENT_KEY);
+  lastPaymentCloudSyncAt = Date.now();
+  if (remote && typeof remote === 'object') {
+    paymentDb = mergeDatabaseSnapshot(remote);
+    try {
+      atomicWriteJsonSync(PAYMENT_DATA_FILE, paymentDb);
+    } catch {}
   }
 }
 
@@ -555,6 +572,7 @@ export async function syncCatalogSnapshot(
   options?: { replaceAll?: boolean; allowEphemeral?: boolean }
 ): Promise<{ ok: boolean; statusCode?: number; error?: string }> {
   if (!Array.isArray(products)) return { ok: true };
+  await syncPaymentDbIfStale(true);
   const snapshot = JSON.stringify(paymentDb);
   const seenIds = new Set<string>();
   for (const p of products) {
@@ -599,6 +617,7 @@ export async function updateAdminPaymentConfig(payload: {
     webhookSecret?: string;
   };
 }): Promise<{ ok: boolean; statusCode?: number; error?: string; config?: PaymentSystemPublicConfig }> {
+  await syncPaymentDbIfStale(true);
   const snapshot = JSON.stringify(paymentDb);
   const cfg = paymentDb.config;
 
@@ -695,6 +714,7 @@ export async function updateAdminPaymentConfig(payload: {
 }
 
 export async function testOnlineGatewayConnection(): Promise<{ ok: boolean; message: string; checkedAt: string }> {
+  await syncPaymentDbIfStale(true);
   const checkedAt = new Date().toISOString();
   const provider = paymentDb.config.methods.online_payment.provider || 'konnect';
   const mode = paymentDb.config.methods.online_payment.mode || 'sandbox';
@@ -1070,6 +1090,7 @@ export async function processServerCheckout(input: ServerCheckoutInput): Promise
   transaction?: PaymentTransaction;
   paymentUrl?: string;
 }> {
+  await syncPaymentDbIfStale(true);
   if (!input || !Array.isArray(input.items) || input.items.length === 0) {
     return { ok: false, statusCode: 400, error: 'السلة فارغة — لا يمكن إتمام الطلب.' };
   }
@@ -1433,6 +1454,7 @@ export async function submitBankTransferProof(payload: {
   notes?: string;
   isAdmin?: boolean;
 }): Promise<{ ok: boolean; statusCode?: number; error?: string; order?: Order }> {
+  await syncPaymentDbIfStale(true);
   const cleanTrack = (payload.trackingNumber || '').trim().toUpperCase();
   const order = paymentDb.orders.find(o => o.trackingNumber.toUpperCase() === cleanTrack);
   if (!order) {
@@ -1510,6 +1532,7 @@ export async function adminVerifyPayment(payload: {
   reason?: string;
   adminEmail?: string;
 }): Promise<{ ok: boolean; statusCode?: number; error?: string; order?: Order; transaction?: PaymentTransaction }> {
+  await syncPaymentDbIfStale(true);
   const txn = paymentDb.transactions.find(
     t => (payload.transactionId && t.id === payload.transactionId) || (payload.orderId && t.orderId === payload.orderId)
   );
@@ -1579,6 +1602,7 @@ export async function adminProcessRefundOrCancel(payload: {
   action: 'refund' | 'cancel' | 'reject_refund';
   reason?: string;
 }): Promise<{ ok: boolean; statusCode?: number; error?: string; order?: Order }> {
+  await syncPaymentDbIfStale(true);
   const order = paymentDb.orders.find(o => o.id === payload.orderId || o.trackingNumber === payload.orderId);
   if (!order) {
     return { ok: false, statusCode: 404, error: 'الطلب غير موجود بالنظام المالي.' };
@@ -1686,6 +1710,7 @@ export async function createCustomerRefundOrCancelRequest(payload: {
   customerPhone?: string;
   reason: string;
 }): Promise<{ ok: boolean; statusCode?: number; error?: string; refundRequest?: RefundRequest }> {
+  await syncPaymentDbIfStale(true);
   const cleanTrack = (payload.trackingNumber || '').trim().toUpperCase();
   const order = paymentDb.orders.find(o => o.trackingNumber.toUpperCase() === cleanTrack);
   if (!order) {
@@ -1734,6 +1759,7 @@ export async function adminUpdateOrderStatus(orderId: string, status: OrderStatu
   error?: string;
   order?: Order;
 }> {
+  await syncPaymentDbIfStale(true);
   const order = paymentDb.orders.find(o => o.id === orderId || o.trackingNumber === orderId);
   if (!order) {
     return { ok: false, statusCode: 404, error: 'الطلب غير موجود.' };
@@ -1816,6 +1842,7 @@ export async function adminSettleVendorPayout(vendorId: string, settlementNote?:
   settledCount: number;
   settledTotal: number;
 }> {
+  await syncPaymentDbIfStale(true);
   const snapshot = JSON.stringify(paymentDb);
   const now = new Date().toISOString();
   let settledCount = 0;
@@ -1897,6 +1924,7 @@ export async function adminCreateManualOrder(input: Partial<Order>): Promise<{
   error?: string;
   order?: Order;
 }> {
+  await syncPaymentDbIfStale(true);
   const customerName = (input.customerName || '').trim();
   const customerPhone = (input.customerPhone || '').trim();
   const amount = round3(Number(input.totalAmount ?? input.subtotal ?? 0));
@@ -1993,6 +2021,7 @@ export async function adminDeleteOrder(orderId: string): Promise<{
   statusCode?: number;
   error?: string;
 }> {
+  await syncPaymentDbIfStale(true);
   const cleanId = (orderId || '').trim();
   const target = paymentDb.orders.find(o => o.id === cleanId || o.trackingNumber === cleanId);
   if (!target) {
@@ -2127,6 +2156,7 @@ export async function handlePaymentWebhook(payload: {
   rawBodyText?: string;
   query?: Record<string, any>;
 }): Promise<{ ok: boolean; statusCode: number; message: string; idempotentDuplicate?: boolean }> {
+  await syncPaymentDbIfStale(true);
   const { provider, method = 'POST', signatureHeader, rawBody, rawBodyText, query } = payload;
   const secrets = paymentDb.config.secrets;
   const mergedInput = {
@@ -2289,6 +2319,7 @@ export async function verifyGatewayReturn(params: {
   supportTransaction?: SupportTransaction;
   error?: string;
 }> {
+  await syncPaymentDbIfStale(true);
   const cleanTrack = (params.tracking || '').trim().toUpperCase();
   const cleanPayRef = (params.paymentRef || '').trim();
 
@@ -2386,6 +2417,7 @@ export async function createSupportContribution(payload: {
   transferProof?: Partial<TransferProof>;
   origin?: string;
 }): Promise<{ ok: boolean; statusCode?: number; error?: string; supportTransaction?: SupportTransaction; paymentUrl?: string }> {
+  await syncPaymentDbIfStale(true);
   const amt = round3(Number(payload.amount));
   if (!Number.isFinite(amt) || amt <= 0 || amt > 50000) {
     return { ok: false, statusCode: 400, error: 'يرجى إدخال مبلغ دعم صالح (بين 0.5 و 50,000).' };
@@ -2497,6 +2529,7 @@ export async function adminVerifySupportTransaction(id: string, action: 'approve
   error?: string;
   supportTransaction?: SupportTransaction;
 }> {
+  await syncPaymentDbIfStale(true);
   const sup = paymentDb.supportTransactions.find(s => s.id === id || s.supportReference === id);
   if (!sup) {
     return { ok: false, statusCode: 404, error: 'معاملة الدعم غير موجودة.' };

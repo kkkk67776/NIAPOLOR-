@@ -75,8 +75,7 @@ export const FloatingActions: React.FC = () => {
           className="relative flex items-center gap-2 px-3.5 py-2.5 rounded-full bg-[#0F172A] dark:bg-[#1E293B] hover:bg-[#FF6B00] dark:hover:bg-[#FF6B00] text-white shadow-xl hover:scale-105 active:scale-95 transition-all border border-slate-700/50 cursor-pointer"
         >
           <div className="relative">
-            {hubOpen ? <X className="w-5 h-5 text-white" /> : <Headphones className="w-5 h-5 text-[#FF6B00]" />}
-            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-slate-900" />
+            {hubOpen ? <X className="w-5 h-5 text-white" /> : <Phone className="w-5 h-5 text-[#FF6B00]" />}
           </div>
           <span className="text-xs font-bold hidden sm:inline">
             {hubOpen ? t.supportHub.closeLabel : t.supportHub.helpLabel}

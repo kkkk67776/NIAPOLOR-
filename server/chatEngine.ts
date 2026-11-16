@@ -79,6 +79,28 @@ function loadInitialChatDb(): ChatDatabase {
 }
 
 let chatDb: ChatDatabase = loadInitialChatDb();
+let lastChatCloudSyncAt = 0;
+
+function normalizeRemoteChatDb(remote: Partial<ChatDatabase>): ChatDatabase {
+  return {
+    config: remote.config
+      ? {
+          ...DEFAULT_CHAT_CONFIG,
+          ...remote.config,
+          welcomeMessage: {
+            ...DEFAULT_CHAT_CONFIG.welcomeMessage,
+            ...(remote.config.welcomeMessage || {}),
+          },
+          fallbackMessage: {
+            ...DEFAULT_CHAT_CONFIG.fallbackMessage,
+            ...(remote.config.fallbackMessage || {}),
+          },
+          customRules: Array.isArray(remote.config.customRules) ? remote.config.customRules : [],
+        }
+      : { ...chatDb.config },
+    threads: remote.threads && typeof remote.threads === 'object' ? remote.threads : {},
+  };
+}
 
 async function persistChatDb(candidate: ChatDatabase): Promise<{ ok: boolean; error?: string }> {
   const pruned: ChatDatabase = {
@@ -103,37 +125,36 @@ async function persistChatDb(candidate: ChatDatabase): Promise<{ ok: boolean; er
     return { ok: false, error: res.error };
   }
   chatDb = pruned;
+  lastChatCloudSyncAt = Date.now();
   return { ok: true };
 }
 
 export async function hydrateChatDbFromCloud(): Promise<void> {
   if (!isCloudPersistenceEnabled()) return;
   const remote = await loadCloudJson<Partial<ChatDatabase>>(CLOUD_CHAT_KEY);
+  lastChatCloudSyncAt = Date.now();
   if (!remote) {
     await saveCloudJson(CLOUD_CHAT_KEY, chatDb).catch(() => {});
     return;
   }
-  if (remote.config) {
-    chatDb.config = {
-      ...DEFAULT_CHAT_CONFIG,
-      ...remote.config,
-      welcomeMessage: {
-        ...DEFAULT_CHAT_CONFIG.welcomeMessage,
-        ...(remote.config.welcomeMessage || {}),
-      },
-      fallbackMessage: {
-        ...DEFAULT_CHAT_CONFIG.fallbackMessage,
-        ...(remote.config.fallbackMessage || {}),
-      },
-      customRules: Array.isArray(remote.config.customRules) ? remote.config.customRules : [],
-    };
-  }
-  if (remote.threads && typeof remote.threads === 'object') {
-    chatDb.threads = { ...remote.threads, ...chatDb.threads };
-  }
+  const normalized = normalizeRemoteChatDb(remote);
+  chatDb = normalized;
   try {
     atomicWriteJsonSync(CHAT_DATA_FILE, chatDb);
   } catch {}
+}
+
+export async function syncChatDbIfStale(force = false, maxAgeMs = 2500): Promise<void> {
+  if (!isCloudPersistenceEnabled()) return;
+  if (!force && Date.now() - lastChatCloudSyncAt < maxAgeMs) return;
+  const remote = await loadCloudJson<Partial<ChatDatabase>>(CLOUD_CHAT_KEY);
+  lastChatCloudSyncAt = Date.now();
+  if (remote && typeof remote === 'object') {
+    chatDb = normalizeRemoteChatDb(remote);
+    try {
+      atomicWriteJsonSync(CHAT_DATA_FILE, chatDb);
+    } catch {}
+  }
 }
 
 export function getPublicChatConfig(): SupportChatConfig {
@@ -146,6 +167,7 @@ export async function updateChatConfig(payload: {
   fallbackMessage?: Partial<{ ar: string; fr: string; en: string }>;
   customRules?: CustomChatRule[];
 }): Promise<{ ok: boolean; statusCode?: number; config?: SupportChatConfig; error?: string }> {
+  await syncChatDbIfStale(true);
   const nextConfig: SupportChatConfig = {
     ...chatDb.config,
     welcomeMessage: { ...chatDb.config.welcomeMessage },
@@ -215,6 +237,7 @@ export async function recordCustomerChatExchange(params: {
   suggestedProducts?: ChatSuggestedProduct[];
   actionView?: string;
 }): Promise<{ ok: boolean; statusCode?: number; thread?: SupportChatThread; error?: string }> {
+  await syncChatDbIfStale(true);
   const safeId = normalizeChatSessionId(params.sessionId);
   if (!safeId) {
     return { ok: false, statusCode: 400, error: 'معرف جلسة المحادثة غير صالح.' };
@@ -293,6 +316,7 @@ export async function adminSendChatReply(params: {
   sessionId: string;
   replyText: string;
 }): Promise<{ ok: boolean; statusCode?: number; thread?: SupportChatThread; message?: ChatMessage; error?: string }> {
+  await syncChatDbIfStale(true);
   const safeId = normalizeChatSessionId(params.sessionId);
   if (!safeId || !chatDb.threads[safeId]) {
     return { ok: false, statusCode: 404, error: 'المحادثة غير موجودة.' };
@@ -330,6 +354,7 @@ export async function adminSendChatReply(params: {
 }
 
 export async function markThreadReadByOwner(sessionId: string): Promise<{ ok: boolean; statusCode?: number; error?: string }> {
+  await syncChatDbIfStale(true);
   const safeId = normalizeChatSessionId(sessionId);
   if (!safeId || !chatDb.threads[safeId]) return { ok: false, statusCode: 404, error: 'المحادثة غير موجودة.' };
   const nextThread: SupportChatThread = {
@@ -345,6 +370,7 @@ export async function markThreadReadByOwner(sessionId: string): Promise<{ ok: bo
 }
 
 export async function deleteChatThread(sessionId: string): Promise<{ ok: boolean; statusCode?: number; error?: string }> {
+  await syncChatDbIfStale(true);
   const safeId = normalizeChatSessionId(sessionId);
   if (!safeId || !chatDb.threads[safeId]) return { ok: false, statusCode: 404, error: 'المحادثة غير موجودة.' };
   const nextThreads = { ...chatDb.threads };

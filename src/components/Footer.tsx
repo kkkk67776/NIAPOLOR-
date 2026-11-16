@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 
 export const Footer: React.FC = () => {
-  const { siteSettings, language, t, setCurrentView, setIsSupportModalOpen } = useStore();
+  const { siteSettings, language, t, setCurrentView, setIsSupportModalOpen, isDarkMode } = useStore();
 
   const handleLinkClick = (view: string) => {
     setCurrentView(view);
@@ -24,7 +24,7 @@ export const Footer: React.FC = () => {
           <div className="space-y-3">
             <div className="flex items-center gap-2.5">
               <img 
-                src="/assets/images/echox-logo.webp" 
+                src={isDarkMode ? '/assets/aistudio/file_000000003d20821088780f690ee97fed_f8e408f8.png' : '/assets/images/echox-logo.webp'} 
                 alt="ECHOX Logo" 
                 className="w-8 h-8 rounded-full object-contain border border-[#FF6B00]/40"
               />

@@ -399,7 +399,14 @@ function parseServiceAccountFromEnv(): ServiceAccountCreds | null {
 
 export function getDataDir(): string {
   const configured = (process.env.DATA_DIR || '').trim();
-  const dir = configured ? path.resolve(configured) : process.cwd();
+  const isServerlessEphemeral = Boolean(
+    process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME
+  );
+  const dir = configured
+    ? path.resolve(configured)
+    : isServerlessEphemeral
+    ? '/tmp/echox_data'
+    : process.cwd();
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
@@ -438,7 +445,9 @@ export function isRenderRuntime(): boolean {
   return Boolean(
     process.env.RENDER === 'true' ||
       process.env.RENDER_SERVICE_ID ||
-      process.env.RENDER_INSTANCE_ID
+      process.env.RENDER_INSTANCE_ID ||
+      process.env.VERCEL === '1' ||
+      process.env.AWS_LAMBDA_FUNCTION_NAME
   );
 }
 
@@ -599,9 +608,18 @@ function buildFirestoreDocUrl(creds: ServiceAccountCreds, key: string): string {
   return `${origin}/v1/projects/${encodeURIComponent(creds.projectId)}/databases/${encodeURIComponent(databaseId)}/documents/echox_system_state/${encodeURIComponent(docId)}`;
 }
 
-async function loadFromFirestore<T>(key: string): Promise<T | null> {
+export interface LoadCloudMetaResult<T> {
+  data: T | null;
+  updateTime?: string;
+}
+
+export interface SaveCloudOptions {
+  expectedUpdateTime?: string;
+}
+
+async function loadFromFirestoreWithMeta<T>(key: string): Promise<LoadCloudMetaResult<T>> {
   const creds = parseServiceAccountFromEnv();
-  if (!creds) return null;
+  if (!creds) return { data: null };
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 7000);
   try {
@@ -621,7 +639,7 @@ async function loadFromFirestore<T>(key: string): Promise<T | null> {
       } else {
         lastCloudError = null;
       }
-      return null;
+      return { data: null };
     }
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
@@ -629,18 +647,24 @@ async function loadFromFirestore<T>(key: string): Promise<T | null> {
     }
     lastCloudError = null;
     const doc = (await res.json()) as {
+      updateTime?: string;
       fields?: { payloadJson?: { stringValue?: string } };
     };
     const raw = doc?.fields?.payloadJson?.stringValue;
-    if (!raw || typeof raw !== 'string') return null;
-    return JSON.parse(raw) as T;
+    if (!raw || typeof raw !== 'string') return { data: null, updateTime: doc?.updateTime };
+    return { data: JSON.parse(raw) as T, updateTime: doc?.updateTime };
   } catch (err) {
     lastCloudError = sanitizeSafeErrorMessage(err, 'فشل الاتصال أو صلاحيات القراءة في Firestore');
     console.warn(`[CloudPersistence][Firestore] Notice loading ${key}:`, lastCloudError);
-    return null;
+    return { data: null };
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function loadFromFirestore<T>(key: string): Promise<T | null> {
+  const res = await loadFromFirestoreWithMeta<T>(key);
+  return res.data;
 }
 
 export async function probeCloudPersistenceConnection(): Promise<{
@@ -685,7 +709,11 @@ export async function probeCloudPersistenceConnection(): Promise<{
   return { ok: status.durable, provider: status.provider, error: lastCloudError || undefined };
 }
 
-async function saveToFirestore(key: string, data: unknown): Promise<{ ok: boolean; error?: string }> {
+async function saveToFirestore(
+  key: string,
+  data: unknown,
+  options?: SaveCloudOptions
+): Promise<{ ok: boolean; error?: string; conflict?: boolean; updateTime?: string }> {
   const creds = parseServiceAccountFromEnv();
   if (!creds) return { ok: false, error: lastCloudError || 'Firestore service account credentials not configured.' };
 
@@ -701,7 +729,10 @@ async function saveToFirestore(key: string, data: unknown): Promise<{ ok: boolea
   const timer = setTimeout(() => controller.abort(), 8000);
   try {
     const token = await getFirestoreAccessToken(creds);
-    const url = buildFirestoreDocUrl(creds, key);
+    let url = buildFirestoreDocUrl(creds, key);
+    if (options?.expectedUpdateTime) {
+      url += `?currentDocument.updateTime=${encodeURIComponent(options.expectedUpdateTime)}`;
+    }
     const nowIso = new Date().toISOString();
     const res = await fetch(url, {
       method: 'PATCH',
@@ -720,11 +751,19 @@ async function saveToFirestore(key: string, data: unknown): Promise<{ ok: boolea
     });
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
+      const isConflict =
+        res.status === 409 ||
+        res.status === 412 ||
+        (res.status === 400 && /FAILED_PRECONDITION|ABORTED|updateTime/i.test(errText));
+      if (isConflict) {
+        return { ok: false, conflict: true, error: 'Firestore concurrent write conflict detected.' };
+      }
       throw new Error(`Firestore HTTP ${res.status}: ${errText.slice(0, 180)}`);
     }
+    const savedDoc = (await res.json().catch(() => ({}))) as { updateTime?: string };
     lastCloudWriteAt = nowIso;
     lastCloudError = null;
-    return { ok: true };
+    return { ok: true, updateTime: savedDoc?.updateTime };
   } catch (err) {
     const msg = sanitizeSafeErrorMessage(err, 'فشل الحفظ في قاعدة بيانات Firestore');
     lastCloudError = msg;
@@ -842,19 +881,29 @@ async function deleteFromUpstash(key: string): Promise<{ ok: boolean; error?: st
   }
 }
 
-export async function loadCloudJson<T>(key: string): Promise<T | null> {
+export async function loadCloudJsonWithMeta<T>(key: string): Promise<LoadCloudMetaResult<T>> {
   if (isFirestoreServiceAccountEnabled()) {
-    return loadFromFirestore<T>(key);
+    return loadFromFirestoreWithMeta<T>(key);
   }
   if (isUpstashEnabled()) {
-    return loadFromUpstash<T>(key);
+    const data = await loadFromUpstash<T>(key);
+    return { data };
   }
-  return null;
+  return { data: null };
 }
 
-export async function saveCloudJson(key: string, data: unknown): Promise<{ ok: boolean; error?: string }> {
+export async function loadCloudJson<T>(key: string): Promise<T | null> {
+  const res = await loadCloudJsonWithMeta<T>(key);
+  return res.data;
+}
+
+export async function saveCloudJson(
+  key: string,
+  data: unknown,
+  options?: SaveCloudOptions
+): Promise<{ ok: boolean; error?: string; conflict?: boolean; updateTime?: string }> {
   if (isFirestoreServiceAccountEnabled()) {
-    return saveToFirestore(key, data);
+    return saveToFirestore(key, data, options);
   }
   if (isUpstashEnabled()) {
     return saveToUpstash(key, data);

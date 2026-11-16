@@ -6,4 +6,12 @@ pages_build_output_dir = "dist"
 [vars]
 ENVIRONMENT = "production"
 VITE_SITE_URL = "https://echoxstore.pages.dev"
+# Upstream Node backend for Argon2id auth & WebPush (Render Free or Vercel Hobby Serverless)
 BACKEND_ORIGIN = "https://echox-store.onrender.com"
+FIREBASE_PROJECT_ID = "gen-lang-client-0499444627"
+FIREBASE_FIRESTORE_DATABASE_ID = "ai-studio-echoxstore-9e1d54e8-7960-44b2-951a-524166c61a13"
+
+# Configure in Cloudflare Pages Dashboard -> Settings -> Variables and Secrets (Encrypted):
+# - FIREBASE_SERVICE_ACCOUNT_JSON (or FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY)
+# - ECHOX_SECURITY_HMAC_SECRET (must match Node backend if set explicitly; auto-shared via Firestore otherwise)
+# - EDGE_MODE_DISABLED = "true" (instant rollback switch to proxy all /api/* traffic to BACKEND_ORIGIN)
