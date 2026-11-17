@@ -15,6 +15,12 @@ import type {
   VendorSubOrder,
 } from '../../src/types/index';
 import {
+  getGovernorateName,
+  isValidDelegationForGovernorate,
+  isValidGovernorate,
+  normalizeTunisianPhone,
+} from '../../src/data/governorates';
+import {
   checkEdgeSlidingWindowLimit,
   EdgeEnv,
   getEdgeClientIp,
@@ -245,14 +251,88 @@ function sanitizeReceiptImageDataUrl(raw?: string): { ok: boolean; value?: strin
   if (trimmed.length > 4_800_000) {
     return { ok: false, error: 'حجم صورة وصل التحويل كبير جداً (الحد الأقصى 3.5 ميغابايت).' };
   }
-  const rasterMatch = /^data:image\/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=\s]+$/i.test(trimmed);
-  if (!rasterMatch) {
+  const match = trimmed.match(/^data:image\/(png|jpeg|jpg|webp|gif);base64,([A-Za-z0-9+/=\s]+)$/i);
+  if (!match) {
     return {
       ok: false,
       error: 'صيغة صورة الوصل غير مدعومة لأسباب أمنية. يرجى رفع صورة PNG أو JPG أو WEBP فقط.',
     };
   }
-  return { ok: true, value: trimmed.replace(/\s+/g, '') };
+  const declared = match[1].toLowerCase() === 'jpg' ? 'jpeg' : match[1].toLowerCase();
+  const cleanB64 = match[2].replace(/\s+/g, '');
+  let bytes: Uint8Array;
+  try {
+    const bin = atob(cleanB64);
+    if (bin.length < 12) {
+      return { ok: false, error: 'ملف الصورة غير مكتمل أو تالف.' };
+    }
+    bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) {
+      bytes[i] = bin.charCodeAt(i);
+    }
+  } catch {
+    return { ok: false, error: 'بيانات الصورة المشفرة غير صالحة.' };
+  }
+
+  let detected: string | null = null;
+  if (
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47 &&
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a
+  ) {
+    detected = 'png';
+  } else if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    detected = 'jpeg';
+  } else if (
+    bytes[0] === 0x47 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x38 &&
+    (bytes[4] === 0x37 || bytes[4] === 0x39) &&
+    bytes[5] === 0x61
+  ) {
+    detected = 'gif';
+  } else if (
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45 &&
+    bytes[10] === 0x42 &&
+    bytes[11] === 0x50
+  ) {
+    detected = 'webp';
+  }
+
+  if (!detected || detected !== declared) {
+    return {
+      ok: false,
+      error: 'رفض أمني: التوقيع الثنائي للملف (Magic Bytes) لا يطابق صيغة الصورة المصرح بها.',
+    };
+  }
+
+  // Scan decoded header/payload for SVG/script polyglot markers
+  const headText = new TextDecoder('latin1').decode(bytes.subarray(0, Math.min(bytes.length, 4096))).toLowerCase();
+  if (
+    headText.includes('<svg') ||
+    headText.includes('<script') ||
+    headText.includes('javascript:') ||
+    headText.includes('onload=') ||
+    headText.includes('onerror=')
+  ) {
+    return {
+      ok: false,
+      error: 'تم صد ملف مشبوه يحتوي على شيفرة قابلة للتنفيذ داخل الصورة.',
+    };
+  }
+
+  return { ok: true, value: `data:image/${declared};base64,${cleanB64}` };
 }
 
 function getCanonicalBankFields(bank: {
@@ -906,18 +986,28 @@ export async function handleEdgePaymentsRoute(
     if (!input || !Array.isArray(input.items) || input.items.length === 0) {
       return jsonResponse({ success: false, error: 'السلة فارغة — لا يمكن إتمام الطلب.' }, 400);
     }
-    if (!input.customerName?.trim() || !input.customerPhone?.trim() || !input.shippingAddress?.street?.trim()) {
-      return jsonResponse({ success: false, error: 'يرجى إكمال بيانات المستلم وعنوان التوصيل.' }, 400);
+    const cleanName = String(input.customerName || '').trim();
+    if (cleanName.length < 2) {
+      return jsonResponse({ success: false, error: 'يرجى إدخال الاسم الكامل للمستلم.' }, 400);
     }
-    const phoneDigits = String(input.customerPhone || '').replace(/\D/g, '');
-    if (phoneDigits.length < 6 || phoneDigits.length > 15) {
-      return jsonResponse({ success: false, error: 'يرجى إدخال رقم هاتف صحيح (بين 6 و15 رقماً).' }, 400);
+    const phoneCheck = normalizeTunisianPhone(String(input.customerPhone || ''));
+    if (!phoneCheck.valid) {
+      return jsonResponse({ success: false, error: 'يرجى إدخال رقم هاتف تونسي صحيح مكوّن من 8 أرقام (مثال: 21511162).' }, 400);
     }
-    if (
-      input.customerEmail &&
-      String(input.customerEmail).trim() &&
-      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(input.customerEmail).trim())
-    ) {
+    const cleanGov = String(input.shippingAddress?.governorate || '').trim();
+    if (!isValidGovernorate(cleanGov)) {
+      return jsonResponse({ success: false, error: 'يرجى اختيار الولاية التونسية من القائمة المعتمدة.' }, 400);
+    }
+    const cleanDelegation = String(input.shippingAddress?.delegation || input.shippingAddress?.city || '').trim();
+    if (!isValidDelegationForGovernorate(cleanGov, cleanDelegation)) {
+      return jsonResponse({ success: false, error: 'يرجى اختيار المعتمدية التابعة للولاية المختارة.' }, 400);
+    }
+    const cleanStreet = String(input.shippingAddress?.street || '').trim();
+    if (cleanStreet.length < 4) {
+      return jsonResponse({ success: false, error: 'يرجى إدخال العنوان التفصيلي (الحي، الشارع ورقم المنزل أو أقرب علامة مميزة).' }, 400);
+    }
+    const cleanEmail = String(input.customerEmail || '').trim();
+    if (cleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
       return jsonResponse({ success: false, error: 'صيغة البريد الإلكتروني غير صحيحة.' }, 400);
     }
 
@@ -1210,14 +1300,27 @@ export async function handleEdgePaymentsRoute(
           paymentUrl = createdGatewaySession.paymentUrl;
         }
 
+        const sanitizedShippingAddress: Order['shippingAddress'] = {
+          id: String(input.shippingAddress?.id || `addr_${Date.now()}`),
+          isDefault: Boolean(input.shippingAddress?.isDefault ?? true),
+          fullName: cleanName,
+          phone: phoneCheck.normalized,
+          governorate: cleanGov,
+          delegation: cleanDelegation,
+          city: cleanDelegation,
+          ...(input.shippingAddress?.postalCode?.trim() ? { postalCode: String(input.shippingAddress.postalCode).trim() } : {}),
+          street: cleanStreet,
+          ...(input.shippingAddress?.notes?.trim() ? { notes: String(input.shippingAddress.notes).trim() } : {}),
+        };
+
         const order: Order = {
           id: orderId,
           trackingNumber,
           customerId: input.customerId,
-          customerName: String(input.customerName).trim(),
-          customerEmail: String(input.customerEmail || '').trim(),
-          customerPhone: String(input.customerPhone).trim(),
-          shippingAddress: input.shippingAddress,
+          customerName: cleanName,
+          customerEmail: cleanEmail,
+          customerPhone: phoneCheck.normalized,
+          shippingAddress: sanitizedShippingAddress,
           items: verifiedItems,
           subtotal,
           discount,
@@ -1344,11 +1447,13 @@ export async function handleEdgePaymentsRoute(
 
     if (out.order) {
       const ord = out.order;
+      const govLabel = getGovernorateName(ord.shippingAddress?.governorate || '', 'ar');
+      const delLabel = ord.shippingAddress?.delegation || ord.shippingAddress?.city || '';
       const notifTask = appendEdgeAdminNotification(env, {
         category: 'order',
         severity: 'success',
         title: `🛒 طلب جديد #${ord.trackingNumber}`,
-        body: `${ord.customerName} — ${ord.totalAmount} د.ت (${ord.shippingAddress?.governorate || ''})`,
+        body: `${ord.customerName} — ${ord.totalAmount} د.ت (${govLabel}${delLabel ? ` · ${delLabel}` : ''})`,
         url: '/owner/dashboard',
         meta: { trackingNumber: ord.trackingNumber, total: ord.totalAmount },
       });
@@ -1993,9 +2098,11 @@ export async function handleEdgePaymentsRoute(
     });
   }
 
-  // 7. Scoped Vendor Financials
+  // 7. Scoped Vendor Financials (Strict Admin Auth Required)
   const vendorMatch = pathname.match(/^\/api\/vendor\/([^/]+)\/financials$/);
   if (method === 'GET' && vendorMatch) {
+    const auth = await requireEdgeAdminAuth(request, env);
+    if (!auth.ok) return auth.response;
     const vendorId = decodeURIComponent(vendorMatch[1] || '').trim();
     if (!vendorId) return jsonResponse({ error: 'معرف البائع مطلوب.' }, 400);
     const loaded = await loadEdgeDocWithMeta<Partial<PaymentSystemDatabase>>(env, CLOUD_PAYMENT_KEY);
@@ -2152,7 +2259,7 @@ export async function handleEdgePaymentsRoute(
   const trackMatch = pathname.match(/^\/api\/payments\/track\/([^/]+)$/);
   if (method === 'GET' && trackMatch) {
     const ip = getEdgeClientIp(request);
-    const rate = checkEdgeSlidingWindowLimit('trackOrder', ip, 40, 60_000);
+    const rate = checkEdgeSlidingWindowLimit('trackOrder', ip, 15, 60_000);
     if (!rate.allowed) {
       return jsonResponse(
         { success: false, error: `تم تجاوز الحد المسموح، يرجى الانتظار ${rate.retryAfterSeconds} ثانية.` },
@@ -2160,8 +2267,8 @@ export async function handleEdgePaymentsRoute(
       );
     }
     const clean = decodeURIComponent(trackMatch[1] || '').trim().toUpperCase();
-    if (!clean || clean.length < 4) {
-      return jsonResponse({ success: false, error: 'يرجى إدخال رقم تتبع صالح.' }, 400);
+    if (!clean || clean.length < 6) {
+      return jsonResponse({ success: false, error: 'يرجى إدخال رقم تتبع صالح (6 خانات على الأقل).' }, 400);
     }
     const loaded = await loadEdgeDocWithMeta<Partial<PaymentSystemDatabase>>(env, CLOUD_PAYMENT_KEY);
     if (!loaded.ok) return jsonResponse({ success: false, error: loaded.error }, 503);
@@ -2174,7 +2281,24 @@ export async function handleEdgePaymentsRoute(
     if (!found) {
       return jsonResponse({ success: false, error: 'لم يتم العثور على طلب بهذا الرمز.' }, 404);
     }
-    return jsonResponse({ success: true, order: found });
+    const adminSess = await verifyEdgeOwnerSession(request, env);
+    const isAdmin = Boolean(adminSess && adminSess.codeVerified);
+    if (isAdmin) {
+      return jsonResponse({ success: true, order: found });
+    }
+    const sanitizedOrder: Order = {
+      ...found,
+      customerEmail: '',
+      notes: '',
+      transferProof: found.transferProof
+        ? {
+            ...found.transferProof,
+            notes: undefined,
+            receiptImageDataUrl: undefined,
+          }
+        : undefined,
+    };
+    return jsonResponse({ success: true, order: sanitizedOrder });
   }
 
   // ==========================================

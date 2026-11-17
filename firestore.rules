@@ -18,6 +18,7 @@ service cloud.firestore {
 
     function isOwner() {
       return isSignedIn() && 
+        request.auth.token.email_verified == true &&
         request.auth.token.email == 'abdelkaderbahri570@gmail.com';
     }
 
@@ -95,6 +96,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // 🔒 Security Quarantine & Recovery Snapshots: Strictly server-only
+    match /security_quarantine/{itemId} {
+      allow read, write: if false;
+    }
+    match /recovery_snapshots/{snapId} {
+      allow read, write: if false;
+    }
+
     // 📦 Products Catalog: Publicly readable, writeable only by Sovereign Owner
     match /products/{productId} {
       allow get, list: if true;
@@ -134,13 +143,9 @@ service cloud.firestore {
       allow write: if isValidId(settingId) && isOwner();
     }
 
-    // 🔐 Sovereign Owner Security & Lock Screen Settings
+    // 🔐 Sovereign Owner Security & Lock Screen Settings (Restricted strictly to verified Owner)
     match /store_settings/{settingId} {
-      allow get, list: if true;
-      allow write: if isValidId(settingId) && (
-        isOwner() || 
-        (isSignedIn() && request.auth.token.email == 'abdelkaderbahri570@gmail.com')
-      );
+      allow get, list, write: if isValidId(settingId) && isOwner();
     }
 
     // 👤 User Profiles: Split PII Protection

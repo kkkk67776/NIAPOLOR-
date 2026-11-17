@@ -44,7 +44,26 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
   const runAccessCodeVerification = async (candidate: string, explicitSubmit: boolean = false) => {
     const clean = candidate.trim();
     if (clean.length < 4) return;
-    if (!explicitSubmit && !clean.startsWith('#') && clean.length < 8) return;
+    if (!explicitSubmit && !(clean.startsWith('#') && clean.length >= 5)) return;
+
+    if (explicitSubmit && !clean.startsWith('#')) {
+      const term = clean.toLowerCase();
+      const hasProductMatches = products.some((item) => {
+        const hay = [
+          item.name?.ar,
+          item.name?.fr,
+          item.name?.en,
+          item.description?.ar,
+          item.description?.fr,
+          item.description?.en,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        return hay.includes(term);
+      });
+      if (hasProductMatches || clean.length < 6) return;
+    }
 
     setIsCheckingVault(true);
     setVaultError('');
@@ -70,12 +89,12 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
         check.httpStatus === 0 ||
         Boolean(check.lockedOut);
 
-      if (isServiceOrRateIssue || (explicitSubmit && clean.startsWith('#'))) {
+      if ((isServiceOrRateIssue || explicitSubmit) && clean.startsWith('#')) {
         setVaultError(check.error || 'تعذر التحقق من رمز الوصول حالياً.');
       }
     } catch (err) {
       console.warn('Access code check notice in bottom nav:', err);
-      if (explicitSubmit || clean.startsWith('#')) {
+      if (clean.startsWith('#')) {
         setVaultError('تعذر الاتصال بالخادم للتحقق من رمز الوصول.');
       }
     } finally {
@@ -92,9 +111,8 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
     if (accessCheckTimerRef.current) clearTimeout(accessCheckTimerRef.current);
 
     if (val.trim().length > 0) {
-      // تحقق مؤجل (Debounce) بعد التوقف عن الكتابة بـ 500ms لمنع قفل البوابة أثناء الكتابة الحرفية
       const trimmed = val.trim();
-      if (trimmed.startsWith('#') || trimmed.length >= 8) {
+      if (trimmed.startsWith('#') && trimmed.length >= 5) {
         accessCheckTimerRef.current = setTimeout(() => {
           runAccessCodeVerification(trimmed, false);
         }, 500);

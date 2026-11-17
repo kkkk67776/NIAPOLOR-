@@ -6,7 +6,8 @@ import {
   setOwnerGoogleUser,
   clearOwnerSecuritySession,
   checkServerSession,
-  OWNER_EMAIL,
+  getAuthorizedOwnerEmail,
+  getAdminAuthHeaders,
   verifyPinServer,
   updatePinServer,
 } from '../../lib/security';
@@ -75,8 +76,8 @@ export default function OwnerSecurityRoom({ onUnlockSuccess, onNavigate, vaultOp
             setIsUnlocked(true);
             setOwnerUnlocked(true);
             setOwnerGoogleUser({
-              email: OWNER_EMAIL,
-              uid: 'sovereign_owner_uid_570',
+              email: getAuthorizedOwnerEmail() || 'owner@echox.local',
+              uid: 'echox_owner_session',
             });
           } else {
             clearOwnerSecuritySession();
@@ -92,8 +93,8 @@ export default function OwnerSecurityRoom({ onUnlockSuccess, onNavigate, vaultOp
           setIsUnlocked(true);
           setOwnerUnlocked(true);
           setOwnerGoogleUser({
-            email: OWNER_EMAIL,
-            uid: 'sovereign_owner_uid_570',
+            email: getAuthorizedOwnerEmail() || 'owner@echox.local',
+            uid: 'echox_owner_session',
           });
         }
       }
@@ -316,8 +317,8 @@ export default function OwnerSecurityRoom({ onUnlockSuccess, onNavigate, vaultOp
 
     setOwnerUnlocked(true);
     setOwnerGoogleUser({
-      email: OWNER_EMAIL,
-      uid: 'sovereign_owner_uid_570',
+      email: getAuthorizedOwnerEmail() || 'owner@echox.local',
+      uid: 'echox_owner_session',
     });
 
     window.dispatchEvent(new CustomEvent('echox_session_refreshed'));
@@ -325,11 +326,16 @@ export default function OwnerSecurityRoom({ onUnlockSuccess, onNavigate, vaultOp
   };
 
   const lockAndHide = () => {
+    const authHeaders = getAdminAuthHeaders();
+    fetch('/api/owner/logout', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: authHeaders,
+    }).catch(() => {});
     setIsUnlocked(false);
     setIsModalOpen(false);
-    sessionStorage.removeItem('echox_owner_session');
+    clearOwnerSecuritySession();
     setOwnerUnlocked(false);
-    fetch('/api/owner/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
     if (window.location.pathname.startsWith('/owner')) {
       if (onNavigate) {
         onNavigate('/');

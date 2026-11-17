@@ -9,6 +9,11 @@ import {
   saveCloudJson,
   savePersistentJson,
 } from './cloudPersistence';
+import {
+  quarantineSuspiciousItem,
+  validateRasterImageMagicBytes,
+  type RecoverablePaymentSlice,
+} from './securityEngine';
 import type {
   Order,
   OrderItem,
@@ -24,6 +29,12 @@ import type {
   FinancialActivityLog,
   TransferProof,
 } from '../src/types/index';
+import {
+  getGovernorateName,
+  isValidDelegationForGovernorate,
+  isValidGovernorate,
+  normalizeTunisianPhone,
+} from '../src/data/governorates';
 
 const PAYMENT_DATA_FILE = getDataFilePath('payment_system_data.json');
 const CLOUD_PAYMENT_KEY = 'echox:payment_system_data';
@@ -491,18 +502,24 @@ function normalizePhone(phone: string): string {
   return (phone || '').replace(/\D/g, '').slice(-8);
 }
 
-function sanitizeReceiptImageDataUrl(raw?: string): { ok: boolean; value?: string; error?: string } {
-  if (!raw || typeof raw !== 'string') return { ok: true, value: undefined };
-  const trimmed = raw.trim();
-  if (!trimmed) return { ok: true, value: undefined };
-  if (trimmed.length > 4_800_000) {
-    return { ok: false, error: 'حجم صورة وصل التحويل كبير جداً (الحد الأقصى 3.5 ميغابايت).' };
+function sanitizeReceiptImageDataUrl(
+  raw?: string,
+  context?: { source?: string; actorIp?: string }
+): { ok: boolean; value?: string; error?: string } {
+  const check = validateRasterImageMagicBytes(raw);
+  if (!check.ok) {
+    quarantineSuspiciousItem({
+      source: context?.source || 'receipt_upload',
+      reason: check.suspiciousReason || check.error || 'Rejected image receipt',
+      severity: 'critical',
+      actorIp: context?.actorIp || 'unknown',
+      mimeDeclared: check.mime || 'unknown',
+      payloadHash: check.payloadHash,
+      payloadPreview: check.payloadPreview,
+    });
+    return { ok: false, error: check.error };
   }
-  const rasterMatch = /^data:image\/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=\s]+$/i.test(trimmed);
-  if (!rasterMatch) {
-    return { ok: false, error: 'صيغة صورة الوصل غير مدعومة لأسباب أمنية. يرجى رفع صورة PNG أو JPG أو WEBP فقط.' };
-  }
-  return { ok: true, value: trimmed.replace(/\s+/g, '') };
+  return { ok: true, value: check.value };
 }
 
 function isSafeHttpsUrl(rawUrl?: string): boolean {
@@ -1080,6 +1097,7 @@ export interface ServerCheckoutInput {
   transferProof?: Partial<TransferProof>;
   origin?: string;
   clientRequestId?: string;
+  actorIp?: string;
 }
 
 export async function processServerCheckout(input: ServerCheckoutInput): Promise<{
@@ -1094,14 +1112,28 @@ export async function processServerCheckout(input: ServerCheckoutInput): Promise
   if (!input || !Array.isArray(input.items) || input.items.length === 0) {
     return { ok: false, statusCode: 400, error: 'السلة فارغة — لا يمكن إتمام الطلب.' };
   }
-  if (!input.customerName?.trim() || !input.customerPhone?.trim() || !input.shippingAddress?.street?.trim()) {
-    return { ok: false, statusCode: 400, error: 'يرجى إكمال بيانات المستلم وعنوان التوصيل.' };
+  const cleanName = String(input.customerName || '').trim();
+  if (cleanName.length < 2) {
+    return { ok: false, statusCode: 400, error: 'يرجى إدخال الاسم الكامل للمستلم.' };
   }
-  const phoneDigits = (input.customerPhone || '').replace(/\D/g, '');
-  if (phoneDigits.length < 6 || phoneDigits.length > 15) {
-    return { ok: false, statusCode: 400, error: 'يرجى إدخال رقم هاتف صحيح (بين 6 و15 رقماً).' };
+  const phoneCheck = normalizeTunisianPhone(String(input.customerPhone || ''));
+  if (!phoneCheck.valid) {
+    return { ok: false, statusCode: 400, error: 'يرجى إدخال رقم هاتف تونسي صحيح مكوّن من 8 أرقام (مثال: 21511162).' };
   }
-  if (input.customerEmail && input.customerEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.customerEmail.trim())) {
+  const cleanGov = String(input.shippingAddress?.governorate || '').trim();
+  if (!isValidGovernorate(cleanGov)) {
+    return { ok: false, statusCode: 400, error: 'يرجى اختيار الولاية التونسية من القائمة المعتمدة.' };
+  }
+  const cleanDelegation = String(input.shippingAddress?.delegation || input.shippingAddress?.city || '').trim();
+  if (!isValidDelegationForGovernorate(cleanGov, cleanDelegation)) {
+    return { ok: false, statusCode: 400, error: 'يرجى اختيار المعتمدية التابعة للولاية المختارة.' };
+  }
+  const cleanStreet = String(input.shippingAddress?.street || '').trim();
+  if (cleanStreet.length < 4) {
+    return { ok: false, statusCode: 400, error: 'يرجى إدخال العنوان التفصيلي (الحي، الشارع ورقم المنزل أو أقرب علامة مميزة).' };
+  }
+  const cleanEmail = String(input.customerEmail || '').trim();
+  if (cleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
     return { ok: false, statusCode: 400, error: 'صيغة البريد الإلكتروني غير صحيحة.' };
   }
 
@@ -1297,7 +1329,10 @@ export async function processServerCheckout(input: ServerCheckoutInput): Promise
 
   if (normalizedMethod === 'bank_transfer') {
     if (input.transferProof && input.transferProof.referenceNumber?.trim()) {
-      const cleanImg = sanitizeReceiptImageDataUrl(input.transferProof.receiptImageDataUrl);
+      const cleanImg = sanitizeReceiptImageDataUrl(input.transferProof.receiptImageDataUrl, {
+        source: 'checkout_bank_proof',
+        actorIp: input.actorIp,
+      });
       if (!cleanImg.ok) {
         return { ok: false, statusCode: 400, error: cleanImg.error };
       }
@@ -1343,14 +1378,27 @@ export async function processServerCheckout(input: ServerCheckoutInput): Promise
     paymentUrl = gatewayInit.paymentUrl;
   }
 
+  const sanitizedShippingAddress: Order['shippingAddress'] = {
+    id: String(input.shippingAddress?.id || `addr_${Date.now()}`),
+    isDefault: Boolean(input.shippingAddress?.isDefault ?? true),
+    fullName: cleanName,
+    phone: phoneCheck.normalized,
+    governorate: cleanGov,
+    delegation: cleanDelegation,
+    city: cleanDelegation,
+    ...(input.shippingAddress?.postalCode?.trim() ? { postalCode: input.shippingAddress.postalCode.trim() } : {}),
+    street: cleanStreet,
+    ...(input.shippingAddress?.notes?.trim() ? { notes: input.shippingAddress.notes.trim() } : {}),
+  };
+
   const order: Order = {
     id: orderId,
     trackingNumber,
     customerId: input.customerId,
-    customerName: input.customerName.trim(),
-    customerEmail: input.customerEmail?.trim() || '',
-    customerPhone: input.customerPhone.trim(),
-    shippingAddress: input.shippingAddress,
+    customerName: cleanName,
+    customerEmail: cleanEmail,
+    customerPhone: phoneCheck.normalized,
+    shippingAddress: sanitizedShippingAddress,
     items: verifiedItems,
     subtotal,
     discount,
@@ -1453,6 +1501,7 @@ export async function submitBankTransferProof(payload: {
   receiptImageDataUrl?: string;
   notes?: string;
   isAdmin?: boolean;
+  actorIp?: string;
 }): Promise<{ ok: boolean; statusCode?: number; error?: string; order?: Order }> {
   await syncPaymentDbIfStale(true);
   const cleanTrack = (payload.trackingNumber || '').trim().toUpperCase();
@@ -1477,7 +1526,10 @@ export async function submitBankTransferProof(payload: {
     return { ok: false, statusCode: 400, error: 'يرجى إدخال رقم العملية البنكية واسم المحوّل.' };
   }
 
-  const cleanImg = sanitizeReceiptImageDataUrl(payload.receiptImageDataUrl);
+  const cleanImg = sanitizeReceiptImageDataUrl(payload.receiptImageDataUrl, {
+    source: 'submit_bank_transfer_proof',
+    actorIp: payload.actorIp,
+  });
   if (!cleanImg.ok) {
     return { ok: false, statusCode: 400, error: cleanImg.error };
   }
@@ -2048,15 +2100,15 @@ export async function adminDeleteOrder(orderId: string): Promise<{
   return { ok: true };
 }
 
-export function trackPublicOrder(code: string): {
+export function trackPublicOrder(code: string, isAdmin = false): {
   ok: boolean;
   statusCode?: number;
   error?: string;
   order?: Order;
 } {
   const clean = (code || '').trim().toUpperCase();
-  if (!clean || clean.length < 4) {
-    return { ok: false, statusCode: 400, error: 'يرجى إدخال رقم تتبع صالح.' };
+  if (!clean || clean.length < 6) {
+    return { ok: false, statusCode: 400, error: 'يرجى إدخال رقم تتبع صالح (6 محارف على الأقل).' };
   }
   const found = paymentDb.orders.find(
     o =>
@@ -2066,7 +2118,15 @@ export function trackPublicOrder(code: string): {
   if (!found) {
     return { ok: false, statusCode: 404, error: 'لم يتم العثور على طلب بهذا الرمز.' };
   }
-  return { ok: true, order: found };
+  if (isAdmin) {
+    return { ok: true, order: found };
+  }
+  const sanitizedOrder: Order = {
+    ...found,
+    customerEmail: '',
+    notes: '',
+  };
+  return { ok: true, order: sanitizedOrder };
 }
 
 export function getAdminPaymentOverview() {
@@ -2416,6 +2476,7 @@ export async function createSupportContribution(payload: {
   note?: string;
   transferProof?: Partial<TransferProof>;
   origin?: string;
+  actorIp?: string;
 }): Promise<{ ok: boolean; statusCode?: number; error?: string; supportTransaction?: SupportTransaction; paymentUrl?: string }> {
   await syncPaymentDbIfStale(true);
   const amt = round3(Number(payload.amount));
@@ -2445,7 +2506,10 @@ export async function createSupportContribution(payload: {
 
   if (method === 'bank_transfer') {
     if (payload.transferProof?.referenceNumber?.trim()) {
-      const cleanImg = sanitizeReceiptImageDataUrl(payload.transferProof.receiptImageDataUrl);
+      const cleanImg = sanitizeReceiptImageDataUrl(payload.transferProof.receiptImageDataUrl, {
+        source: 'support_bank_proof',
+        actorIp: payload.actorIp,
+      });
       if (!cleanImg.ok) {
         return { ok: false, statusCode: 400, error: cleanImg.error };
       }
@@ -2554,3 +2618,58 @@ export async function adminVerifySupportTransaction(id: string, action: 'approve
   }
   return { ok: true, supportTransaction: sup };
 }
+
+export function getPaymentRecoverySnapshot(): RecoverablePaymentSlice {
+  return JSON.parse(JSON.stringify(paymentDb));
+}
+
+export async function restorePaymentRecoverySnapshot(
+  incoming?: Partial<RecoverablePaymentSlice>,
+  options: { preserveLiveSecrets?: boolean } = { preserveLiveSecrets: true }
+): Promise<{ ok: boolean; statusCode?: number; error?: string }> {
+  await syncPaymentDbIfStale(true);
+  if (!incoming || typeof incoming !== 'object') {
+    return { ok: true };
+  }
+  const hasRestorableOrders = Array.isArray(incoming.orders);
+  const hasRestorableConfig = Boolean(incoming.config && Object.keys(incoming.config).length > 0 && incoming.config.currency);
+  if (!hasRestorableOrders && !hasRestorableConfig) {
+    return { ok: true };
+  }
+
+  const snapshot = JSON.stringify(paymentDb);
+  const liveSecrets = { ...paymentDb.config.secrets };
+
+  const merged = mergeDatabaseSnapshot({
+    ...paymentDb,
+    ...incoming,
+    config: hasRestorableConfig
+      ? ({
+          ...paymentDb.config,
+          ...incoming.config,
+          secrets:
+            options.preserveLiveSecrets || incoming.secretsOmitted
+              ? liveSecrets
+              : (incoming.config as any).secrets || liveSecrets,
+        } as InternalPaymentConfig)
+      : paymentDb.config,
+  });
+
+  if (merged.config.methods.bank_transfer.ibanOrRib) {
+    merged.config.bankIntegritySeal = computeBankSeal(merged.config.methods.bank_transfer);
+  }
+  merged.config.updatedAt = new Date().toISOString();
+
+  paymentDb = merged;
+  appendActivity(
+    'SYSTEM_RECOVERY_APPLIED',
+    'admin',
+    'Restored payment configuration/orders snapshot via Control Room Safe Recovery.'
+  );
+  const saved = await saveDatabaseStrict(snapshot);
+  if (!saved.ok) {
+    return { ok: false, statusCode: saved.statusCode || 503, error: saved.error };
+  }
+  return { ok: true };
+}
+

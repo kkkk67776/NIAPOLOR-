@@ -8,15 +8,15 @@ import {
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 
-export const DEFAULT_OWNER_EMAIL = 'abdelkaderbahri570@gmail.com';
-export const DEFAULT_OWNER_PHONE = '+21621511162';
+export const DEFAULT_OWNER_EMAIL = '';
+export const DEFAULT_OWNER_PHONE = '';
 
 export function getAuthorizedOwnerEmail(): string {
   try {
     const saved = localStorage.getItem('echox_owner_login_email');
     if (saved && saved.trim()) return saved.trim();
   } catch {}
-  return DEFAULT_OWNER_EMAIL;
+  return '';
 }
 
 export function setAuthorizedOwnerEmail(email: string) {
@@ -32,7 +32,7 @@ export function getAuthorizedOwnerPhone(): string {
     const saved = localStorage.getItem('echox_owner_phone');
     if (saved && saved.trim()) return saved.trim();
   } catch {}
-  return DEFAULT_OWNER_PHONE;
+  return '';
 }
 
 export function setAuthorizedOwnerPhone(phone: string) {
@@ -44,7 +44,7 @@ export function setAuthorizedOwnerPhone(phone: string) {
 }
 
 export const OWNER_EMAIL = DEFAULT_OWNER_EMAIL;
-export const OWNER_PHONE_MASKED = '+216 *** *** 62';
+export const OWNER_PHONE_MASKED = '+216 *** *** **';
 export const OWNER_PHONE_FULL = DEFAULT_OWNER_PHONE;
 
 export interface OwnerAuthState {
@@ -109,30 +109,48 @@ export function setOwnerUnlocked(unlocked: boolean) {
   }
 }
 
-const ADMIN_SESSION_TOKEN_KEY = 'echox_admin_session_token';
+let activeMemorySessionToken: string | null = null;
+let activeCsrfToken: string | null = null;
 
-let activeMemorySessionToken: string | null = (() => {
-  try {
-    if (typeof window !== 'undefined') {
-      const saved = sessionStorage.getItem(ADMIN_SESSION_TOKEN_KEY);
-      return saved && saved.trim() ? saved.trim() : null;
-    }
-  } catch {}
-  return null;
-})();
+// Purge any legacy bearer token left in Web Storage from older builds
+try {
+  if (typeof window !== 'undefined') {
+    sessionStorage.removeItem('echox_admin_session_token');
+    localStorage.removeItem('echox_admin_session_token');
+  }
+} catch {}
 
-export function setMemorySessionToken(token: string | null) {
-  const clean = token && token.trim() ? token.trim() : null;
-  activeMemorySessionToken = clean;
+function readCookie(name: string): string | null {
   try {
-    if (typeof window !== 'undefined') {
-      if (clean) {
-        sessionStorage.setItem(ADMIN_SESSION_TOKEN_KEY, clean);
-      } else {
-        sessionStorage.removeItem(ADMIN_SESSION_TOKEN_KEY);
+    if (typeof document === 'undefined' || !document.cookie) return null;
+    const prefix = `${name}=`;
+    for (const part of document.cookie.split(';')) {
+      const trimmed = part.trim();
+      if (trimmed.startsWith(prefix)) {
+        const val = decodeURIComponent(trimmed.slice(prefix.length)).trim();
+        return val || null;
       }
     }
   } catch {}
+  return null;
+}
+
+export function setMemorySessionToken(token: string | null) {
+  activeMemorySessionToken = token && token.trim() ? token.trim() : null;
+}
+
+export function setMemoryCsrfToken(token: string | null) {
+  activeCsrfToken = token && token.trim() ? token.trim() : null;
+}
+
+export function getCsrfToken(): string | null {
+  if (activeCsrfToken) return activeCsrfToken;
+  const fromCookie = readCookie('echox_csrf');
+  if (fromCookie) {
+    activeCsrfToken = fromCookie;
+    return fromCookie;
+  }
+  return null;
 }
 
 export function getAdminAuthHeaders(extra: Record<string, string> = {}): Record<string, string> {
@@ -140,21 +158,26 @@ export function getAdminAuthHeaders(extra: Record<string, string> = {}): Record<
   if (activeMemorySessionToken) {
     headers['Authorization'] = `Bearer ${activeMemorySessionToken}`;
   }
+  const csrf = getCsrfToken();
+  if (csrf) {
+    headers['X-CSRF-Token'] = csrf;
+  }
   return headers;
 }
 
 export function clearOwnerSecuritySession() {
   activeMemorySessionToken = null;
+  activeCsrfToken = null;
   try {
-    sessionStorage.removeItem(ADMIN_SESSION_TOKEN_KEY);
+    sessionStorage.removeItem('echox_admin_session_token');
+    sessionStorage.removeItem(GOOGLE_USER_KEY);
+    sessionStorage.removeItem(CUSTOM_CLAIMS_KEY);
+    sessionStorage.removeItem(OWNER_UNLOCKED_KEY);
+    sessionStorage.removeItem('echox_owner_code_verified');
+    sessionStorage.removeItem('echox_owner_session');
   } catch {}
-  sessionStorage.removeItem(GOOGLE_USER_KEY);
-  sessionStorage.removeItem(CUSTOM_CLAIMS_KEY);
-  sessionStorage.removeItem(OWNER_UNLOCKED_KEY);
-  sessionStorage.removeItem('echox_owner_code_verified');
-  sessionStorage.removeItem('echox_owner_session');
-  if (window.confirmationResult) {
-    delete window.confirmationResult;
+  if (typeof window !== 'undefined' && (window as any).confirmationResult) {
+    delete (window as any).confirmationResult;
   }
 }
 
@@ -301,9 +324,9 @@ export async function saveOwnerLockConfig(
  * Verifies the pattern or PIN entry against stored hash and handles lockout.
  */
 export async function verifyOwnerLockInput(
-  rawInput: string,
-  storedHash: string,
-  type: 'pattern' | 'pin'
+  _rawInput: string,
+  _storedHash: string,
+  _type: 'pattern' | 'pin'
 ): Promise<{
   success: boolean;
   lockedOut?: boolean;
@@ -311,51 +334,10 @@ export async function verifyOwnerLockInput(
   attemptsLeft?: number;
   error?: string;
 }> {
-  const inputHash = await hashSecurityInput(rawInput);
-  const isMatch = inputHash.toLowerCase() === storedHash.toLowerCase();
-
-  // Call server to keep consecutive count & lockout synchronized
-  try {
-    const res = await fetch('/api/security/verifyLockHash', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hash: inputHash, type })
-    });
-    const serverResult = await res.json();
-
-    if (serverResult.lockedOut) {
-      return {
-        success: false,
-        lockedOut: true,
-        remainingSeconds: serverResult.remainingSeconds || 30,
-        error: serverResult.error || 'المحاولات كثيرة، انتظر 30 ثانية'
-      };
-    }
-
-    if (res.ok && isMatch) {
-      setOwnerUnlocked(true);
-      return { success: true };
-    }
-
-    return {
-      success: false,
-      lockedOut: serverResult.lockedOut || false,
-      remainingSeconds: serverResult.remainingSeconds || 0,
-      attemptsLeft: serverResult.attemptsLeft ?? 4,
-      error: serverResult.error || 'الرمز غير صحيح'
-    };
-  } catch {
-    // Client-side fallback if server offline
-    if (isMatch) {
-      setOwnerUnlocked(true);
-      return { success: true };
-    }
-    return {
-      success: false,
-      attemptsLeft: 4,
-      error: 'الرمز غير صحيح'
-    };
-  }
+  return {
+    success: false,
+    error: 'تم إيقاف التحقق المحلي نهائياً. يرجى استخدام التحقق الخادمي المعتمد via Argon2id.',
+  };
 }
 
 /**
@@ -424,18 +406,28 @@ export async function logoutAllDevices(): Promise<boolean> {
 export const isSecurityCodeVerified = isOwnerUnlocked;
 export const setSecurityCodeVerified = setOwnerUnlocked;
 
-export async function createOwnerSessionCall(email: string, customToken?: string) {
+export async function createOwnerSessionCall(_email: string, _customToken?: string) {
+  return {
+    success: false,
+    error: 'تم تعطيل إنشاء الجلسات المباشرة؛ المصادقة تمر حصرياً عبر /api/security/verifyPin.',
+  };
+}
+
+export async function refreshCsrfTokenFromServer(): Promise<string | null> {
   try {
-    const res = await fetch('/api/createOwnerSession', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const res = await fetch('/api/security/csrf', {
       credentials: 'same-origin',
-      body: JSON.stringify({ email, customToken: customToken || 'custom_owner_token' }),
+      cache: 'no-store',
+      headers: activeMemorySessionToken ? { Authorization: `Bearer ${activeMemorySessionToken}` } : {},
     });
-    return await res.json();
-  } catch {
-    return { success: false };
-  }
+    if (!res.ok) return null;
+    const data = await safeReadJson(res);
+    if (typeof data.csrfToken === 'string' && data.csrfToken) {
+      setMemoryCsrfToken(data.csrfToken);
+      return data.csrfToken;
+    }
+  } catch {}
+  return getCsrfToken();
 }
 
 export async function checkServerSession() {
@@ -454,7 +446,11 @@ export async function checkServerSession() {
     }
     if (!res.ok) return false;
     const data = await res.json();
-    return data.authenticated === true && data.owner === true && data.codeVerified === true;
+    const ok = data.authenticated === true && data.owner === true && data.codeVerified === true;
+    if (ok && !getCsrfToken()) {
+      await refreshCsrfTokenFromServer();
+    }
+    return ok;
   } catch {
     return false;
   }
@@ -470,19 +466,19 @@ export async function logoutOwnerServer() {
 
 export async function sendFirebasePhoneOtp(): Promise<any> { return null; }
 export async function confirmFirebasePhoneOtp(): Promise<any> { return null; }
-export async function sendOtpCall(): Promise<any> { return { success: true }; }
-export async function verifyOtpCall(): Promise<any> { return { success: true }; }
+export async function sendOtpCall(): Promise<any> { return { success: false, error: 'Unsupported route' }; }
+export async function verifyOtpCall(): Promise<any> { return { success: false, error: 'Unsupported route' }; }
 export async function verifySecurityCodeCall(code: string) {
-  return await verifyOwnerLockInput(code, '', 'pin');
+  return await verifyPinServer(code);
 }
 export async function updateSecurityCodeCall(curr: string, next: string) {
-  return await saveOwnerLockConfig('pin', next);
+  return await updatePinServer(curr, next);
 }
 export async function emergencyLockdownCall() {
   return await logoutAllDevices();
 }
 export async function getSecurityStatusCall() {
-  return { activeLayers: 4, locked: false, attemptsLeft: 5 };
+  return fetchSecuritySystemStatus();
 }
 
 // ==========================================
@@ -593,6 +589,9 @@ export async function verifyPinServer(pin: string): Promise<{
       setOwnerUnlocked(true);
       if (typeof data.sessionToken === 'string' && data.sessionToken) {
         setMemorySessionToken(data.sessionToken);
+      }
+      if (typeof data.csrfToken === 'string' && data.csrfToken) {
+        setMemoryCsrfToken(data.csrfToken);
       }
     }
     return {
@@ -720,4 +719,389 @@ export async function fetchSecuritySystemStatus(): Promise<any> {
     if (res.ok) return await res.json();
   } catch {}
   return { argon2idEnabled: true, serverSideEnforced: true };
+}
+
+// ==========================================
+// 🏰 SECRET CONTROL ROOM APIS
+// ==========================================
+
+export type SecurityAuditSeverity = 'info' | 'warning' | 'critical';
+
+export interface SecurityAuditLogEntry {
+  seq: number;
+  id: string;
+  timestamp: string;
+  event: string;
+  severity: SecurityAuditSeverity;
+  actor: string;
+  ip: string;
+  summary: string;
+  meta?: Record<string, string | number | boolean>;
+  prevHash: string;
+  entryHash: string;
+}
+
+export interface SystemIntegrityCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  severity: 'ok' | 'warning' | 'critical';
+  detail: string;
+}
+
+export interface SystemIntegrityReport {
+  checkedAt: string;
+  overallStatus: 'healthy' | 'warning' | 'critical';
+  checks: SystemIntegrityCheck[];
+  auditChain: { intact: boolean; totalEntries: number; brokenAtSeq?: number; latestHash: string };
+  quarantineActiveCount: number;
+  snapshotsCount: number;
+}
+
+export interface QuarantineVaultItem {
+  id: string;
+  createdAt: string;
+  source: string;
+  reason: string;
+  severity: 'warning' | 'critical';
+  actorIp: string;
+  mimeDeclared: string;
+  payloadHash: string;
+  payloadPreview: string;
+  status: 'quarantined' | 'purged';
+  purgedAt?: string;
+}
+
+export interface RecoverySnapshotSummary {
+  snapshotId: string;
+  label: string;
+  kind: 'manual' | 'pre_restore';
+  createdAt: string;
+  createdBy: string;
+  payloadSha256: string;
+  productsCount: number;
+  companiesCount: number;
+  ordersCount: number;
+}
+
+export interface RecoveryDryRunSectionDiff {
+  currentCount: number;
+  incomingCount: number;
+  added: number;
+  updated: number;
+  removed: number;
+}
+
+export interface RecoveryDryRunResult {
+  validToApply: boolean;
+  signatureValid: boolean;
+  schemaErrors: string[];
+  warnings: string[];
+  quarantinedItems: number;
+  diff: {
+    products: RecoveryDryRunSectionDiff;
+    companies: RecoveryDryRunSectionDiff;
+    categories: RecoveryDryRunSectionDiff;
+    banners: RecoveryDryRunSectionDiff;
+    orders: RecoveryDryRunSectionDiff;
+    siteSettingsChanged: boolean;
+    chatConfigChanged: boolean;
+    notificationSettingsChanged: boolean;
+  };
+}
+
+export async function fetchSecurityAuditLogs(limit = 100, severity?: string): Promise<{
+  success: boolean;
+  entries: SecurityAuditLogEntry[];
+  chainIntact: boolean;
+  totalEntries: number;
+  brokenAtSeq?: number;
+  unauthorized?: boolean;
+  error?: string;
+}> {
+  try {
+    const qs = new URLSearchParams({ limit: String(limit) });
+    if (severity && severity !== 'all') qs.set('severity', severity);
+    const res = await fetch(`/api/admin/security/audit-logs?${qs.toString()}`, {
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: getAdminAuthHeaders(),
+    });
+    const data = await safeReadJson(res);
+    if (res.status === 401 || res.status === 403) {
+      notifySessionExpired();
+      return { success: false, entries: [], chainIntact: false, totalEntries: 0, unauthorized: true, error: data.error };
+    }
+    if (!res.ok) return { success: false, entries: [], chainIntact: false, totalEntries: 0, error: data.error };
+    return {
+      success: Boolean(data.success),
+      entries: Array.isArray(data.entries) ? data.entries : [],
+      chainIntact: Boolean(data.chainIntact),
+      totalEntries: Number(data.totalEntries || 0),
+      brokenAtSeq: data.brokenAtSeq,
+    };
+  } catch {
+    return { success: false, entries: [], chainIntact: false, totalEntries: 0, error: 'تعذر تحميل سجل التدقيق الأمني.' };
+  }
+}
+
+export async function fetchSystemIntegrityAudit(): Promise<{
+  success: boolean;
+  report?: SystemIntegrityReport;
+  persistenceStatus?: Record<string, unknown>;
+  unauthorized?: boolean;
+  error?: string;
+}> {
+  try {
+    const res = await fetch('/api/admin/security/integrity', {
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: getAdminAuthHeaders(),
+    });
+    const data = await safeReadJson(res);
+    if (res.status === 401 || res.status === 403) {
+      notifySessionExpired();
+      return { success: false, unauthorized: true, error: data.error };
+    }
+    if (!res.ok) return { success: false, error: data.error || 'تعذر تنفيذ فحص السلامة.' };
+    return {
+      success: Boolean(data.success),
+      report: data.report,
+      persistenceStatus: data.persistenceStatus,
+    };
+  } catch {
+    return { success: false, error: 'تعذر الاتصال بخدمة فحص السلامة.' };
+  }
+}
+
+export async function fetchSecurityQuarantine(): Promise<{
+  success: boolean;
+  items: QuarantineVaultItem[];
+  activeCount: number;
+  unauthorized?: boolean;
+  error?: string;
+}> {
+  try {
+    const res = await fetch('/api/admin/security/quarantine', {
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: getAdminAuthHeaders(),
+    });
+    const data = await safeReadJson(res);
+    if (res.status === 401 || res.status === 403) {
+      notifySessionExpired();
+      return { success: false, items: [], activeCount: 0, unauthorized: true, error: data.error };
+    }
+    if (!res.ok) return { success: false, items: [], activeCount: 0, error: data.error };
+    return {
+      success: Boolean(data.success),
+      items: Array.isArray(data.items) ? data.items : [],
+      activeCount: Number(data.activeCount || 0),
+    };
+  } catch {
+    return { success: false, items: [], activeCount: 0, error: 'تعذر جلب خزينة الحجر الأمني.' };
+  }
+}
+
+export async function actOnQuarantineItem(
+  id: string,
+  action: 'inspect' | 'purge'
+): Promise<{ success: boolean; item?: QuarantineVaultItem; error?: string }> {
+  try {
+    const res = await fetch(`/api/admin/security/quarantine/${encodeURIComponent(id)}/action`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ action }),
+    });
+    const data = await safeReadJson(res);
+    if (res.status === 401 || res.status === 403) {
+      notifySessionExpired();
+      return { success: false, error: data.error || 'الجلسة منتهية.' };
+    }
+    if (!res.ok || !data.success) {
+      return { success: false, error: data.error || 'فشل تنفيذ الإجراء على عنصر الحجر.' };
+    }
+    return { success: true, item: data.item };
+  } catch {
+    return { success: false, error: 'تعذر الاتصال بالخادم.' };
+  }
+}
+
+export async function listServerBackupSnapshots(): Promise<{
+  success: boolean;
+  snapshots: RecoverySnapshotSummary[];
+  unauthorized?: boolean;
+  error?: string;
+}> {
+  try {
+    const res = await fetch('/api/admin/security/backup/snapshots', {
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: getAdminAuthHeaders(),
+    });
+    const data = await safeReadJson(res);
+    if (res.status === 401 || res.status === 403) {
+      notifySessionExpired();
+      return { success: false, snapshots: [], unauthorized: true, error: data.error };
+    }
+    if (!res.ok) return { success: false, snapshots: [], error: data.error };
+    return {
+      success: Boolean(data.success),
+      snapshots: Array.isArray(data.snapshots) ? data.snapshots : [],
+    };
+  } catch {
+    return { success: false, snapshots: [], error: 'تعذر تحميل اللقطات الاحتياطية.' };
+  }
+}
+
+export async function createServerSignedBackup(
+  confirmPin: string,
+  label?: string
+): Promise<{
+  success: boolean;
+  snapshot?: any;
+  snapshots?: RecoverySnapshotSummary[];
+  requiresPinConfirmation?: boolean;
+  error?: string;
+}> {
+  try {
+    const res = await fetch('/api/admin/security/backup/create', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ confirmPin, label }),
+    });
+    const data = await safeReadJson(res);
+    if (res.status === 401) {
+      notifySessionExpired();
+      return { success: false, error: data.error };
+    }
+    if (!res.ok || !data.success) {
+      return {
+        success: false,
+        requiresPinConfirmation: Boolean(data.requiresPinConfirmation),
+        error: data.error || 'تعذر إنشاء اللقطة الاحتياطية الموقعة.',
+      };
+    }
+    return {
+      success: true,
+      snapshot: data.snapshot,
+      snapshots: data.snapshots,
+    };
+  } catch {
+    return { success: false, error: 'فشل الاتصال بالخادم لإنشاء اللقطة.' };
+  }
+}
+
+export async function dryRunServerRecovery(params: {
+  snapshotId?: string;
+  bundle?: unknown;
+}): Promise<{ success: boolean; dryRun?: RecoveryDryRunResult; error?: string }> {
+  try {
+    const res = await fetch('/api/admin/security/backup/dry-run', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(params),
+    });
+    const data = await safeReadJson(res);
+    if (res.status === 401) {
+      notifySessionExpired();
+      return { success: false, error: data.error };
+    }
+    if (!res.ok || !data.success) {
+      return { success: false, error: data.error || 'فشل الفحص المبدئي للنسخة الاحتياطية.' };
+    }
+    return { success: true, dryRun: data.dryRun };
+  } catch {
+    return { success: false, error: 'فشل الاتصال بالخادم أثناء الفحص المبدئي.' };
+  }
+}
+
+export async function applyServerRecovery(params: {
+  confirmPin: string;
+  snapshotId?: string;
+  bundle?: unknown;
+  allowUnsigned?: boolean;
+}): Promise<{
+  success: boolean;
+  preRestoreSnapshotId?: string;
+  dryRun?: RecoveryDryRunResult;
+  snapshots?: RecoverySnapshotSummary[];
+  requiresPinConfirmation?: boolean;
+  message?: string;
+  error?: string;
+}> {
+  try {
+    const res = await fetch('/api/admin/security/backup/restore', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(params),
+    });
+    const data = await safeReadJson(res);
+    if (res.status === 401) {
+      notifySessionExpired();
+      return { success: false, error: data.error };
+    }
+    if (!res.ok || !data.success) {
+      return {
+        success: false,
+        requiresPinConfirmation: Boolean(data.requiresPinConfirmation),
+        dryRun: data.dryRun,
+        error: data.error || 'فشل تطبيق الاستعادة على الخادم.',
+      };
+    }
+    return {
+      success: true,
+      preRestoreSnapshotId: data.preRestoreSnapshotId,
+      dryRun: data.dryRun,
+      snapshots: data.snapshots,
+      message: data.message,
+    };
+  } catch {
+    return { success: false, error: 'فشل الاتصال بالخادم أثناء الاستعادة.' };
+  }
+}
+
+export async function rollbackServerRecovery(
+  confirmPin: string,
+  snapshotId?: string
+): Promise<{
+  success: boolean;
+  restoredSnapshotId?: string;
+  snapshots?: RecoverySnapshotSummary[];
+  requiresPinConfirmation?: boolean;
+  message?: string;
+  error?: string;
+}> {
+  try {
+    const res = await fetch('/api/admin/security/backup/rollback', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ confirmPin, snapshotId }),
+    });
+    const data = await safeReadJson(res);
+    if (res.status === 401) {
+      notifySessionExpired();
+      return { success: false, error: data.error };
+    }
+    if (!res.ok || !data.success) {
+      return {
+        success: false,
+        requiresPinConfirmation: Boolean(data.requiresPinConfirmation),
+        error: data.error || 'تعذر تنفيذ التراجع.',
+      };
+    }
+    return {
+      success: true,
+      restoredSnapshotId: data.restoredSnapshotId,
+      snapshots: data.snapshots,
+      message: data.message,
+    };
+  } catch {
+    return { success: false, error: 'تعذر الاتصال بالخادم لتنفيذ التراجع.' };
+  }
 }

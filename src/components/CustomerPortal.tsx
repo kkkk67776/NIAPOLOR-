@@ -14,7 +14,7 @@ import {
   Mail,
   Shield
 } from 'lucide-react';
-import { TUNISIAN_GOVERNORATES, getGovernorateName } from '../data/governorates';
+import { TUNISIAN_GOVERNORATES, getDelegationsForGovernorate, getGovernorateName } from '../data/governorates';
 import { getPaymentStatusTone } from '../lib/payments';
 
 export const CustomerPortal: React.FC = () => {
@@ -44,9 +44,8 @@ export const CustomerPortal: React.FC = () => {
   const [showAddAddress, setShowAddAddress] = useState(false);
   const [newFullName, setNewFullName] = useState('');
   const [newPhone, setNewPhone] = useState('');
-  const [newGovernorate, setNewGovernorate] = useState(TUNISIAN_GOVERNORATES[0].id);
-  const [newCity, setNewCity] = useState('');
-  const [newPostalCode, setNewPostalCode] = useState('');
+  const [newGovernorate, setNewGovernorate] = useState('');
+  const [newDelegation, setNewDelegation] = useState('');
   const [newStreet, setNewStreet] = useState('');
   const [newNotes, setNewNotes] = useState('');
 
@@ -58,23 +57,24 @@ export const CustomerPortal: React.FC = () => {
 
   const handleAddAddressSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newFullName || !newPhone || !newCity || !newStreet) return;
+    if (!newFullName.trim() || !newPhone.trim() || !newGovernorate || !newDelegation || !newStreet.trim()) return;
 
     addCustomerAddress({
-      fullName: newFullName,
-      phone: newPhone,
+      fullName: newFullName.trim(),
+      phone: newPhone.trim(),
       governorate: newGovernorate,
-      city: newCity,
-      postalCode: newPostalCode || '1000',
-      street: newStreet,
-      notes: newNotes,
+      delegation: newDelegation,
+      city: newDelegation,
+      street: newStreet.trim(),
+      notes: newNotes.trim() || undefined,
       isDefault: false
     });
 
     setShowAddAddress(false);
     setNewFullName('');
     setNewPhone('');
-    setNewCity('');
+    setNewGovernorate('');
+    setNewDelegation('');
     setNewStreet('');
     setNewNotes('');
   };
@@ -248,7 +248,11 @@ export const CustomerPortal: React.FC = () => {
                 </div>
 
                 <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
-                  <span>{order.items.length} منتجات · {getGovernorateName(order.shippingAddress.governorate, language)}</span>
+                  <span>
+                    {order.items.length} منتجات · {getGovernorateName(order.shippingAddress.governorate, language)}
+                    {(order.shippingAddress.delegation || order.shippingAddress.city) &&
+                      ` (${order.shippingAddress.delegation || order.shippingAddress.city})`}
+                  </span>
                   <span className="text-sm font-black text-slate-900 dark:text-white tabular-nums">
                     {order.totalAmount.toFixed(3)} {t.cart.currency}
                   </span>
@@ -297,39 +301,43 @@ export const CustomerPortal: React.FC = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <select
+                  required
                   value={newGovernorate}
-                  onChange={e => setNewGovernorate(e.target.value)}
+                  onChange={e => {
+                    setNewGovernorate(e.target.value);
+                    setNewDelegation('');
+                  }}
                   className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#1E293B] text-slate-900 dark:text-white"
                 >
+                  <option value="">اختر الولاية...</option>
                   {TUNISIAN_GOVERNORATES.map(gov => (
                     <option key={gov.id} value={gov.id}>
                       {gov.nameAr}
                     </option>
                   ))}
                 </select>
-                <input
-                  type="text"
+                <select
                   required
-                  placeholder="المدينة / المعتمدية"
-                  value={newCity}
-                  onChange={e => setNewCity(e.target.value)}
-                  className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#1E293B] text-slate-900 dark:text-white"
-                />
-                <input
-                  type="text"
-                  placeholder="الترقيم البريدي"
-                  value={newPostalCode}
-                  onChange={e => setNewPostalCode(e.target.value)}
-                  className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#1E293B] text-slate-900 dark:text-white"
-                />
+                  disabled={!newGovernorate}
+                  value={newDelegation}
+                  onChange={e => setNewDelegation(e.target.value)}
+                  className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#1E293B] text-slate-900 dark:text-white disabled:opacity-55"
+                >
+                  <option value="">{newGovernorate ? 'اختر المعتمدية...' : 'اختر الولاية أولاً'}</option>
+                  {getDelegationsForGovernorate(newGovernorate).map(del => (
+                    <option key={del} value={del}>
+                      {del}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <input
                 type="text"
                 required
-                placeholder="النهج، الشارع، ورقم البناية"
+                placeholder="العنوان التفصيلي: الحي، الشارع، رقم المنزل أو أقرب علامة مميزة"
                 value={newStreet}
                 onChange={e => setNewStreet(e.target.value)}
                 className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#1E293B] text-slate-900 dark:text-white"
@@ -378,7 +386,8 @@ export const CustomerPortal: React.FC = () => {
                   )}
                 </div>
                 <p className="text-xs text-slate-600 dark:text-slate-300">
-                  {getGovernorateName(addr.governorate, language)} · {addr.city} ({addr.postalCode})
+                  {getGovernorateName(addr.governorate, language)} · {addr.delegation || addr.city || ''}
+                  {addr.postalCode ? ` (${addr.postalCode})` : ''}
                 </p>
                 <p className="text-xs text-slate-500 dark:text-slate-400">{addr.street}</p>
                 <p className="text-xs font-mono text-slate-700 dark:text-slate-300">{addr.phone}</p>

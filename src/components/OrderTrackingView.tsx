@@ -512,7 +512,11 @@ export const OrderTrackingView: React.FC = () => {
                 <p><strong>{t.checkout.fullName}:</strong> {activeOrder.customerName}</p>
                 <p><strong>{t.checkout.phone}:</strong> <span dir="ltr" className="font-mono">{activeOrder.customerPhone}</span></p>
                 <p><strong>{t.checkout.governorate}:</strong> {getGovernorateName(activeOrder.shippingAddress.governorate, language)}</p>
-                <p><strong>{t.checkout.city}:</strong> {activeOrder.shippingAddress.city} ({activeOrder.shippingAddress.postalCode})</p>
+                <p>
+                  <strong>{t.checkout.delegation || t.checkout.city}:</strong>{' '}
+                  {activeOrder.shippingAddress.delegation || activeOrder.shippingAddress.city || '—'}
+                  {activeOrder.shippingAddress.postalCode ? ` (${activeOrder.shippingAddress.postalCode})` : ''}
+                </p>
                 <p><strong>{t.checkout.street}:</strong> {activeOrder.shippingAddress.street}</p>
               </div>
             </div>

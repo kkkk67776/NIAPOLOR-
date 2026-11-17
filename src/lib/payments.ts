@@ -257,9 +257,15 @@ export async function contributeToEchox(payload: {
 }
 
 export async function fetchScopedVendorFinancials(vendorId: string): Promise<ScopedVendorFinancialsResponse> {
-  const res = await fetch(`/api/vendor/${encodeURIComponent(vendorId)}/financials`);
-  if (!res.ok) throw new Error('Failed loading vendor ledger');
-  return res.json();
+  const res = await fetch(`/api/vendor/${encodeURIComponent(vendorId)}/financials`, {
+    credentials: 'include',
+    cache: 'no-store',
+    headers: getAdminAuthHeaders(),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401 || res.status === 403) notifySessionExpired();
+  if (!res.ok) throw new Error(data.error || 'Failed loading vendor ledger');
+  return data;
 }
 
 // ==========================================

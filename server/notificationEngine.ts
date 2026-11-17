@@ -687,3 +687,18 @@ export async function sendTestAdminPush(endpoint?: string): Promise<{
 
   return { sent: res.sent, failed: res.failed, total: targets.length };
 }
+
+export function getNotificationSettingsSnapshot(): NotificationSettings {
+  return { ...loadDb().settings };
+}
+
+export async function restoreNotificationSettingsSnapshot(
+  incoming?: Partial<NotificationSettings>
+): Promise<{ ok: boolean; statusCode?: number; error?: string }> {
+  if (!incoming || typeof incoming !== 'object' || Object.keys(incoming).length === 0) {
+    return { ok: true };
+  }
+  const res = await updateNotificationSettings(incoming);
+  return { ok: res.ok, statusCode: res.statusCode, error: res.error };
+}
+

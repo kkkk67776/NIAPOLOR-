@@ -64,9 +64,10 @@ export interface CustomerAddress {
   fullName: string;
   phone: string;
   governorate: string; // One of the 24 Tunisian governorates
-  city: string; // Delegation / City
-  postalCode: string; // 4 digits
-  street: string;
+  delegation?: string; // Official Tunisian delegation belonging to the chosen governorate
+  city?: string; // Legacy compatibility field (mirrored from delegation for new orders)
+  postalCode?: string; // Optional legacy field (removed from buyer checkout UI)
+  street: string; // Detailed address (neighborhood, street, house number or landmark)
   notes?: string;
 }
 

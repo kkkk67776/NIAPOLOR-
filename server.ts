@@ -33,7 +33,10 @@ import {
   isBankIdentityChange,
   isEnvLockedBank,
   syncPaymentDbIfStale,
+  getPaymentRecoverySnapshot,
+  restorePaymentRecoverySnapshot,
 } from './server/paymentEngine';
+import { getGovernorateName } from './src/data/governorates';
 import {
   getPublicStoreState,
   getAdminStoreState,
@@ -43,6 +46,8 @@ import {
   adminReplyToInquiry,
   hydrateStoreStateFromCloud,
   syncStoreStateIfStale,
+  getStoreRecoverySnapshot,
+  restoreStoreRecoverySnapshot,
 } from './server/storeEngine';
 import {
   atomicWriteJsonSync,
@@ -68,6 +73,7 @@ import {
   recordCustomerChatExchange,
   syncChatDbIfStale,
   updateChatConfig,
+  restoreChatConfigSnapshot,
 } from './server/chatEngine';
 import {
   clearAdminNotifications,
@@ -86,7 +92,24 @@ import {
   unsubscribeAdminPush,
   unsubscribePublicPush,
   updateNotificationSettings,
+  getNotificationSettingsSnapshot,
+  restoreNotificationSettingsSnapshot,
 } from './server/notificationEngine';
+import {
+  actOnQuarantineItem,
+  appendSecurityAuditEvent,
+  createSignedRecoverySnapshot,
+  dryRunRecoveryBundle,
+  getQuarantineVault,
+  getRecoverySnapshotById,
+  getSecurityAuditLogs,
+  hydrateSecurityEngineFromCloud,
+  isSessionRevoked,
+  listRecoverySnapshots,
+  revokeSessionId,
+  runSystemIntegrityAudit,
+  type RecoveryPayloadBundle,
+} from './server/securityEngine';
 
 dotenv.config();
 
@@ -210,7 +233,7 @@ app.use((req: Request, res: Response, next) => {
     res.setHeader('Vary', 'Origin');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-CSRF-Token');
     if (req.method === 'OPTIONS') {
       return res.status(204).end();
     }
@@ -219,6 +242,33 @@ app.use((req: Request, res: Response, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+  const hostHeader = (req.get('host') || '').toLowerCase();
+  const isPreviewOrLocalHost =
+    hostHeader.includes('.run.app') ||
+    hostHeader.includes('localhost') ||
+    hostHeader.includes('127.0.0.1');
+  if (!isPreviewOrLocalHost) {
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  }
+  const isProdRuntime = process.env.NODE_ENV === 'production';
+  res.setHeader(
+    'Content-Security-Policy',
+    [
+      "default-src 'self'",
+      isProdRuntime
+        ? "script-src 'self' 'unsafe-inline' https://apis.google.com https://www.gstatic.com https://www.googletagmanager.com"
+        : "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://www.gstatic.com https://www.googletagmanager.com",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' https://fonts.gstatic.com data:",
+      "img-src 'self' https: data:",
+      "connect-src 'self' https: wss:",
+      "object-src 'none'",
+      "base-uri 'self'",
+      isPreviewOrLocalHost
+        ? "frame-ancestors 'self' https://aistudio.google.com https://*.google.com https://*.googleusercontent.com"
+        : "frame-ancestors 'self'",
+    ].join('; ')
+  );
   const p = req.path.toLowerCase();
   if (
     p.startsWith('/owner') ||
@@ -411,10 +461,11 @@ const DEFAULT_PIN_ARGON2 =
   (process.env.ECHOX_BOOTSTRAP_PIN_HASH || '').trim() ||
   '$argon2id$v=19$m=65536,t=3,p=4$QRoTtDau0g/bydokawO6JA$nMAQe1UMgspWQ5Q4LRIzmoSwqLqENN34vKGiok8KGg0';
 
-// Per-IP Rate Limiter Store
+// Per-IP Rate Limiter Store (Progressive exponential lockout)
 interface RateLimitBucket {
   attempts: number;
   lockoutUntil: number;
+  violationCount?: number;
   windowStart: number;
   lastSeen: number;
 }
@@ -456,7 +507,7 @@ function getBucket(namespace: string, ip: string): RateLimitBucket {
   const key = `${namespace}:${ip}`;
   let bucket = ipRateBuckets.get(key);
   if (!bucket) {
-    bucket = { attempts: 0, lockoutUntil: 0, windowStart: Date.now(), lastSeen: Date.now() };
+    bucket = { attempts: 0, lockoutUntil: 0, violationCount: 0, windowStart: Date.now(), lastSeen: Date.now() };
     ipRateBuckets.set(key, bucket);
   }
   bucket.lastSeen = Date.now();
@@ -484,11 +535,15 @@ function recordFailedAttempt(namespace: string, ip: string, maxAttempts: number,
   const bucket = getBucket(namespace, ip);
   bucket.attempts += 1;
   if (bucket.attempts >= maxAttempts) {
-    bucket.lockoutUntil = Date.now() + lockoutMs;
+    const nextViolations = (bucket.violationCount || 0) + 1;
+    bucket.violationCount = nextViolations;
+    const multiplier = [1, 4, 10, 30][Math.min(3, nextViolations - 1)];
+    const effectiveLockoutMs = Math.min(30 * 60 * 1000, lockoutMs * multiplier);
+    bucket.lockoutUntil = Date.now() + effectiveLockoutMs;
     syncRateLimitsToCloudAsync();
     return {
       locked: true,
-      remainingSeconds: Math.ceil(lockoutMs / 1000),
+      remainingSeconds: Math.ceil(effectiveLockoutMs / 1000),
       attemptsLeft: 0,
     };
   }
@@ -578,6 +633,37 @@ function verifySignedSession(cookieVal: string): string | null {
   return verifySignedSessionDetailed(cookieVal)?.sessionId || null;
 }
 
+function computeSessionHint(sessionId: string): string {
+  return crypto.createHash('sha256').update(sessionId || 'anon').digest('hex').slice(0, 12);
+}
+
+function issueCsrfToken(sessionId: string): string {
+  const nonce = crypto.randomBytes(12).toString('hex');
+  const exp = Date.now() + 5 * 24 * 60 * 60 * 1000;
+  const sidHint = computeSessionHint(sessionId);
+  const payload = `csrf1.${nonce}.${exp}.${sidHint}`;
+  const sig = crypto.createHmac('sha256', getHmacSecret()).update(payload).digest('hex');
+  return `${payload}.${sig}`;
+}
+
+function verifyCsrfToken(token: string, expectedSessionId: string): boolean {
+  if (!token || typeof token !== 'string') return false;
+  const parts = token.trim().split('.');
+  if (parts.length !== 5 || parts[0] !== 'csrf1') return false;
+  const [ver, nonce, expStr, sidHint, sig] = parts;
+  const exp = Number(expStr);
+  if (!Number.isFinite(exp) || exp < Date.now()) return false;
+  if (sidHint !== computeSessionHint(expectedSessionId)) return false;
+  const payload = `${ver}.${nonce}.${expStr}.${sidHint}`;
+  const expected = crypto.createHmac('sha256', getHmacSecret()).update(payload).digest('hex');
+  return sig.length === expected.length && crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
+}
+
+function buildCsrfCookie(req: Request, value: string, maxAgeSeconds: number): string {
+  const secureFlag = isHttpsRequest(req) ? '; Secure' : '';
+  return `echox_csrf=${value}; Path=/; Max-Age=${maxAgeSeconds}; SameSite=Lax${secureFlag}`;
+}
+
 function extractSessionTokenFromReq(req: Request): string {
   const cookies = parseCookies(req);
   if (cookies['__session']) return cookies['__session'];
@@ -600,6 +686,11 @@ function resolveSessionRecord(req: Request): {
   const parsed = verifySignedSessionDetailed(cookieVal);
   if (!parsed) return null;
 
+  if (isSessionRevoked(parsed.sessionId)) {
+    activeSessions.delete(parsed.sessionId);
+    return null;
+  }
+
   const existing = activeSessions.get(parsed.sessionId);
   if (existing) {
     if (existing.expiresAt < Date.now()) {
@@ -615,7 +706,7 @@ function resolveSessionRecord(req: Request): {
     };
   }
 
-  // Rehydrate valid stateless v2 token after serverless/free-tier process restart
+  // Rehydrate valid stateless v2 token after serverless/free-tier process restart (not revoked)
   if (parsed.expiresAt && parsed.codeVerified) {
     const restored = {
       email: OWNER_EMAIL,
@@ -751,43 +842,31 @@ function parseCookies(req: Request): Record<string, string> {
   return list;
 }
 
-// 3. createOwnerSession with Cryptographic Signature
-app.post('/api/createOwnerSession', async (req: Request, res: Response) => {
-  try {
-    const { email } = req.body || {};
+// 3. Legacy unauthenticated createOwnerSession disabled permanently (Zero-Trust Vault Enforcement)
+app.post('/api/createOwnerSession', (req: Request, res: Response) => {
+  appendSecurityAuditEvent({
+    event: 'LEGACY_SESSION_MINT_BLOCKED',
+    severity: 'warning',
+    actor: 'anonymous',
+    ip: getClientIp(req),
+    summary: 'تم صد محاولة استدعاء مسار /api/createOwnerSession المعطّل أمنياً.',
+  });
+  return res.status(403).json({
+    success: false,
+    error: 'تم إغلاق هذا المسار نهائياً: يلزم اجتياز المصادقة الثنائية عبر رمز الوصول وPIN.',
+  });
+});
 
-    if (!email || email.trim().toLowerCase() !== OWNER_EMAIL) {
-      return res.status(403).json({ error: 'جلسة غير مصرح بها للمالك.' });
-    }
-
-    // Create session cookie with cryptographic signature
-    const rawSessionId = `session_${crypto.randomBytes(32).toString('hex')}`;
-    const fiveDaysMs = 5 * 24 * 60 * 60 * 1000;
-    const expiresAt = Date.now() + fiveDaysMs;
-
-    activeSessions.set(rawSessionId, {
-      email: OWNER_EMAIL,
-      owner: true,
-      codeVerified: false,
-      expiresAt
-    });
-
-    const signedCookie = signSessionId(rawSessionId);
-
-    // Set secure __session signed cookie
-    res.setHeader('Set-Cookie', [
-      buildSessionCookie(req, signedCookie, 5 * 24 * 3600)
-    ]);
-
-    return res.json({
-      success: true,
-      message: 'تم إنشاء جلسة المالك الآمنة بنجاح.'
-    });
-
-  } catch (err: any) {
-    console.error('Error in /api/createOwnerSession:', err);
-    return res.status(500).json({ error: 'فشل إنشاء الجلسة الآمنة.' });
+// 3.1 CSRF Token Mint for active authenticated Vault session
+app.get('/api/security/csrf', (req: Request, res: Response) => {
+  const session = resolveSessionRecord(req);
+  if (!session || session.email !== OWNER_EMAIL || !session.owner || !session.codeVerified) {
+    return res.status(401).json({ success: false, error: 'جلسة غير نشطة.' });
   }
+  const csrfToken = issueCsrfToken(session.rawSessionId);
+  const maxAge = Math.max(60, Math.floor((session.expiresAt - Date.now()) / 1000));
+  res.setHeader('Set-Cookie', [buildCsrfCookie(req, csrfToken, maxAge)]);
+  return res.json({ success: true, csrfToken });
 });
 
 // 4. owner/me (Route Guard Server Verification)
@@ -873,13 +952,17 @@ app.post('/api/security/verifyCode', async (req: Request, res: Response) => {
 
     const issuedAt = Date.now();
     const signedCookie = signSessionId(session.rawSessionId, issuedAt, session.expiresAt, true);
+    const csrfToken = issueCsrfToken(session.rawSessionId);
+    const maxAgeSec = Math.max(60, Math.floor((session.expiresAt - issuedAt) / 1000));
     res.setHeader('Set-Cookie', [
-      buildSessionCookie(req, signedCookie, Math.max(60, Math.floor((session.expiresAt - issuedAt) / 1000)))
+      buildSessionCookie(req, signedCookie, maxAgeSec),
+      buildCsrfCookie(req, csrfToken, maxAgeSec),
     ]);
 
     return res.json({
       success: true,
       sessionToken: signedCookie,
+      csrfToken,
       message: 'تم التحقق من شيفرة الحماية السيادية بنجاح وتم فك قفل لوحة المالك.',
       codeVerified: true
     });
@@ -959,8 +1042,18 @@ app.post('/api/security/emergencyLockdown', async (req: Request, res: Response) 
     activeSessions.clear();
 
     res.setHeader('Set-Cookie', [
-      buildSessionCookie(req, '', 0)
+      buildSessionCookie(req, '', 0),
+      buildCsrfCookie(req, '', 0),
     ]);
+
+    appendSecurityAuditEvent({
+      event: 'EMERGENCY_LOCKDOWN_EXECUTED',
+      severity: 'critical',
+      actor: 'owner',
+      ip: getClientIp(req),
+      summary: `تفعيل الإغلاق الأمني الفوري وإبطال ${sessionCount} جلسة.`,
+      meta: { sessionCount },
+    });
 
     console.warn(`[ECHOX_SECURITY_LOCKDOWN] Emergency Lockdown triggered! Revoked ${sessionCount} active sessions.`);
     emitAdminNotification({
@@ -997,20 +1090,52 @@ app.get('/api/security/status', (req: Request, res: Response) => {
   });
 });
 
-// 9. owner/logout
-app.post('/api/owner/logout', (req: Request, res: Response) => {
-  const cookies = parseCookies(req);
-  const cookieVal = cookies['__session'];
-  if (cookieVal) {
-    const rawSessionId = verifySignedSession(cookieVal);
-    if (rawSessionId) {
-      activeSessions.delete(rawSessionId);
+// 9. owner/logout (Persists session revocation across both Node RAM and stateless v2 tokens)
+app.post('/api/owner/logout', async (req: Request, res: Response) => {
+  const ip = getClientIp(req);
+  const token = extractSessionTokenFromReq(req);
+  const parsed = token ? verifySignedSessionDetailed(token) : null;
+
+  if (parsed) {
+    const reqOrigin = (req.headers.origin as string) || '';
+    const hostHeader = req.get('host') || '';
+    if (reqOrigin && !isAllowedOrigin(reqOrigin)) {
+      try {
+        if (new URL(reqOrigin).host !== hostHeader) {
+          return res.status(403).json({ success: false, error: 'مصدر طلب غير مصرح به.' });
+        }
+      } catch {
+        return res.status(403).json({ success: false, error: 'مصدر طلب غير مصرح به.' });
+      }
     }
+    const csrfHeader = String(req.headers['x-csrf-token'] || '');
+    if (!verifyCsrfToken(csrfHeader, parsed.sessionId)) {
+      appendSecurityAuditEvent({
+        event: 'LOGOUT_CSRF_REJECTED',
+        severity: 'warning',
+        actor: 'anonymous',
+        ip,
+        summary: 'رفض طلب تسجيل خروج لغياب رمز CSRF الصالح.',
+      });
+      return res.status(403).json({ success: false, error: 'رمز الحماية CSRF مطلوب لتسجيل الخروج.' });
+    }
+    activeSessions.delete(parsed.sessionId);
+    await revokeSessionId(parsed.sessionId, parsed.expiresAt);
+    appendSecurityAuditEvent({
+      event: 'OWNER_SESSION_REVOKED_LOGOUT',
+      severity: 'info',
+      actor: 'owner',
+      ip,
+      summary: 'تسجيل خروج صريح وإبطال الجلسة دائماً.',
+      meta: { sessionPrefix: parsed.sessionId.slice(0, 10) },
+    });
   }
+
   res.setHeader('Set-Cookie', [
-    buildSessionCookie(req, '', 0)
+    buildSessionCookie(req, '', 0),
+    buildCsrfCookie(req, '', 0),
   ]);
-  return res.json({ success: true, message: 'تم إنهاء جلسة المالك بنجاح.' });
+  return res.json({ success: true, message: 'تم إنهاء جلسة المالك وإبطالها دائماً بنجاح.' });
 });
 
 // ==========================================
@@ -1295,8 +1420,17 @@ app.post('/api/security/logoutAllDevices', async (req: Request, res: Response) =
   }
   const count = activeSessions.size;
   activeSessions.clear();
+  appendSecurityAuditEvent({
+    event: 'ALL_SESSIONS_REVOKED',
+    severity: 'warning',
+    actor: 'owner',
+    ip: getClientIp(req),
+    summary: `إبطال جميع الجلسات النشطة على كل الأجهزة (${count} جلسة).`,
+    meta: { revokedCount: count },
+  });
   res.setHeader('Set-Cookie', [
-    buildSessionCookie(req, '', 0)
+    buildSessionCookie(req, '', 0),
+    buildCsrfCookie(req, '', 0),
   ]);
   return res.json({
     success: true,
@@ -1343,6 +1477,13 @@ app.post('/api/security/verifyAccessCode', async (req: Request, res: Response) =
 
     if (isMatch) {
       resetBucket('accessCode', ip);
+      appendSecurityAuditEvent({
+        event: 'ACCESS_CODE_VERIFIED',
+        severity: 'info',
+        actor: 'vault_gate',
+        ip,
+        summary: 'تحقق ناجح من رمز الوصول السري عبر Argon2id.',
+      });
       return res.json({
         success: true,
         message: 'تم التحقق من رمز الوصول بنجاح.'
@@ -1351,10 +1492,18 @@ app.post('/api/security/verifyAccessCode', async (req: Request, res: Response) =
 
     const fail = recordFailedAttempt('accessCode', ip, 5, 30000);
     if (fail.locked) {
+      appendSecurityAuditEvent({
+        event: 'ACCESS_CODE_LOCKOUT',
+        severity: 'critical',
+        actor: 'vault_gate',
+        ip,
+        summary: `تجميد بوابة رمز الوصول لمدة ${fail.remainingSeconds} ثانية بعد محاولات فاشلة متكررة.`,
+        meta: { remainingSeconds: fail.remainingSeconds },
+      });
       emitSecurityAlertRateLimited(`lock_access_${ip}`, {
         severity: 'critical',
         title: '🚨 محاولة اختراق: تجميد بوابة رمز الوصول',
-        body: `تم حظر العنوان ${ip} مؤقتاً بعد 5 محاولات خاطئة لإدخال رمز الوصول السري.`,
+        body: `تم حظر العنوان ${ip} مؤقتاً بعد 5 محاولات خاطئة لإدخال رمز الوصول السري (${fail.remainingSeconds} ثانية).`,
         url: '/owner/dashboard',
         meta: { ip, type: 'access_code_lockout' },
       });
@@ -1362,11 +1511,19 @@ app.post('/api/security/verifyAccessCode', async (req: Request, res: Response) =
         success: false,
         lockedOut: true,
         remainingSeconds: fail.remainingSeconds,
-        error: 'تجاوزت عدد المحاولات المسموح به. تم تجميد البوابة لمدة 30 ثانية.'
+        error: `تجاوزت عدد المحاولات المسموح به. تم تجميد البوابة لمدة ${fail.remainingSeconds} ثانية.`
       });
     }
 
     if (trimmed.startsWith('#') || fail.attemptsLeft <= 2) {
+      appendSecurityAuditEvent({
+        event: 'ACCESS_CODE_FAILED',
+        severity: 'warning',
+        actor: 'vault_gate',
+        ip,
+        summary: `محاولة فاشلة لإدخال رمز الوصول (المتبقي ${fail.attemptsLeft}).`,
+        meta: { attemptsLeft: fail.attemptsLeft },
+      });
       emitSecurityAlertRateLimited(
         `warn_access_${ip}`,
         {
@@ -1442,24 +1599,45 @@ app.post('/api/security/verifyPin', async (req: Request, res: Response) => {
       });
 
       const signedCookie = signSessionId(rawSessionId, issuedAt, expiresAt, true);
+      const csrfToken = issueCsrfToken(rawSessionId);
+      const maxAgeSec = 5 * 24 * 3600;
       res.setHeader('Set-Cookie', [
-        buildSessionCookie(req, signedCookie, 5 * 24 * 3600)
+        buildSessionCookie(req, signedCookie, maxAgeSec),
+        buildCsrfCookie(req, csrfToken, maxAgeSec),
       ]);
+
+      appendSecurityAuditEvent({
+        event: 'OWNER_PIN_LOGIN_SUCCESS',
+        severity: 'info',
+        actor: OWNER_EMAIL,
+        ip,
+        summary: 'دخول موثق إلى مركز التحكم عبر رمز PIN (Argon2id).',
+        meta: { sessionPrefix: rawSessionId.slice(0, 10) },
+      });
 
       return res.json({
         success: true,
         sessionId: rawSessionId,
         sessionToken: signedCookie,
+        csrfToken,
         message: 'تم التحقق بنجاح والدخول إلى مركز التحكم.'
       });
     }
 
     const fail = recordFailedAttempt('pin', ip, 5, 30000);
     if (fail.locked) {
+      appendSecurityAuditEvent({
+        event: 'OWNER_PIN_LOCKOUT',
+        severity: 'critical',
+        actor: 'vault_gate',
+        ip,
+        summary: `قفل بوابة PIN لمدة ${fail.remainingSeconds} ثانية بعد محاولات فاشلة.`,
+        meta: { remainingSeconds: fail.remainingSeconds },
+      });
       emitSecurityAlertRateLimited(`lock_pin_${ip}`, {
         severity: 'critical',
         title: '🚨 تنبيه اختراق: قفل بوابة الـ PIN',
-        body: `تم تجميد بوابة الدخول للعنوان ${ip} بعد 5 محاولات PIN خاطئة!`,
+        body: `تم تجميد بوابة الدخول للعنوان ${ip} لمدة ${fail.remainingSeconds} ثانية بعد 5 محاولات PIN خاطئة!`,
         url: '/owner/dashboard',
         meta: { ip, type: 'pin_lockout' },
       });
@@ -1467,9 +1645,18 @@ app.post('/api/security/verifyPin', async (req: Request, res: Response) => {
         success: false,
         lockedOut: true,
         remainingSeconds: fail.remainingSeconds,
-        error: 'تجاوزت عدد محاولات PIN المسموحة. تم قفل البوابة مؤقتاً لمدة 30 ثانية.'
+        error: `تجاوزت عدد محاولات PIN المسموحة. تم قفل البوابة مؤقتاً لمدة ${fail.remainingSeconds} ثانية.`
       });
     }
+
+    appendSecurityAuditEvent({
+      event: 'OWNER_PIN_FAILED',
+      severity: 'warning',
+      actor: 'vault_gate',
+      ip,
+      summary: `إدخال رمز PIN خاطئ (المتبقي: ${fail.attemptsLeft}).`,
+      meta: { attemptsLeft: fail.attemptsLeft },
+    });
 
     emitSecurityAlertRateLimited(
       `warn_pin_${ip}`,
@@ -1714,7 +1901,7 @@ app.get('/api/security/systemStatus', (_req: Request, res: Response) => {
 // 💳 ECHOX PROFESSIONAL PAYMENT SYSTEM APIS
 // ==========================================
 
-function requireAdminAuth(req: Request, res: Response): { email: string } | null {
+function requireAdminAuth(req: Request, res: Response): { email: string; rawSessionId: string } | null {
   const session = resolveSessionRecord(req);
   if (!session) {
     res.status(401).json({ error: 'وصول مرفوض: جلسة مركز التحكم مطلوبة أو منتهية.' });
@@ -1724,7 +1911,49 @@ function requireAdminAuth(req: Request, res: Response): { email: string } | null
     res.status(403).json({ error: 'وصول غير مصرح به: صلاحيات مركز التحكم مطلوبة.' });
     return null;
   }
-  return { email: session.email };
+
+  const isMutating = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method.toUpperCase());
+  if (isMutating) {
+    const reqOrigin = (req.headers.origin as string) || '';
+    const hostHeader = req.get('host') || '';
+    if (reqOrigin && !isAllowedOrigin(reqOrigin)) {
+      let sameHost = false;
+      try {
+        sameHost = new URL(reqOrigin).host === hostHeader;
+      } catch {
+        sameHost = false;
+      }
+      if (!sameHost) {
+        appendSecurityAuditEvent({
+          event: 'CSRF_ORIGIN_BLOCKED',
+          severity: 'critical',
+          actor: session.email,
+          ip: getClientIp(req),
+          summary: `حظر طلب تعديل إداري من مصدر غير موثوق (${req.path}).`,
+        });
+        res.status(403).json({ error: 'حماية CSRF: مصدر الطلب غير مسموح به.' });
+        return null;
+      }
+    }
+
+    const csrfHeader = String(req.headers['x-csrf-token'] || '');
+    const cookies = parseCookies(req);
+    const csrfCookie = cookies['echox_csrf'];
+    const cookieMismatch = Boolean(csrfCookie && csrfCookie !== csrfHeader);
+    if (!verifyCsrfToken(csrfHeader, session.rawSessionId) || cookieMismatch) {
+      appendSecurityAuditEvent({
+        event: 'CSRF_TOKEN_REJECTED',
+        severity: 'critical',
+        actor: session.email,
+        ip: getClientIp(req),
+        summary: `حظر طلب تعديل إداري لغياب أو عدم تطابق رمز CSRF (${req.path}).`,
+      });
+      res.status(403).json({ error: 'رمز الحماية CSRF مفقود أو غير صالح — يرجى تجديد الجلسة.' });
+      return null;
+    }
+  }
+
+  return { email: session.email, rawSessionId: session.rawSessionId };
 }
 
 // 1. Public Payment Config (never exposes server secrets)
@@ -1755,6 +1984,7 @@ app.post('/api/payments/checkout', async (req: Request, res: Response) => {
     const result = await processServerCheckout({
       ...(req.body || {}),
       origin: getRequestOrigin(req),
+      actorIp: ip,
     });
     if (!result.ok) {
       if ((result.statusCode || 400) >= 400 && /تلاعب|ملف|SVG|صورة/i.test(result.error || '')) {
@@ -1769,11 +1999,13 @@ app.post('/api/payments/checkout', async (req: Request, res: Response) => {
     }
     if (result.order) {
       const ord = result.order;
+      const govLabel = getGovernorateName(ord.shippingAddress?.governorate || '', 'ar');
+      const delLabel = ord.shippingAddress?.delegation || ord.shippingAddress?.city || '';
       emitAdminNotification({
         category: 'order',
         severity: 'success',
         title: `🛒 طلب جديد #${ord.trackingNumber}`,
-        body: `${ord.customerName} — ${ord.totalAmount} د.ت (${ord.shippingAddress?.governorate || ''})`,
+        body: `${ord.customerName} — ${ord.totalAmount} د.ت (${govLabel}${delLabel ? ` · ${delLabel}` : ''})`,
         url: '/owner/dashboard',
         meta: { trackingNumber: ord.trackingNumber, total: ord.totalAmount },
       });
@@ -1803,6 +2035,7 @@ app.post('/api/payments/bank-transfer/proof', async (req: Request, res: Response
   const result = await submitBankTransferProof({
     ...(req.body || {}),
     isAdmin,
+    actorIp: ip,
   });
   if (!result.ok) {
     if (/SVG|ملف|صورة/i.test(result.error || '')) {
@@ -1912,8 +2145,9 @@ app.get('/api/payments/verify-return', async (req: Request, res: Response) => {
   return res.json({ success: true, ...result });
 });
 
-// 7. Scoped Vendor Financial Ledger View (Strict Vendor Data Isolation)
+// 7. Scoped Vendor Financial Ledger View (Strict Admin Auth + Vendor Data Isolation)
 app.get('/api/vendor/:vendorId/financials', async (req: Request, res: Response) => {
+  if (!requireAdminAuth(req, res)) return;
   const vendorId = String(req.params.vendorId || '').trim();
   if (!vendorId) {
     return res.status(400).json({ error: 'معرف البائع مطلوب.' });
@@ -1933,6 +2167,7 @@ app.post('/api/support/contribute', async (req: Request, res: Response) => {
     const result = await createSupportContribution({
       ...(req.body || {}),
       origin: getRequestOrigin(req),
+      actorIp: ip,
     });
     if (!result.ok) {
       return res.status(result.statusCode || 400).json({ success: false, error: result.error });
@@ -2097,13 +2332,15 @@ app.post('/api/admin/support/verify', async (req: Request, res: Response) => {
 
 app.get('/api/payments/track/:code', async (req: Request, res: Response) => {
   const ip = getClientIp(req);
-  const rate = checkSlidingWindowLimit('trackOrder', ip, 40, 60 * 1000);
+  const rate = checkSlidingWindowLimit('trackOrder', ip, 15, 60 * 1000);
   if (!rate.allowed) {
     return res.status(429).json({ success: false, error: `تم تجاوز الحد المسموح، يرجى الانتظار ${rate.retryAfterSeconds} ثانية.` });
   }
   res.setHeader('Cache-Control', 'no-store');
   await syncPaymentDbIfStale(true).catch(() => {});
-  const result = trackPublicOrder(req.params.code);
+  const sess = resolveSessionRecord(req);
+  const isAdmin = Boolean(sess && sess.codeVerified);
+  const result = trackPublicOrder(req.params.code, isAdmin);
   if (!result.ok) {
     return res.status(result.statusCode || 404).json({ success: false, error: result.error });
   }
@@ -2470,6 +2707,340 @@ app.post('/api/admin/notifications/test', async (req: Request, res: Response) =>
   return res.json({ success: true, ...result });
 });
 
+// ==========================================
+// 🏰 SECRET CONTROL ROOM — AUDIT, INTEGRITY, QUARANTINE & SAFE RECOVERY
+// ==========================================
+
+function collectCurrentRecoveryBundle(): RecoveryPayloadBundle {
+  return {
+    store: getStoreRecoverySnapshot(),
+    payments: getPaymentRecoverySnapshot(),
+    chatConfig: getPublicChatConfig(),
+    notificationSettings: { ...getNotificationSettingsSnapshot() },
+  };
+}
+
+async function verifyStepUpPin(req: Request, pinInput: unknown): Promise<{ ok: boolean; statusCode?: number; error?: string }> {
+  const ip = getClientIp(req);
+  const lockState = checkLockout('recoveryStepUpPin', ip);
+  if (lockState.locked) {
+    return {
+      ok: false,
+      statusCode: 429,
+      error: `تم تجميد تأكيد الـ PIN للعمليات الحساسة لمدة ${lockState.remainingSeconds} ثانية.`,
+    };
+  }
+  if (!centralSecurityConfig) {
+    await initCentralSecurityConfig();
+  }
+  const cleanPin = typeof pinInput === 'string' ? pinInput.trim() : '';
+  if (!cleanPin) {
+    return { ok: false, statusCode: 403, error: 'يلزم إدخال رمز الـ PIN الأمني لتنفيذ هذا الإجراء الحساس.' };
+  }
+  let valid = false;
+  try {
+    valid = await argon2.verify(centralSecurityConfig!.pin_argon2, cleanPin);
+  } catch {}
+  if (!valid) {
+    const fail = recordFailedAttempt('recoveryStepUpPin', ip, 3, 60 * 1000);
+    appendSecurityAuditEvent({
+      event: 'RECOVERY_STEP_UP_PIN_FAILED',
+      severity: 'critical',
+      actor: OWNER_EMAIL,
+      ip,
+      summary: `فشل تأكيد رمز الـ PIN عند محاولة إجراء استعادة أو نسخ احتياطي موقع.`,
+      meta: { attemptsLeft: fail.attemptsLeft, locked: fail.locked },
+    });
+    return {
+      ok: false,
+      statusCode: fail.locked ? 429 : 403,
+      error: fail.locked
+        ? `محاولات PIN خاطئة متعددة! تم التجميد لمدة ${fail.remainingSeconds} ثانية.`
+        : `رمز الـ PIN التأكيدي غير صحيح (المتبقي: ${fail.attemptsLeft}).`,
+    };
+  }
+  resetBucket('recoveryStepUpPin', ip);
+  return { ok: true };
+}
+
+app.get('/api/admin/security/audit-logs', (req: Request, res: Response) => {
+  if (!requireAdminAuth(req, res)) return;
+  res.setHeader('Cache-Control', 'no-store');
+  const limit = Number(req.query.limit || 100);
+  const severity = typeof req.query.severity === 'string' ? req.query.severity : undefined;
+  return res.json({
+    success: true,
+    ...getSecurityAuditLogs(limit, severity),
+  });
+});
+
+app.get('/api/admin/security/integrity', async (req: Request, res: Response) => {
+  if (!requireAdminAuth(req, res)) return;
+  res.setHeader('Cache-Control', 'no-store');
+  await Promise.all([
+    syncCentralSecurityIfStale(true).catch(() => {}),
+    syncStoreStateIfStale(true).catch(() => {}),
+    syncPaymentDbIfStale(true).catch(() => {}),
+  ]);
+  const report = runSystemIntegrityAudit({
+    actorIp: getClientIp(req),
+    centralSecurityConfig,
+    hmacSecretLength: getHmacSecret().length,
+    storeState: getStoreRecoverySnapshot(),
+    paymentPublicConfig: getPublicPaymentConfig(),
+  });
+  return res.json({
+    success: true,
+    report,
+    persistenceStatus: getPersistenceStatus(),
+  });
+});
+
+app.get('/api/admin/security/quarantine', (req: Request, res: Response) => {
+  if (!requireAdminAuth(req, res)) return;
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json({
+    success: true,
+    ...getQuarantineVault(),
+  });
+});
+
+app.post('/api/admin/security/quarantine/:id/action', async (req: Request, res: Response) => {
+  if (!requireAdminAuth(req, res)) return;
+  const action = req.body?.action === 'purge' ? 'purge' : req.body?.action === 'inspect' ? 'inspect' : null;
+  if (!action) {
+    return res.status(400).json({ success: false, error: 'الإجراء المطلوب غير صالح (inspect أو purge).' });
+  }
+  const result = await actOnQuarantineItem(req.params.id, action, getClientIp(req));
+  if (!result.ok) {
+    return res.status(result.statusCode || 400).json({ success: false, error: result.error });
+  }
+  return res.json({ success: true, item: result.item, vault: getQuarantineVault() });
+});
+
+app.get('/api/admin/security/backup/snapshots', (req: Request, res: Response) => {
+  if (!requireAdminAuth(req, res)) return;
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json({
+    success: true,
+    snapshots: listRecoverySnapshots(),
+  });
+});
+
+app.post('/api/admin/security/backup/create', async (req: Request, res: Response) => {
+  const admin = requireAdminAuth(req, res);
+  if (!admin) return;
+  const pinCheck = await verifyStepUpPin(req, req.body?.confirmPin);
+  if (!pinCheck.ok) {
+    return res.status(pinCheck.statusCode || 403).json({
+      success: false,
+      requiresPinConfirmation: true,
+      error: pinCheck.error,
+    });
+  }
+  await Promise.all([
+    syncStoreStateIfStale(true).catch(() => {}),
+    syncPaymentDbIfStale(true).catch(() => {}),
+    syncChatDbIfStale(true).catch(() => {}),
+    syncNotificationsIfStale(true).catch(() => {}),
+  ]);
+  const created = await createSignedRecoverySnapshot({
+    label: typeof req.body?.label === 'string' ? req.body.label : undefined,
+    kind: 'manual',
+    createdBy: admin.email,
+    actorIp: getClientIp(req),
+    hmacSecret: getHmacSecret(),
+    payload: collectCurrentRecoveryBundle(),
+    redactSecrets: true,
+  });
+  if (!created.ok || !created.snapshot) {
+    return res.status(503).json({ success: false, error: created.error || 'تعذر إنشاء اللقطة الموقعة.' });
+  }
+  return res.json({
+    success: true,
+    snapshot: created.snapshot,
+    snapshots: listRecoverySnapshots(),
+  });
+});
+
+app.post('/api/admin/security/backup/dry-run', async (req: Request, res: Response) => {
+  if (!requireAdminAuth(req, res)) return;
+  await Promise.all([
+    syncStoreStateIfStale(true).catch(() => {}),
+    syncPaymentDbIfStale(true).catch(() => {}),
+  ]);
+  let rawBundle: unknown = req.body?.bundle;
+  if (!rawBundle && typeof req.body?.snapshotId === 'string') {
+    const snap = getRecoverySnapshotById(req.body.snapshotId);
+    if (!snap) {
+      return res.status(404).json({ success: false, error: 'اللقطة المطلوبة غير موجودة.' });
+    }
+    rawBundle = snap;
+  }
+  const { dryRun } = dryRunRecoveryBundle({
+    rawBundle,
+    hmacSecret: getHmacSecret(),
+    currentPayload: collectCurrentRecoveryBundle(),
+    actorIp: getClientIp(req),
+  });
+  return res.json({ success: true, dryRun });
+});
+
+app.post('/api/admin/security/backup/restore', async (req: Request, res: Response) => {
+  const admin = requireAdminAuth(req, res);
+  if (!admin) return;
+  const pinCheck = await verifyStepUpPin(req, req.body?.confirmPin);
+  if (!pinCheck.ok) {
+    return res.status(pinCheck.statusCode || 403).json({
+      success: false,
+      requiresPinConfirmation: true,
+      error: pinCheck.error,
+    });
+  }
+
+  let rawBundle: unknown = req.body?.bundle;
+  if (!rawBundle && typeof req.body?.snapshotId === 'string') {
+    const snap = getRecoverySnapshotById(req.body.snapshotId);
+    if (!snap) {
+      return res.status(404).json({ success: false, error: 'اللقطة المطلوبة غير موجودة.' });
+    }
+    rawBundle = snap;
+  }
+
+  const currentBundle = collectCurrentRecoveryBundle();
+  const analysis = dryRunRecoveryBundle({
+    rawBundle,
+    hmacSecret: getHmacSecret(),
+    currentPayload: currentBundle,
+    actorIp: getClientIp(req),
+  });
+
+  if (!analysis.dryRun.validToApply || !analysis.extracted) {
+    return res.status(400).json({
+      success: false,
+      error: analysis.dryRun.schemaErrors[0] || 'فشل التحقق المبدئي (Dry-Run) للنسخة الاحتياطية.',
+      dryRun: analysis.dryRun,
+    });
+  }
+
+  const requireSigned = req.body?.allowUnsigned !== true;
+  if (requireSigned && !analysis.dryRun.signatureValid) {
+    return res.status(400).json({
+      success: false,
+      error: 'النسخة غير موقعة خادمياً بختم HMAC؛ فعّل خيار السماح للاستعادة من نسخة محلية بعد مراجعة الفحص.',
+      dryRun: analysis.dryRun,
+    });
+  }
+
+  const ip = getClientIp(req);
+  const preSnap = await createSignedRecoverySnapshot({
+    label: `نقطة استرجاع تلقائية قبل استعادة (${new Date().toLocaleTimeString('ar-TN')})`,
+    kind: 'pre_restore',
+    createdBy: admin.email,
+    actorIp: ip,
+    hmacSecret: getHmacSecret(),
+    payload: currentBundle,
+    redactSecrets: false,
+  });
+  if (!preSnap.ok || !preSnap.snapshot) {
+    return res.status(503).json({
+      success: false,
+      error: preSnap.error || 'تعذر إنشاء نقطة الاسترجاع التلقائية قبل تطبيق الاستعادة؛ تم الإلغاء حفاظاً على البيانات.',
+    });
+  }
+
+  const extracted = analysis.extracted;
+  const storeRes = await restoreStoreRecoverySnapshot(extracted.store);
+  if (!storeRes.ok) {
+    return res.status(storeRes.statusCode || 503).json({ success: false, error: storeRes.error });
+  }
+
+  const payRes = await restorePaymentRecoverySnapshot(extracted.payments, { preserveLiveSecrets: true });
+  if (!payRes.ok) {
+    await restoreStoreRecoverySnapshot(currentBundle.store).catch(() => {});
+    return res.status(payRes.statusCode || 503).json({ success: false, error: payRes.error });
+  }
+
+  await syncCatalogSnapshot(storeRes.state.products, { replaceAll: true }).catch(() => {});
+  await restoreChatConfigSnapshot(extracted.chatConfig).catch(() => {});
+  await restoreNotificationSettingsSnapshot(extracted.notificationSettings).catch(() => {});
+
+  appendSecurityAuditEvent({
+    event: 'SYSTEM_RECOVERY_APPLIED',
+    severity: 'warning',
+    actor: admin.email,
+    ip,
+    summary: `تم تنفيذ استعادة آمنة للبيانات (نقطة التراجع التلقائية: ${preSnap.snapshot.snapshotId}).`,
+    meta: {
+      preRestoreSnapshotId: preSnap.snapshot.snapshotId,
+      signatureValid: analysis.dryRun.signatureValid,
+    },
+  });
+
+  return res.json({
+    success: true,
+    preRestoreSnapshotId: preSnap.snapshot.snapshotId,
+    dryRun: analysis.dryRun,
+    snapshots: listRecoverySnapshots(),
+    message: 'تمت الاستعادة بنجاح مع حفظ نقطة تراجع تلقائية ومزامنة الكاتالوج.',
+  });
+});
+
+app.post('/api/admin/security/backup/rollback', async (req: Request, res: Response) => {
+  const admin = requireAdminAuth(req, res);
+  if (!admin) return;
+  const pinCheck = await verifyStepUpPin(req, req.body?.confirmPin);
+  if (!pinCheck.ok) {
+    return res.status(pinCheck.statusCode || 403).json({
+      success: false,
+      requiresPinConfirmation: true,
+      error: pinCheck.error,
+    });
+  }
+
+  const requestedId = typeof req.body?.snapshotId === 'string' ? req.body.snapshotId : '';
+  const targetSnap = requestedId
+    ? getRecoverySnapshotById(requestedId)
+    : (() => {
+        const list = listRecoverySnapshots();
+        const latestPre = list.find((s) => s.kind === 'pre_restore');
+        return latestPre ? getRecoverySnapshotById(latestPre.snapshotId) : null;
+      })();
+
+  if (!targetSnap) {
+    return res.status(404).json({ success: false, error: 'لا توجد نقطة تراجع (Pre-Restore) متاحة حالياً.' });
+  }
+
+  const storeRes = await restoreStoreRecoverySnapshot(targetSnap.payload.store);
+  if (!storeRes.ok) {
+    return res.status(storeRes.statusCode || 503).json({ success: false, error: storeRes.error });
+  }
+  const payRes = await restorePaymentRecoverySnapshot(targetSnap.payload.payments, { preserveLiveSecrets: true });
+  if (!payRes.ok) {
+    return res.status(payRes.statusCode || 503).json({ success: false, error: payRes.error });
+  }
+
+  await syncCatalogSnapshot(storeRes.state.products, { replaceAll: true }).catch(() => {});
+  await restoreChatConfigSnapshot(targetSnap.payload.chatConfig).catch(() => {});
+  await restoreNotificationSettingsSnapshot(targetSnap.payload.notificationSettings).catch(() => {});
+
+  appendSecurityAuditEvent({
+    event: 'SYSTEM_RECOVERY_ROLLBACK',
+    severity: 'warning',
+    actor: admin.email,
+    ip: getClientIp(req),
+    summary: `تم تنفيذ تراجع فوري (Rollback) إلى اللقطة ${targetSnap.snapshotId}.`,
+    meta: { snapshotId: targetSnap.snapshotId },
+  });
+
+  return res.json({
+    success: true,
+    restoredSnapshotId: targetSnap.snapshotId,
+    snapshots: listRecoverySnapshots(),
+    message: `تم التراجع بنجاح واستعادة الحالة السابقة (${targetSnap.snapshotId}).`,
+  });
+});
+
 // --- SERVER INITIALIZATION & EXPORT (Supports both Render/Dev standalone & Serverless Node adapters) ---
 let initPromise: Promise<void> | null = null;
 
@@ -2482,6 +3053,7 @@ async function ensureServerInitialized(): Promise<void> {
 
       await Promise.all([
         initCentralSecurityConfig().catch((err) => console.error('[Security] Init notice:', err)),
+        hydrateSecurityEngineFromCloud().catch((err) => console.error('[SecurityEngine] Cloud hydrate notice:', err)),
         hydrateRateLimitsFromCloud().catch((err) => console.error('[Security] Rate limit hydrate notice:', err)),
         hydrateOwnerLockConfigFromCloud().catch((err) => console.error('[LockConfig] Cloud hydrate notice:', err)),
         hydratePaymentDbFromCloud().catch((err) => console.error('[PaymentEngine] Cloud hydrate notice:', err)),

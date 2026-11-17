@@ -394,3 +394,14 @@ export function listAdminChatThreads(): {
   const totalUnread = threads.reduce((acc, t) => acc + (t.unreadByOwner || 0), 0);
   return { threads, totalUnread, config: chatDb.config };
 }
+
+export async function restoreChatConfigSnapshot(
+  incoming?: Partial<SupportChatConfig>
+): Promise<{ ok: boolean; statusCode?: number; error?: string }> {
+  if (!incoming || typeof incoming !== 'object' || Object.keys(incoming).length === 0) {
+    return { ok: true };
+  }
+  const res = await updateChatConfig(incoming);
+  return { ok: res.ok, statusCode: res.statusCode, error: res.error };
+}
+

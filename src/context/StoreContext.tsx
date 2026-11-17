@@ -580,8 +580,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         fullName: orderData.customerName || 'عميل هاتف',
         phone: orderData.customerPhone || '+216 00 000 000',
         governorate: 'tunis',
-        city: 'تونس العاصمة',
-        postalCode: '1000',
+        delegation: 'المدينة',
+        city: 'المدينة',
         street: 'طلب مباشر عبر الهاتف / واتساب'
       },
       items: orderData.items && orderData.items.length > 0 ? orderData.items : [
@@ -936,8 +936,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           fullName,
           phone,
           governorate: 'tunis',
-          city: 'تونس العاصمة',
-          postalCode: '1000',
+          delegation: 'باب البحر',
+          city: 'باب البحر',
           street: 'شارع الحبيب بورقيبة',
         }
       ],
@@ -1000,25 +1000,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return saved === 'authorized_true';
   });
 
-  const loginOwnerWithGoogle = (email: string) => {
-    const targetEmail = 'abdelkaderbahri570@gmail.com';
-    const cleanEmail = email.trim().toLowerCase();
-    
-    if (cleanEmail === targetEmail) {
-      setIsOwner(true);
-      sessionStorage.setItem('echox_owner_session', 'authorized_true');
-      return {
-        success: true,
-        message: 'تم التحقق من هوية المالك بنجاح (ECHOX OWNER SECURITY: Custom Claim owner: true)'
-      };
-    } else {
-      setIsOwner(false);
-      sessionStorage.removeItem('echox_owner_session');
-      return {
-        success: false,
-        message: `تم رفض الوصول! البريد (${email}) ليس حساب المالك المعتمد. الحساب الوحيد المصرح له هو abdelkaderbahri570@gmail.com`
-      };
-    }
+  const loginOwnerWithGoogle = (_email: string) => {
+    setIsOwner(false);
+    sessionStorage.removeItem('echox_owner_session');
+    return {
+      success: false,
+      message: 'تم إيقاف التحقق المحلي؛ يرجى الدخول عبر غرفة التحكم الآمنة Argon2id.'
+    };
   };
 
   const logoutOwner = () => {

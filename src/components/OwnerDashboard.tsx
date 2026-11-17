@@ -49,6 +49,7 @@ import { INITIAL_SITE_SETTINGS } from '../data/initialData';
 import { PaymentManagementTab } from './PaymentManagementTab';
 import { SupportChatTab } from './SupportChatTab';
 import { NotificationsCenterTab } from './NotificationsCenterTab';
+import { SecretControlRoom } from './security/SecretControlRoom';
 import { canOrderShipClient, getPaymentStatusTone } from '../lib/payments';
 import {
   AdminNotificationDevice,
@@ -57,7 +58,7 @@ import {
   NotificationSettings,
   showLocalNotificationFallback,
 } from '../lib/notifications';
-import { TUNISIAN_GOVERNORATES, getGovernorateName } from '../data/governorates';
+import { TUNISIAN_GOVERNORATES, getDelegationsForGovernorate, getGovernorateName } from '../data/governorates';
 import { 
   getAuthorizedOwnerEmail, 
   setAuthorizedOwnerEmail, 
@@ -71,7 +72,6 @@ import {
   logoutOwnerServer,
   saveOwnerLockConfig,
   fetchOwnerLockConfig,
-  verifyOwnerLockInput,
   updateAccessCodeServer,
   updatePinServer,
   fetchActiveSessions,
@@ -90,6 +90,7 @@ type DashboardTab =
   | 'notifications'
   | 'payment_management'
   | 'account_security'
+  | 'secret_control_room'
   | 'footer_info'
   | 'products'
   | 'categories'
@@ -310,7 +311,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
   const [manualCustName, setManualCustName] = useState('');
   const [manualCustPhone, setManualCustPhone] = useState('');
   const [manualGov, setManualGov] = useState('tunis');
-  const [manualCity, setManualCity] = useState('');
+  const [manualCity, setManualCity] = useState('المدينة');
   const [manualAmount, setManualAmount] = useState('');
   const [manualNotes, setManualNotes] = useState('');
 
@@ -594,63 +595,6 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
     setTimeout(() => setFooterSavedSuccess(false), 4000);
   };
 
-  const handleChangeSecretCode = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSecretErrorMessage('');
-    setSecretSuccessMessage('');
-
-    if (secretChangeStep === 1) {
-      if (!currentSecretInput.trim()) {
-        setSecretErrorMessage('يرجى إدخال رمز الدخول الحالي أولاً.');
-        return;
-      }
-      setIsChangingPasscode(true);
-      try {
-        const confRes = await fetchOwnerLockConfig();
-        if (confRes.config?.lock_hash) {
-          const verify = await verifyOwnerLockInput(currentSecretInput.trim(), confRes.config.lock_hash, confRes.config.lock_type);
-          if (!verify.success) {
-            setSecretErrorMessage('الرمز الحالي غير صحيح! تحقق من الرمز وأعد المحاولة.');
-            setIsChangingPasscode(false);
-            return;
-          }
-        }
-        setSecretChangeStep(2);
-      } catch (err) {
-        setSecretChangeStep(2);
-      } finally {
-        setIsChangingPasscode(false);
-      }
-    } else {
-      if (newSecretInput.trim().length < 4) {
-        setSecretErrorMessage('الرمز الجديد يجب أن يتكون من 4 خانات أو أحرف على الأقل.');
-        return;
-      }
-      if (newSecretInput.trim() !== confirmSecretInput.trim()) {
-        setSecretErrorMessage('تأكيد الرمز غير متطابق مع الرمز الجديد!');
-        return;
-      }
-      setIsChangingPasscode(true);
-      try {
-        const saveRes = await saveOwnerLockConfig('pin', newSecretInput.trim(), false);
-        if (!saveRes.success) {
-          setSecretErrorMessage(saveRes.error || 'تعذر حفظ الرمز على الخادم الدائم.');
-          return;
-        }
-        setSecretSuccessMessage('تم تغيير رمز الـ PIN لخزنة ECHOX وتشفيره وحفظه على الخادم بنجاح ✓');
-        setCurrentSecretInput('');
-        setNewSecretInput('');
-        setConfirmSecretInput('');
-        setSecretChangeStep(1);
-        setTimeout(() => setSecretSuccessMessage(''), 4000);
-      } catch (err) {
-        setSecretErrorMessage('حدث خطأ أثناء حفظ الرمز. يرجى إعادة المحاولة.');
-      } finally {
-        setIsChangingPasscode(false);
-      }
-    }
-  };
-
   // Handlers for Centralized Argon2id Security & Access Management
   const handleUpdateAccessCode = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -926,8 +870,8 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
         fullName: manualCustName.trim(),
         phone: manualCustPhone.trim(),
         governorate: manualGov,
-        city: manualCity.trim() || 'تونس',
-        postalCode: '1000',
+        delegation: manualCity.trim() || getDelegationsForGovernorate(manualGov)[0] || 'المدينة',
+        city: manualCity.trim() || getDelegationsForGovernorate(manualGov)[0] || 'المدينة',
         street: 'طلب مباشر هاتفياً / واتساب'
       },
       notes: manualNotes.trim() || 'طلب هاتفي مباشر مسجل يدوياً'
@@ -978,13 +922,14 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
 
   // Export CSV
   const exportOrdersCSV = () => {
-    const headers = ['Tracking', 'Customer', 'Phone', 'Governorate', 'City', 'Total_TND', 'Status', 'Date'];
+    const headers = ['Tracking', 'Customer', 'Phone', 'Governorate', 'Delegation', 'Street', 'Total_TND', 'Status', 'Date'];
     const rows = orders.map(o => [
       o.trackingNumber,
       `"${o.customerName}"`,
       `"${o.customerPhone}"`,
       o.shippingAddress?.governorate || '',
-      `"${o.shippingAddress?.city || ''}"`,
+      `"${o.shippingAddress?.delegation || o.shippingAddress?.city || ''}"`,
+      `"${o.shippingAddress?.street || ''}"`,
       o.totalAmount.toFixed(3),
       o.status,
       o.createdAt
@@ -1180,6 +1125,19 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
         >
           <KeyRound className="w-3.5 h-3.5" />
           <span>إعدادات الحساب والأمان</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('secret_control_room')}
+          className={`px-4 py-2 rounded-full text-xs font-bold shrink-0 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 ${
+            activeTab === 'secret_control_room'
+              ? 'bg-[#FF6B00] text-white shadow-xs'
+              : 'bg-[#F8FAFC] dark:bg-[#1E293B] text-slate-700 dark:text-slate-200 border border-[#E2E8F0] dark:border-slate-800 hover:border-slate-400'
+          }`}
+        >
+          <ShieldCheck className="w-3.5 h-3.5" />
+          <span>غرفة التحكم والاستعادة</span>
         </button>
 
         <button
@@ -1983,6 +1941,18 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
         </div>
         );
       })()}
+
+      {/* Tab: Secret Control Room & Recovery (غرفة التحكم السرية والحماية والاستعادة) */}
+      {activeTab === 'secret_control_room' && (
+        <SecretControlRoom
+          onCatalogRestored={async () => {
+            await Promise.all([
+              refreshAdminStoreState().catch(() => {}),
+              refreshAdminOrders().catch(() => {}),
+            ]);
+          }}
+        />
+      )}
 
       {/* Tab: Footer & Store Info Settings (إعدادات تذييل الصفحة وتفاصيل المتجر) */}
       {activeTab === 'footer_info' && (
@@ -2993,7 +2963,9 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                       </a>
                     </div>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                      {o.shippingAddress?.governorate ? `ولاية ${getGovernorateName(o.shippingAddress.governorate, language)}` : ''} • {o.shippingAddress?.city || ''} • {o.shippingAddress?.street || ''} • وسيلة الدفع: <strong className="font-mono">{o.paymentMethod}</strong>
+                      {o.shippingAddress?.governorate ? `ولاية ${getGovernorateName(o.shippingAddress.governorate, language)}` : ''}
+                      {(o.shippingAddress?.delegation || o.shippingAddress?.city) ? ` • ${o.shippingAddress.delegation || o.shippingAddress.city}` : ''}
+                      {o.shippingAddress?.street ? ` • ${o.shippingAddress.street}` : ''} • وسيلة الدفع: <strong className="font-mono">{o.paymentMethod}</strong>
                       {o.paymentReference && <> • المرجع: <strong className="font-mono">{o.paymentReference}</strong></>}
                     </p>
                     {Array.isArray(o.items) && o.items.length > 0 && (
@@ -3505,7 +3477,11 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   <label className="text-xs font-bold block">الولاية *</label>
                   <select
                     value={manualGov}
-                    onChange={e => setManualGov(e.target.value)}
+                    onChange={e => {
+                      const nextGov = e.target.value;
+                      setManualGov(nextGov);
+                      setManualCity(getDelegationsForGovernorate(nextGov)[0] || '');
+                    }}
                     className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent font-bold"
                   >
                     {TUNISIAN_GOVERNORATES.map(g => (
@@ -3515,17 +3491,30 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs font-bold block">المبلغ الإجمالي (د.ت) *</label>
-                  <input
-                    type="number"
-                    step="0.001"
-                    required
-                    value={manualAmount}
-                    onChange={e => setManualAmount(e.target.value)}
-                    placeholder="120.000"
-                    className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent font-mono"
-                  />
+                  <label className="text-xs font-bold block">المعتمدية *</label>
+                  <select
+                    value={manualCity}
+                    onChange={e => setManualCity(e.target.value)}
+                    className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent font-bold"
+                  >
+                    {getDelegationsForGovernorate(manualGov).map(del => (
+                      <option key={del} value={del} className="text-[#0F172A]">{del}</option>
+                    ))}
+                  </select>
                 </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold block">المبلغ الإجمالي (د.ت) *</label>
+                <input
+                  type="number"
+                  step="0.001"
+                  required
+                  value={manualAmount}
+                  onChange={e => setManualAmount(e.target.value)}
+                  placeholder="120.000"
+                  className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent font-mono"
+                />
               </div>
 
               <div className="space-y-1">

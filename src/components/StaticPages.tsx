@@ -21,6 +21,7 @@ import {
   getPaymentStatusTone,
   ScopedVendorFinancialsResponse
 } from '../lib/payments';
+import { isOwnerUnlocked } from '../lib/security';
 
 // 1. The Promise Page (الوعد)
 export const PromiseView: React.FC = () => {
@@ -157,20 +158,22 @@ export const CompaniesView: React.FC = () => {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 text-xs">
-                  <button
-                    type="button"
-                    onClick={() => openVendorLedger(comp.id, comp.name)}
-                    className="px-3.5 py-2 rounded-xl bg-[#FF6B00]/10 hover:bg-[#FF6B00]/20 text-[#FF6B00] font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
-                  >
-                    <BarChart3 className="w-3.5 h-3.5" />
-                    <span>
-                      {language === 'ar'
-                        ? 'السجل المالي للبائع'
-                        : language === 'fr'
-                        ? 'Relevé financier vendeur'
-                        : 'Vendor Financials'}
-                    </span>
-                  </button>
+                  {isOwnerUnlocked() && (
+                    <button
+                      type="button"
+                      onClick={() => openVendorLedger(comp.id, comp.name)}
+                      className="px-3.5 py-2 rounded-xl bg-[#FF6B00]/10 hover:bg-[#FF6B00]/20 text-[#FF6B00] font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
+                    >
+                      <BarChart3 className="w-3.5 h-3.5" />
+                      <span>
+                        {language === 'ar'
+                          ? 'السجل المالي للبائع'
+                          : language === 'fr'
+                          ? 'Relevé financier vendeur'
+                          : 'Vendor Financials'}
+                      </span>
+                    </button>
+                  )}
                   <a 
                     href={`tel:${comp.phone}`} 
                     className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-white font-bold flex items-center gap-1.5"

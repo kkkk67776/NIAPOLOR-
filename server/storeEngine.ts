@@ -403,3 +403,53 @@ export async function adminReplyToInquiry(inquiryId: string, reply: string): Pro
   lastStoreCloudSyncAt = Date.now();
   return { ok: true, inquiry: updated };
 }
+
+export function getStoreRecoverySnapshot(): StorefrontDatabase {
+  return JSON.parse(JSON.stringify(storeDb));
+}
+
+export async function restoreStoreRecoverySnapshot(
+  incoming: Partial<StorefrontDatabase>
+): Promise<{ ok: boolean; statusCode?: number; error?: string; state: ReturnType<typeof getAdminStoreState> }> {
+  await syncStoreStateIfStale(true);
+  if (!incoming || typeof incoming !== 'object') {
+    return { ok: false, statusCode: 400, error: 'بيانات المتجر المستعادة غير صالحة.', state: getAdminStoreState() };
+  }
+  const prev = storeDb;
+  const next = mergeStoreState({
+    ...storeDb,
+    ...incoming,
+    products: Array.isArray(incoming.products) ? incoming.products : storeDb.products,
+    companies: Array.isArray(incoming.companies) ? incoming.companies : storeDb.companies,
+    categories:
+      Array.isArray(incoming.categories) && incoming.categories.length > 0
+        ? incoming.categories
+        : storeDb.categories,
+    banners: Array.isArray(incoming.banners) ? incoming.banners : storeDb.banners,
+    siteSettings:
+      incoming.siteSettings && Object.keys(incoming.siteSettings).length > 0
+        ? incoming.siteSettings
+        : storeDb.siteSettings,
+    ownerSettings:
+      incoming.ownerSettings && Object.keys(incoming.ownerSettings).length > 0
+        ? incoming.ownerSettings
+        : storeDb.ownerSettings,
+    inquiries: Array.isArray(incoming.inquiries) ? incoming.inquiries : storeDb.inquiries,
+    updatedAt: new Date().toISOString(),
+  });
+
+  const persisted = await persistStoreState(next);
+  if (!persisted.ok) {
+    storeDb = prev;
+    return {
+      ok: false,
+      statusCode: 503,
+      error: persisted.error || 'تعذر حفظ بيانات المتجر المستعادة.',
+      state: getAdminStoreState(),
+    };
+  }
+  storeDb = next;
+  lastStoreCloudSyncAt = Date.now();
+  return { ok: true, state: getAdminStoreState() };
+}
+

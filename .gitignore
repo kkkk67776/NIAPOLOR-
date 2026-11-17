@@ -13,3 +13,4 @@ sovereign_security.json
 owner_lock_config.json
 support_chat_data.json
 .hmac_secret
+.backups/

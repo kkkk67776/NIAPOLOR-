@@ -68,6 +68,32 @@
         "updatedAt": { "type": "string", "description": "Last authoritative write ISO timestamp" }
       },
       "required": ["key", "payloadJson", "updatedAt"]
+    },
+    "SecurityQuarantine": {
+      "title": "SecurityQuarantine",
+      "description": "Server-only quarantined suspicious media or recovery payloads",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "source": { "type": "string" },
+        "reason": { "type": "string" },
+        "severity": { "type": "string", "enum": ["warning", "critical"] },
+        "status": { "type": "string", "enum": ["quarantined", "purged"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "source", "reason", "status", "createdAt"]
+    },
+    "RecoverySnapshot": {
+      "title": "RecoverySnapshot",
+      "description": "HMAC-signed server recovery snapshot metadata",
+      "type": "object",
+      "properties": {
+        "snapshotId": { "type": "string" },
+        "kind": { "type": "string", "enum": ["manual", "pre_restore"] },
+        "payloadSha256": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["snapshotId", "kind", "payloadSha256", "createdAt"]
     }
   },
   "firestore": {
@@ -82,6 +108,14 @@
     "/security_audit_logs/{logId}": {
       "schema": { "$ref": "#/entities/SecurityAuditLog" },
       "description": "Security logs for owner authentication and access"
+    },
+    "/security_quarantine/{itemId}": {
+      "schema": { "$ref": "#/entities/SecurityQuarantine" },
+      "description": "Server-only quarantined payloads"
+    },
+    "/recovery_snapshots/{snapId}": {
+      "schema": { "$ref": "#/entities/RecoverySnapshot" },
+      "description": "Server-only signed recovery snapshots"
     },
     "/store_settings/{settingId}": {
       "schema": { "$ref": "#/entities/OwnerSecurity" },

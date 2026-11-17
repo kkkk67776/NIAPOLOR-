@@ -879,6 +879,106 @@ export interface VerifiedEdgeSession {
   expiresAt: number;
 }
 
+const CLOUD_REVOKED_SESSIONS_KEY = 'echox:security_revoked_sessions';
+
+export function isAllowedEdgeOrigin(origin: string, env: EdgeEnv): boolean {
+  if (!origin) return false;
+  if (
+    origin === 'https://echoxstore.pages.dev' ||
+    origin === 'https://echox-store.onrender.com' ||
+    (env.SITE_URL && origin === env.SITE_URL.trim().replace(/\/$/, '')) ||
+    (env.VITE_SITE_URL && origin === env.VITE_SITE_URL.trim().replace(/\/$/, '')) ||
+    (env.CORS_ORIGIN && origin === env.CORS_ORIGIN.trim().replace(/\/$/, ''))
+  ) {
+    return true;
+  }
+  try {
+    const u = new URL(origin);
+    if (u.protocol === 'https:' && /^([a-z0-9-]+\.)*echox[a-z0-9-]*\.pages\.dev$/i.test(u.hostname)) {
+      return true;
+    }
+    if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+export async function isEdgeSessionRevoked(env: EdgeEnv, sessionId: string): Promise<boolean> {
+  if (!sessionId) return true;
+  const loaded = await loadEdgeDocWithMeta<{ revoked?: Record<string, number> }>(
+    env,
+    CLOUD_REVOKED_SESSIONS_KEY
+  );
+  if (!loaded.ok || !loaded.data?.revoked) return false;
+  const exp = loaded.data.revoked[sessionId];
+  return typeof exp === 'number' && exp > Date.now();
+}
+
+export async function revokeEdgeSessionId(
+  env: EdgeEnv,
+  sessionId: string,
+  expiresAtMs?: number
+): Promise<boolean> {
+  if (!sessionId) return false;
+  const now = Date.now();
+  const exp = typeof expiresAtMs === 'number' && expiresAtMs > now ? expiresAtMs : now + 6 * 24 * 3600 * 1000;
+  const mut = await mutateEdgeDocWithRetry<{ revoked: Record<string, number>; updatedAt: string }, boolean>(
+    env,
+    CLOUD_REVOKED_SESSIONS_KEY,
+    async (raw) => {
+      const nextRevoked: Record<string, number> = {};
+      for (const [k, v] of Object.entries(raw?.revoked || {})) {
+        if (typeof v === 'number' && v > now) nextRevoked[k] = v;
+      }
+      nextRevoked[sessionId] = exp;
+      return {
+        nextDoc: { revoked: nextRevoked, updatedAt: new Date().toISOString() },
+        result: true,
+      };
+    }
+  );
+  return mut.ok;
+}
+
+export async function computeEdgeSessionHint(sessionId: string): Promise<string> {
+  const digest = await sha256Hex(sessionId || 'anon');
+  return digest.slice(0, 12);
+}
+
+export async function issueEdgeCsrfToken(env: EdgeEnv, sessionId: string): Promise<string | null> {
+  const secret = await resolveSharedHmacSecret(env);
+  if (!secret) return null;
+  const nonce = randomHex(12);
+  const exp = Date.now() + 5 * 24 * 60 * 60 * 1000;
+  const sidHint = await computeEdgeSessionHint(sessionId);
+  const payload = `csrf1.${nonce}.${exp}.${sidHint}`;
+  const sig = await hmacSha256Hex(secret, payload);
+  return `${payload}.${sig}`;
+}
+
+export async function verifyEdgeCsrfToken(
+  token: string,
+  env: EdgeEnv,
+  expectedSessionId: string
+): Promise<boolean> {
+  if (!token || typeof token !== 'string') return false;
+  const parts = token.trim().split('.');
+  if (parts.length !== 5 || parts[0] !== 'csrf1') return false;
+  const [ver, nonce, expStr, sidHint, sig] = parts;
+  const exp = Number(expStr);
+  if (!Number.isFinite(exp) || exp < Date.now()) return false;
+  const expectedHint = await computeEdgeSessionHint(expectedSessionId);
+  if (sidHint !== expectedHint) return false;
+  const secret = await resolveSharedHmacSecret(env);
+  if (!secret) return false;
+  const payload = `${ver}.${nonce}.${expStr}.${sidHint}`;
+  const expected = await hmacSha256Hex(secret, payload);
+  return timingSafeEqualHex(sig, expected);
+}
+
 export async function verifyEdgeOwnerSession(
   request: Request,
   env: EdgeEnv
@@ -904,6 +1004,10 @@ export async function verifyEdgeOwnerSession(
   const payload = `${ver}.${sessionId}.${iatStr}.${expStr}.${cvStr}`;
   const expected = await hmacSha256Hex(secret, payload);
   if (!timingSafeEqualHex(hmac, expected)) {
+    return null;
+  }
+
+  if (await isEdgeSessionRevoked(env, sessionId)) {
     return null;
   }
 
@@ -950,6 +1054,43 @@ export async function requireEdgeAdminAuth(
       ),
     };
   }
+
+  const method = request.method.toUpperCase();
+  const isMutating = method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE';
+  if (isMutating) {
+    const reqOrigin = request.headers.get('origin') || '';
+    const reqHost = request.headers.get('host') || new URL(request.url).host;
+    if (reqOrigin && !isAllowedEdgeOrigin(reqOrigin, env)) {
+      let sameHost = false;
+      try {
+        sameHost = new URL(reqOrigin).host === reqHost;
+      } catch {
+        sameHost = false;
+      }
+      if (!sameHost) {
+        return {
+          ok: false,
+          response: jsonResponse({ error: 'حماية CSRF: مصدر الطلب غير مسموح به.' }, 403),
+        };
+      }
+    }
+
+    const csrfHeader = request.headers.get('x-csrf-token') || '';
+    const cookies = parseEdgeCookies(request);
+    const csrfCookie = cookies['echox_csrf'];
+    const cookieMismatch = Boolean(csrfCookie && csrfCookie !== csrfHeader);
+    const csrfValid = await verifyEdgeCsrfToken(csrfHeader, env, session.sessionId);
+    if (!csrfValid || cookieMismatch) {
+      return {
+        ok: false,
+        response: jsonResponse(
+          { error: 'رمز الحماية CSRF مفقود أو غير صالح — يرجى تجديد الجلسة.' },
+          403
+        ),
+      };
+    }
+  }
+
   return { ok: true, session };
 }
 
