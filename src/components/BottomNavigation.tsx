@@ -3,6 +3,7 @@ import { Home, LayoutGrid, Search, ShoppingBag, X, ChevronLeft, ArrowRight, Spar
 import { useStore } from '../context/StoreContext';
 import { Product } from '../types';
 import { verifyAccessCodeServer } from '../lib/security';
+import { handleStoreImageError } from '../lib/imageFallback';
 
 interface BottomNavigationProps {
   onOpenVault?: () => void;
@@ -360,6 +361,8 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
                           <img
                             src={product.images[0] || '/assets/images/echox-logo.webp'}
                             alt={prodName}
+                            referrerPolicy="no-referrer"
+                            onError={handleStoreImageError}
                             className="w-full h-full object-contain"
                           />
                         </div>

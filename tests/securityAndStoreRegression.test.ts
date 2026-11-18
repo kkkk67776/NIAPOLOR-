@@ -10,7 +10,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import argon2 from 'argon2';
-import type http from 'http';
+import http from 'http';
 
 const TEST_PIN = '739146';
 const TEST_ACCESS_CODE = '#TestVault2026';
@@ -83,6 +83,90 @@ async function run(): Promise<void> {
     const storeData = (await storeRes.json()) as any;
     assertTrue(storeData.success === true, 'store state success === true');
     assertTrue(Array.isArray(storeData.products) && storeData.products.length > 0, 'storefront has products');
+
+    // Preview vs Production framing policy parity
+    const previewHdrRes = await fetch(`${baseUrl}/api/store/state`, {
+      headers: { 'x-forwarded-host': 'ais-dev-preview.europe-west2.run.app' },
+    });
+    assertEq(previewHdrRes.headers.get('x-frame-options'), null, 'Preview proxy omits X-Frame-Options for AI Studio iframe');
+    assertTrue(
+      (previewHdrRes.headers.get('content-security-policy') || '').includes('https://aistudio.google.com'),
+      'Preview proxy allows https://aistudio.google.com frame-ancestors'
+    );
+
+    const prodHdrRes = await fetch(`${baseUrl}/api/store/state`, {
+      headers: { 'x-forwarded-host': 'echox-store.onrender.com' },
+    });
+    assertEq(prodHdrRes.headers.get('x-frame-options'), 'SAMEORIGIN', 'Production host enforces X-Frame-Options: SAMEORIGIN');
+    assertTrue(
+      (prodHdrRes.headers.get('content-security-policy') || '').endsWith("frame-ancestors 'self'"),
+      'Production host enforces strict frame-ancestors self'
+    );
+
+    // Adversarial header spoofing tests (raw http.request so Host header is respected)
+    const rawHttpGet = (headers: Record<string, string>) =>
+      new Promise<{ status: number; headers: http.IncomingHttpHeaders }>((resolve, reject) => {
+        const req = http.request(
+          { hostname: '127.0.0.1', port: addr.port, path: '/api/store/state', method: 'GET', headers },
+          (res) => {
+            res.resume();
+            res.on('end', () => resolve({ status: res.statusCode || 0, headers: res.headers }));
+          }
+        );
+        req.on('error', reject);
+        req.end();
+      });
+
+    // 1a. Substring spoof domain evil.run.app.attacker.com must NOT get preview framing
+    const evilSubdomainRes = await rawHttpGet({ Host: 'evil.run.app.attacker.com' });
+    assertEq(evilSubdomainRes.headers['x-frame-options'], 'SAMEORIGIN', 'evil.run.app.attacker.com blocked from preview framing');
+    assertTrue(
+      String(evilSubdomainRes.headers['content-security-policy'] || '').endsWith("frame-ancestors 'self'"),
+      'evil.run.app.attacker.com restricted to frame-ancestors self'
+    );
+
+    // 1b. Production Host with forged X-Forwarded-Host + forged Referer + forged Origin MUST keep SAMEORIGIN
+    const prodSpoofRes = await rawHttpGet({
+      Host: 'echox-store.onrender.com',
+      'X-Forwarded-Host': 'ais-dev-fake.europe-west2.run.app',
+      Referer: 'https://evil.com/?aistudio.google.com',
+      Origin: 'https://evil.com/?aistudio.google.com',
+    });
+    assertEq(prodSpoofRes.headers['x-frame-options'], 'SAMEORIGIN', 'Forged X-Forwarded-Host/Referer/Origin cannot disable X-Frame-Options on production');
+    assertTrue(
+      String(prodSpoofRes.headers['content-security-policy'] || '').endsWith("frame-ancestors 'self'"),
+      'Forged preview headers cannot widen CSP frame-ancestors on production'
+    );
+
+    // 1c. Verify SameSite=Lax on production vs SameSite=None on verified HTTPS preview login cookie
+    const prodLoginRaw = await new Promise<{ headers: http.IncomingHttpHeaders }>((resolve, reject) => {
+      const body = JSON.stringify({ pin: TEST_PIN });
+      const req = http.request(
+        {
+          hostname: '127.0.0.1',
+          port: addr.port,
+          path: '/api/security/verifyPin',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(body),
+            Host: 'echox-store.onrender.com',
+            'X-Forwarded-Proto': 'https',
+            'X-Forwarded-Host': 'ais-dev-fake.europe-west2.run.app',
+            'X-Forwarded-For': '198.51.100.11',
+          },
+        },
+        (res) => {
+          res.resume();
+          res.on('end', () => resolve({ headers: res.headers }));
+        }
+      );
+      req.on('error', reject);
+      req.end(body);
+    });
+    const prodSetCookies = (prodLoginRaw.headers['set-cookie'] || []).join(' | ');
+    assertTrue(prodSetCookies.includes('SameSite=Lax'), 'Production session cookie uses SameSite=Lax despite forged X-Forwarded-Host');
+    assertTrue(!prodSetCookies.includes('SameSite=None'), 'Production session cookie never downgrades to SameSite=None');
 
     const payCfgRes = await fetch(`${baseUrl}/api/payments/config`);
     assertEq(payCfgRes.status, 200, 'GET /api/payments/config returns 200');
@@ -242,6 +326,71 @@ async function run(): Promise<void> {
     const adminTrackJson = (await adminTrackRes.json()) as any;
     assertEq(adminTrackJson.order.customerEmail, 'secret-customer@example.com', 'Owner sees unmasked order email');
 
+    // Buyer validation errors: invalid Tunisian phone & mismatched delegation
+    const badPhoneCheckoutRes = await fetch(`${baseUrl}/api/payments/checkout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.23' },
+      body: JSON.stringify({
+        customerName: 'مشتري تونسي',
+        customerPhone: '12345',
+        shippingAddress: { governorate: 'tunis', delegation: 'المدينة', street: 'شارع الحرية' },
+        paymentMethod: 'cod',
+        items: [{ productId: firstProd.id, productName: firstProd.name?.ar || firstProd.id, quantity: 1, unitPrice: firstProd.price }],
+      }),
+    });
+    assertEq(badPhoneCheckoutRes.status, 400, 'Invalid Tunisian phone rejected (400)');
+
+    const badDelCheckoutRes = await fetch(`${baseUrl}/api/payments/checkout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.24' },
+      body: JSON.stringify({
+        customerName: 'مشتري تونسي',
+        customerPhone: '55123456',
+        shippingAddress: { governorate: 'sfax', delegation: 'غير_موجودة', street: 'طريق تنيور' },
+        paymentMethod: 'cod',
+        items: [{ productId: firstProd.id, productName: firstProd.name?.ar || firstProd.id, quantity: 1, unitPrice: firstProd.price }],
+      }),
+    });
+    assertEq(badDelCheckoutRes.status, 400, 'Unknown delegation for governorate rejected (400)');
+
+    // Valid buyer checkout WITHOUT email (optional email) across Sfax + Sfax Ville
+    const noEmailCheckoutRes = await fetch(`${baseUrl}/api/payments/checkout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.25' },
+      body: JSON.stringify({
+        customerName: 'أحمد الصفاقسي',
+        customerPhone: '+216 55 123 456',
+        shippingAddress: { governorate: 'sfax', delegation: 'صفاقس المدينة', street: 'طريق قرمدة كم 3' },
+        paymentMethod: 'cod',
+        items: [{ productId: firstProd.id, productName: firstProd.name?.ar || firstProd.id, quantity: 1, unitPrice: firstProd.price }],
+      }),
+    });
+    assertEq(noEmailCheckoutRes.status, 200, 'Checkout succeeds with optional empty email and normalized +216 phone');
+    const noEmailTracking: string = ((await noEmailCheckoutRes.json()) as any).order.trackingNumber;
+
+    // Customer refund/cancel request flow: wrong phone blocked (403), matching phone succeeds (200)
+    const badRefundReqRes = await fetch(`${baseUrl}/api/payments/request-refund`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.25' },
+      body: JSON.stringify({
+        trackingNumber: noEmailTracking,
+        customerPhone: '99887766',
+        reason: 'محاولة إلغاء برقم مختلف',
+      }),
+    });
+    assertEq(badRefundReqRes.status, 403, 'Customer refund/cancel request with mismatched phone blocked (403)');
+
+    const refundReqRes = await fetch(`${baseUrl}/api/payments/request-refund`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.25' },
+      body: JSON.stringify({
+        trackingNumber: noEmailTracking,
+        customerPhone: '55123456',
+        reason: 'تغيير العنوان قبل الشحن',
+      }),
+    });
+    assertEq(refundReqRes.status, 200, 'Customer refund/cancel request succeeds with matching phone (200)');
+
     // Phone-ownership check blocks spoofed submission when phone doesn't match (403)
     const phoneMismatchRes = await fetch(`${baseUrl}/api/payments/bank-transfer/proof`, {
       method: 'POST',
@@ -349,6 +498,52 @@ async function run(): Promise<void> {
     assertEq(integrityRes.status, 200, 'Integrity audit returns 200');
     const integrityJson = (await integrityRes.json()) as any;
     assertTrue(integrityJson.report.auditChain.intact === true, 'Integrity reports intact audit chain');
+    assertTrue(
+      integrityJson.report.checks.some((c: any) => c.id === 'orders_financial_integrity' && c.passed === true),
+      'Integrity includes passing orders_financial_integrity check'
+    );
+    assertTrue(
+      integrityJson.report.checks.some((c: any) => c.id === 'self_protection_guards' && c.passed === true),
+      'Integrity includes passing self_protection_guards check'
+    );
+
+    // Pre-write Self-Protection: reject and quarantine unsafe product media & negative prices
+    const unsafeProductPayload = storeData.products.map((p: any, idx: number) =>
+      idx === 0 ? { ...p, images: [SVG_DATA_URI] } : p
+    );
+    const unsafeStoreRes = await fetch(`${baseUrl}/api/admin/store/state`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+        'X-CSRF-Token': csrfToken,
+      },
+      body: JSON.stringify({ products: unsafeProductPayload }),
+    });
+    assertEq(unsafeStoreRes.status, 400, 'PUT /api/admin/store/state blocks SVG data URI media (400)');
+
+    const quarAfterStoreRes = await fetch(`${baseUrl}/api/admin/security/quarantine`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    const quarAfterStoreJson = (await quarAfterStoreRes.json()) as any;
+    assertTrue(
+      quarAfterStoreJson.items.some((i: any) => i.source === 'admin_store_product_media'),
+      'Blocked admin store media automatically quarantined'
+    );
+
+    const negPricePayload = storeData.products.map((p: any, idx: number) =>
+      idx === 0 ? { ...p, price: -5 } : p
+    );
+    const negPriceRes = await fetch(`${baseUrl}/api/admin/store/state`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+        'X-CSRF-Token': csrfToken,
+      },
+      body: JSON.stringify({ products: negPricePayload }),
+    });
+    assertEq(negPriceRes.status, 400, 'PUT /api/admin/store/state rejects negative product price (400)');
 
     // Step-Up PIN required when creating signed snapshot
     const noPinBackupRes = await fetch(`${baseUrl}/api/admin/security/backup/create`, {
@@ -440,6 +635,38 @@ async function run(): Promise<void> {
     const afterRollbackStore = (await (await fetch(`${baseUrl}/api/store/state`)).json()) as any;
     assertEq(afterRollbackStore.products[0].name.ar, 'منتج معدل للاختبار', 'Rollback reverted to pre-restore state');
 
+    // Tampered recovery bundle (wrong HMAC signature) must be rejected without modifying store state
+    const tamperedRestoreRes = await fetch(`${baseUrl}/api/admin/security/backup/restore`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+        'X-CSRF-Token': csrfToken,
+      },
+      body: JSON.stringify({
+        confirmPin: TEST_PIN,
+        allowUnsigned: false,
+        bundle: {
+          schemaVersion: '1.0',
+          snapshotId: 'tampered-1',
+          createdAt: new Date().toISOString(),
+          signatureHmac: '0'.repeat(64),
+          payloadSha256: '1'.repeat(64),
+          payload: {
+            products: [{ id: 'hack', name: { ar: 'مهكر', fr: 'Hack', en: 'Hack' }, price: 1, stock: 1, category: 'all', companyId: 'comp_echox', companyName: 'x', governorate: 'tunis', images: ['/a.png'], description: { ar: 'x', fr: 'x', en: 'x' } }],
+            companies: storeData.companies,
+            categories: storeData.categories,
+            banners: storeData.banners,
+            siteSettings: storeData.siteSettings,
+            orders: [],
+          },
+        },
+      }),
+    });
+    assertEq(tamperedRestoreRes.status, 400, 'Tampered HMAC recovery bundle rejected (400) when allowUnsigned is false');
+    const afterTamperStore = (await (await fetch(`${baseUrl}/api/store/state`)).json()) as any;
+    assertEq(afterTamperStore.products[0].name.ar, 'منتج معدل للاختبار', 'Failed restore leaves storefront data intact');
+
     // Verify Hash-Chained Audit Log integrity after all events
     const auditRes = await fetch(`${baseUrl}/api/admin/security/audit-logs?limit=150`, {
       headers: { Authorization: `Bearer ${adminToken}` },
@@ -449,7 +676,7 @@ async function run(): Promise<void> {
     assertTrue(auditJson.chainIntact === true, 'SHA-256 audit log chain remains intact across all operations');
 
     // =========================================================
-    // 6. Session Revocation on Logout
+    // 6. Session Revocation on Logout & Emergency Lockdown
     // =========================================================
     const logoutRes = await fetch(`${baseUrl}/api/owner/logout`, {
       method: 'POST',
@@ -464,6 +691,29 @@ async function run(): Promise<void> {
       headers: { Authorization: `Bearer ${adminToken}` },
     });
     assertEq(reusedTokenRes.status, 401, 'Revoked v2 session token rejected with 401 after logout');
+
+    // Re-authenticate, then verify Emergency Lockdown invalidates active token immediately
+    const reloginRes = await fetch(`${baseUrl}/api/security/verifyPin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.10' },
+      body: JSON.stringify({ pin: TEST_PIN }),
+    });
+    assertEq(reloginRes.status, 200, 'Re-login succeeds (200)');
+    const reloginJson = (await reloginRes.json()) as any;
+
+    const lockdownRes = await fetch(`${baseUrl}/api/security/emergencyLockdown`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${reloginJson.sessionToken}`,
+        'X-CSRF-Token': reloginJson.csrfToken,
+      },
+    });
+    assertEq(lockdownRes.status, 200, 'Emergency lockdown succeeds (200)');
+
+    const postLockdownMeRes = await fetch(`${baseUrl}/api/owner/me`, {
+      headers: { Authorization: `Bearer ${reloginJson.sessionToken}` },
+    });
+    assertEq(postLockdownMeRes.status, 401, 'Emergency lockdown immediately invalidates active session tokens (401)');
 
     console.log('ALL ECHOX SECURITY & CONTROL ROOM REGRESSION TESTS PASSED');
   } finally {

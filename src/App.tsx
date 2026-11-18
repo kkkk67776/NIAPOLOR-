@@ -15,7 +15,8 @@ import { BottomNavigation } from './components/BottomNavigation';
 import OwnerSecurityRoom from './components/security/OwnerSecurityRoom';
 import { applySeo } from './lib/seo';
 import { verifyGatewayReturnClient } from './lib/payments';
-import { CheckCircle2, AlertCircle, X } from 'lucide-react';
+import { OfflineBanner } from './components/OfflineBanner';
+import { CheckCircle2, AlertCircle, X, WifiOff, RefreshCw } from 'lucide-react';
 
 const CheckoutModal = lazy(() => import('./components/CheckoutModal').then(m => ({ default: m.CheckoutModal })));
 const SupportEchoxModal = lazy(() => import('./components/SupportEchoxModal').then(m => ({ default: m.SupportEchoxModal })));
@@ -46,17 +47,28 @@ class RouteErrorBoundary extends React.Component<
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-[50vh] flex flex-col items-center justify-center p-6 text-center space-y-3">
-          <p className="text-sm font-bold text-slate-700 dark:text-slate-200">
-            تعذر تحميل هذه الصفحة. يرجى تحديث الصفحة والمحاولة مجدداً.
-          </p>
-          <button
-            type="button"
-            onClick={() => window.location.reload()}
-            className="px-4 py-2 rounded-xl bg-[#FF6B00] text-white text-xs font-bold cursor-pointer"
-          >
-            إعادة تحميل الصفحة
-          </button>
+        <div className="min-h-[50vh] flex flex-col items-center justify-center p-6 text-center space-y-4">
+          <div className="w-12 h-12 rounded-2xl bg-[#FF6B00]/15 text-[#FF6B00] flex items-center justify-center">
+            <WifiOff className="w-6 h-6" />
+          </div>
+          <div className="space-y-1 max-w-sm">
+            <p className="text-sm font-black text-slate-800 dark:text-slate-100">
+              تعذر عرض هذه الصفحة حالياً
+            </p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+              قد يكون السبب انقطاع الإنترنت عن هذه الصفحة لأول مرة. تحقق من الاتصال ثم أعد المحاولة.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 rounded-xl bg-[#FF6B00] hover:bg-[#E05E00] text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>إعادة المحاولة</span>
+            </button>
+          </div>
         </div>
       );
     }
@@ -308,6 +320,7 @@ const AppContent: React.FC = () => {
 
       {/* 2. Main View Router */}
       <main className="flex-1 w-full max-w-full overflow-x-hidden">
+        <OfflineBanner />
         <RouteErrorBoundary>
           <Suspense fallback={<RouteFallback />}>
             {isOwnerRoute && (

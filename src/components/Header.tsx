@@ -38,7 +38,8 @@ export default function Header(_props: HeaderProps) {
     isDarkMode,
     toggleDarkMode,
     categories,
-    setIsSupportModalOpen
+    setIsSupportModalOpen,
+    isOnline
   } = useStore();
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -85,6 +86,10 @@ export default function Header(_props: HeaderProps) {
   }, [isNotificationsOpen]);
 
   const handleToggleStorePush = async () => {
+    if (!isOnline) {
+      setPushFeedback(t.offline.serverActionDisabled);
+      return;
+    }
     setPushBusy(true);
     setPushFeedback(null);
     if (isPushEnabled) {
@@ -175,7 +180,10 @@ export default function Header(_props: HeaderProps) {
             <img 
               src={isDarkMode ? '/assets/aistudio/file_000000003d20821088780f690ee97fed_f8e408f8.png' : '/assets/images/echox-logo.webp'} 
               alt="ECHOX Store" 
-              className="w-8 h-8 rounded-full object-contain border border-[#FF6B00]/30 group-hover:scale-105 transition-transform"
+              width={32}
+              height={32}
+              data-echox-logo="header"
+              className="w-8 h-8 rounded-full object-contain border border-[#FF6B00]/30 group-hover:scale-105 transition-transform shrink-0"
             />
             <div className="flex flex-col">
               <span className="font-black tracking-tight text-base sm:text-lg text-[#0F172A] dark:text-white leading-none group-hover:text-[#FF6B00] transition-colors">
@@ -376,7 +384,10 @@ export default function Header(_props: HeaderProps) {
                   <img 
                     src={isDarkMode ? '/assets/aistudio/file_000000003d20821088780f690ee97fed_f8e408f8.png' : '/assets/images/echox-logo.webp'} 
                     alt="ECHOX Store" 
-                    className="w-7 h-7 rounded-full object-contain border border-[#FF6B00]/30"
+                    width={28}
+                    height={28}
+                    data-echox-logo="drawer"
+                    className="w-7 h-7 rounded-full object-contain border border-[#FF6B00]/30 shrink-0"
                   />
                   <span className="font-black text-sm tracking-tight text-[#0F172A] dark:text-white">
                     ECHOX <span className="text-[#FF6B00]">Store</span>

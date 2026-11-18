@@ -80,6 +80,8 @@ import {
   getAdminAuthHeaders,
   notifySessionExpired
 } from '../lib/security';
+import { handleStoreImageError, handleStoreImageLoad } from '../lib/imageFallback';
+import { compressImageFileToDataUrl, normalizeProductImageUrl } from '../lib/imageUrl';
 
 interface OwnerDashboardProps {
   onNavigate?: (route: string, state?: any) => void;
@@ -279,6 +281,22 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
   const [prodGov, setProdGov] = useState('tunis');
   const [prodImagesText, setProdImagesText] = useState('');
   const [prodFeatured, setProdFeatured] = useState(false);
+  const [prodImgInspecting, setProdImgInspecting] = useState(false);
+  const [prodImgUploading, setProdImgUploading] = useState(false);
+  const [prodImgDomStatus, setProdImgDomStatus] = useState<Record<string, 'ok' | 'error'>>({});
+  const [prodImgInspections, setProdImgInspections] = useState<
+    Record<
+      string,
+      {
+        ok?: boolean;
+        kind?: string;
+        format?: string;
+        error?: string;
+        suggestedImageUrl?: string;
+        httpsUpgradeUrl?: string;
+      }
+    >
+  >({});
 
   // 3. Category Form States
   const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
@@ -685,6 +703,96 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
     setTimeout(() => setSessionsMessage(''), 4000);
   };
 
+  const replaceProdImageLine = (oldRaw: string, replacement: string) => {
+    const lines = prodImagesText.split('\n').map(s => s.trim()).filter(Boolean);
+    const updated = lines.map(l => (l === oldRaw ? replacement : l));
+    setProdImagesText(updated.join('\n'));
+    setProdImgDomStatus(prev => {
+      const next = { ...prev };
+      delete next[oldRaw];
+      return next;
+    });
+    setProdImgInspections(prev => {
+      const next = { ...prev };
+      delete next[oldRaw];
+      return next;
+    });
+  };
+
+  const handleInspectProductImages = async () => {
+    const lines = prodImagesText.split('\n').map(s => s.trim()).filter(Boolean);
+    if (lines.length === 0) return;
+
+    setProdImgInspecting(true);
+    setEntityModalError('');
+    const nextInspections: typeof prodImgInspections = { ...prodImgInspections };
+    const nextLines: string[] = [];
+
+    for (const line of lines) {
+      const norm = normalizeProductImageUrl(line);
+      let targetUrl = line;
+      if (norm.transformedFrom && norm.url && !norm.issue) {
+        targetUrl = norm.url;
+      }
+
+      try {
+        const res = await fetch('/api/admin/media/inspect', {
+          method: 'POST',
+          headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
+          credentials: 'include',
+          body: JSON.stringify({ url: targetUrl }),
+        });
+        if (res.status === 401 || res.status === 403) {
+          notifySessionExpired();
+          setEntityModalError('انتهت جلسة المالك؛ يرجى إعادة المصادقة لفحص الروابط.');
+          break;
+        }
+        const data = await res.json().catch(() => null);
+        if (data?.success && data.result) {
+          const r = data.result;
+          if (r.ok && r.directUrl && !r.directUrl.startsWith('data:')) {
+            targetUrl = r.normalizedUrl || r.directUrl;
+          }
+          nextInspections[targetUrl] = {
+            ok: r.ok,
+            kind: r.kind,
+            format: r.format,
+            error: r.error,
+            suggestedImageUrl: r.suggestedImageUrl,
+            httpsUpgradeUrl: r.httpsUpgradeUrl,
+          };
+        }
+      } catch {
+        nextInspections[targetUrl] = {
+          ok: false,
+          kind: 'error',
+          error: 'تعذر فحص الرابط عبر الخادم حالياً.',
+        };
+      }
+      nextLines.push(targetUrl);
+    }
+
+    setProdImagesText(nextLines.join('\n'));
+    setProdImgInspections(nextInspections);
+    setProdImgInspecting(false);
+  };
+
+  const handleLocalImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setEntityModalError('');
+    setProdImgUploading(true);
+    try {
+      const dataUrl = await compressImageFileToDataUrl(file);
+      setProdImagesText(prev => (prev.trim() ? `${prev.trim()}\n${dataUrl}` : dataUrl));
+    } catch (err: any) {
+      setEntityModalError(err?.message || 'تعذر تجهيز الصورة المختارة.');
+    } finally {
+      setProdImgUploading(false);
+    }
+  };
+
   // Handlers for Products
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -693,7 +801,27 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
     setEntitySaving(true);
     setEntityModalError('');
 
-    const imgs = prodImagesText.split('\n').map(s => s.trim()).filter(Boolean);
+    const rawLines = prodImagesText.split('\n').map(s => s.trim()).filter(Boolean);
+    const normalizedImgs: string[] = [];
+
+    for (const line of rawLines) {
+      const norm = normalizeProductImageUrl(line);
+      if (norm.issue && norm.issue !== 'empty') {
+        setEntitySaving(false);
+        setEntityModalError(norm.reason || `رابط الصورة غير صالح: ${line}`);
+        return;
+      }
+      const inspected = prodImgInspections[norm.url] || prodImgInspections[line];
+      if (inspected && inspected.ok === false) {
+        setEntitySaving(false);
+        setEntityModalError(inspected.error || `الرابط لا يعود بصورة صالحة: ${line}`);
+        return;
+      }
+      if (norm.url) {
+        normalizedImgs.push(norm.url);
+      }
+    }
+
     const selectedComp = companies.find(c => c.id === prodCompanyId);
 
     const res = editingProd
@@ -707,7 +835,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           companyId: prodCompanyId,
           companyName: selectedComp?.name || editingProd.companyName,
           governorate: prodGov,
-          images: imgs.length > 0 ? imgs : editingProd.images,
+          images: normalizedImgs.length > 0 ? normalizedImgs : editingProd.images,
           featured: prodFeatured
         })
       : await addProduct({
@@ -720,7 +848,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           companyId: prodCompanyId,
           companyName: selectedComp?.name || 'ECHOX Distribution',
           governorate: prodGov,
-          images: imgs.length > 0 ? imgs : ['/assets/images/echox-logo.webp'],
+          images: normalizedImgs.length > 0 ? normalizedImgs : ['/assets/images/echox-logo.webp'],
           featured: prodFeatured,
           active: true,
           deliveryTimeDays: 2
@@ -742,6 +870,8 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
     setProdStock('10');
     setProdImagesText('');
     setProdFeatured(false);
+    setProdImgDomStatus({});
+    setProdImgInspections({});
   };
 
   const openEditProduct = (p: Product) => {
@@ -758,6 +888,8 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
     setProdGov(p.governorate);
     setProdImagesText(p.images.join('\n'));
     setProdFeatured(!!p.featured);
+    setProdImgDomStatus({});
+    setProdImgInspections({});
     setShowAddProdModal(true);
   };
 
@@ -2511,6 +2643,16 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
               onClick={() => {
                 setEntityModalError('');
                 setEditingProd(null);
+                setProdNameAr('');
+                setProdNameFr('');
+                setProdDescAr('');
+                setProdPrice('');
+                setProdOriginalPrice('');
+                setProdStock('10');
+                setProdImagesText('');
+                setProdFeatured(false);
+                setProdImgDomStatus({});
+                setProdImgInspections({});
                 setShowAddProdModal(true);
               }}
               className="px-4 py-2.5 rounded-2xl bg-[#FF6B00] hover:bg-[#E05E00] text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-95 shrink-0"
@@ -2533,6 +2675,9 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                     <img 
                       src={p.images[0] || '/assets/images/echox-logo.webp'}
                       alt={prodName}
+                      referrerPolicy="no-referrer"
+                      onError={handleStoreImageError}
+                      onLoad={handleStoreImageLoad}
                       className="w-14 h-14 rounded-xl object-contain bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 p-1 shrink-0"
                     />
                     <div className="min-w-0">
@@ -2690,6 +2835,9 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   <img
                     src={comp.logo || '/assets/images/echox-logo.webp'}
                     alt={comp.name}
+                    referrerPolicy="no-referrer"
+                    onError={handleStoreImageError}
+                    onLoad={handleStoreImageLoad}
                     className="w-12 h-12 rounded-xl object-contain bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 p-1 shrink-0"
                   />
                   <div className="min-w-0">
@@ -3145,15 +3293,121 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                 </select>
               </div>
 
-              <div className="space-y-1">
-                <label className="text-xs font-bold block">روابط الصور (رابط واحد في كل سطر)</label>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <label className="text-xs font-bold block">روابط الصور المباشرة (JPEG / PNG / WebP — رابط في كل سطر)</label>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      disabled={prodImgInspecting || !prodImagesText.trim()}
+                      onClick={handleInspectProductImages}
+                      className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-[#FF6B00]/15 text-[11px] font-bold text-[#0F172A] dark:text-slate-200 border border-slate-200 dark:border-slate-700 cursor-pointer disabled:opacity-50"
+                    >
+                      {prodImgInspecting ? 'جارٍ الفحص...' : 'فحص الروابط'}
+                    </button>
+                    <label className="px-2.5 py-1 rounded-lg bg-[#FF6B00]/10 hover:bg-[#FF6B00]/20 text-[11px] font-bold text-[#FF6B00] border border-[#FF6B00]/30 cursor-pointer">
+                      {prodImgUploading ? 'جارٍ الرفع...' : '+ رفع صورة'}
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        disabled={prodImgUploading}
+                        onChange={handleLocalImageUpload}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+                </div>
                 <textarea
                   rows={2}
                   value={prodImagesText}
-                  onChange={e => setProdImagesText(e.target.value)}
-                  placeholder="https://...&#10;https://..."
+                  onChange={e => {
+                    setProdImagesText(e.target.value);
+                    setProdImgDomStatus({});
+                  }}
+                  placeholder="https://example.com/product.webp&#10;https://..."
+                  dir="ltr"
                   className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent font-mono"
                 />
+
+                {prodImagesText.split('\n').map(s => s.trim()).filter(Boolean).length > 0 && (
+                  <div className="space-y-1.5 pt-1">
+                    {prodImagesText.split('\n').map(s => s.trim()).filter(Boolean).map((rawLine, idx) => {
+                      const norm = normalizeProductImageUrl(rawLine);
+                      const previewUrl = norm.url || rawLine;
+                      const domState = prodImgDomStatus[previewUrl];
+                      const srvInfo = prodImgInspections[previewUrl] || prodImgInspections[rawLine];
+                      const hasProblem = Boolean(norm.issue) || domState === 'error' || srvInfo?.ok === false;
+                      return (
+                        <div
+                          key={`${idx}-${rawLine.slice(0, 32)}`}
+                          className={`p-2 rounded-xl border text-[11px] flex items-center gap-2.5 ${
+                            hasProblem
+                              ? 'bg-red-500/5 border-red-500/30 text-red-700 dark:text-red-300'
+                              : 'bg-slate-50 dark:bg-[#0F172A] border-slate-200 dark:border-slate-700'
+                          }`}
+                        >
+                          <img
+                            src={!norm.issue ? previewUrl : '/assets/images/echox-logo.webp'}
+                            alt={`معاينة صورة ${idx + 1}`}
+                            referrerPolicy="no-referrer"
+                            onLoad={(ev) => {
+                              handleStoreImageLoad(ev);
+                              if (!norm.issue && ev.currentTarget.getAttribute('src') !== '/assets/images/echox-logo.webp') {
+                                setProdImgDomStatus(prev => (prev[previewUrl] === 'ok' ? prev : { ...prev, [previewUrl]: 'ok' }));
+                              }
+                            }}
+                            onError={(ev) => {
+                              handleStoreImageError(ev);
+                              setProdImgDomStatus(prev => (prev[previewUrl] === 'error' ? prev : { ...prev, [previewUrl]: 'error' }));
+                            }}
+                            className="w-11 h-11 rounded-lg object-contain bg-white border border-slate-200 dark:border-slate-700 shrink-0 p-0.5"
+                          />
+                          <div className="min-w-0 flex-1 space-y-1">
+                            <p className="font-mono text-[10px] truncate opacity-80" dir="ltr">
+                              {rawLine.startsWith('data:image/') ? '[صورة مرفوعة محلياً جاهزة]' : rawLine}
+                            </p>
+                            {norm.issue ? (
+                              <p className="font-bold text-[10px]">{norm.reason}</p>
+                            ) : srvInfo?.ok === false ? (
+                              <p className="font-bold text-[10px]">{srvInfo.error}</p>
+                            ) : domState === 'error' ? (
+                              <p className="font-bold text-[10px]">
+                                فشل المتصفح في تحميل الصورة (الرابط قد يكون صفحة ويب أو مكسوراً). اضغط «فحص الروابط» للتشخيص.
+                              </p>
+                            ) : srvInfo?.ok ? (
+                              <p className="font-bold text-[10px] text-emerald-600 dark:text-emerald-400">
+                                ✓ رابط صورة مباشر صالح ({srvInfo.format || 'صورة'})
+                              </p>
+                            ) : domState === 'ok' ? (
+                              <p className="font-bold text-[10px] text-emerald-600 dark:text-emerald-400">
+                                ✓ تمت معاينة الصورة بنجاح
+                              </p>
+                            ) : null}
+
+                            {srvInfo?.suggestedImageUrl && (
+                              <button
+                                type="button"
+                                onClick={() => replaceProdImageLine(rawLine, srvInfo.suggestedImageUrl!)}
+                                className="px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold cursor-pointer"
+                              >
+                                استخدام رابط الصورة المباشر المستخرج تلقائياً
+                              </button>
+                            )}
+                            {srvInfo?.httpsUpgradeUrl && (
+                              <button
+                                type="button"
+                                onClick={() => replaceProdImageLine(rawLine, srvInfo.httpsUpgradeUrl!)}
+                                className="px-2 py-0.5 rounded-md bg-[#FF6B00] hover:bg-[#e05e00] text-white text-[10px] font-bold cursor-pointer"
+                              >
+                                ترقية الرابط إلى HTTPS
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               <div className="space-y-1">

@@ -17,7 +17,10 @@ import {
   Truck,
   Phone,
   User,
+  WifiOff,
+  RefreshCw,
 } from 'lucide-react';
+import { handleStoreImageError } from '../lib/imageFallback';
 import {
   TUNISIAN_GOVERNORATES,
   getDelegationsForGovernorate,
@@ -54,6 +57,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
     updateOrderInState,
     currentUser,
     setCurrentView,
+    isOnline,
+    isReconnecting,
+    retryConnection,
   } = useStore();
 
   const [fullName, setFullName] = useState(currentUser?.fullName || '');
@@ -243,6 +249,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
+
+    if (!isOnline) {
+      setErrorMsg(t.offline.checkoutBlockedDesc);
+      return;
+    }
 
     if (!hasAnyMethod) {
       setErrorMsg(t.payments.noMethodsEnabled);
@@ -637,10 +648,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
                         placeholder={t.checkout.notes}
                         className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-transparent outline-hidden focus:border-[#FF6B00]"
                       />
+                      {!isOnline && (
+                        <p className="text-[11px] font-bold text-[#FF6B00]">{t.offline.serverActionDisabled}</p>
+                      )}
                       <button
                         type="submit"
-                        disabled={proofSubmitting}
-                        className="w-full py-2.5 rounded-xl bg-[#FF6B00] hover:bg-[#e05e00] text-white text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
+                        disabled={proofSubmitting || !isOnline}
+                        className="w-full py-2.5 rounded-xl bg-[#FF6B00] hover:bg-[#e05e00] text-white text-xs font-bold transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {proofSubmitting ? t.checkout.submitting : t.payments.submitProofBtn}
                       </button>
@@ -1044,6 +1058,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
                             src={item.product.images[0] || '/assets/images/echox-logo.webp'}
                             alt={item.product.name[language] || item.product.name.ar}
                             referrerPolicy="no-referrer"
+                            onError={handleStoreImageError}
                             className="w-11 h-11 rounded-xl object-cover bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shrink-0"
                           />
                           <div className="min-w-0">
@@ -1113,10 +1128,33 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
                       </span>
                     </div>
 
+                    {!isOnline && (
+                      <div className="p-3 rounded-xl bg-[#FF6B00]/10 border border-[#FF6B00]/25 text-xs space-y-2">
+                        <p className="font-black text-[#FF6B00] flex items-center gap-1.5">
+                          <WifiOff className="w-3.5 h-3.5 shrink-0" />
+                          <span>{t.offline.checkoutBlockedTitle}</span>
+                        </p>
+                        <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                          {t.offline.checkoutBlockedDesc}
+                        </p>
+                        <button
+                          type="button"
+                          disabled={isReconnecting}
+                          onClick={() => {
+                            void retryConnection();
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-[#FF6B00] hover:bg-[#E05E00] text-white text-[11px] font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${isReconnecting ? 'animate-spin' : ''}`} />
+                          <span>{isReconnecting ? t.offline.retryingBtn : t.offline.retryBtn}</span>
+                        </button>
+                      </div>
+                    )}
+
                     <button
                       type="submit"
-                      disabled={isSubmitting || cart.length === 0 || !hasAnyMethod}
-                      className="w-full min-h-[46px] py-3 px-6 rounded-xl bg-[#FF6B00] hover:bg-[#e05e00] text-white font-black text-sm shadow-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer active:scale-[0.99]"
+                      disabled={isSubmitting || cart.length === 0 || !hasAnyMethod || !isOnline}
+                      className="w-full min-h-[46px] py-3 px-6 rounded-xl bg-[#FF6B00] hover:bg-[#e05e00] text-white font-black text-sm shadow-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer active:scale-[0.99]"
                     >
                       <span>{isSubmitting ? t.checkout.submitting : t.checkout.confirmOrder}</span>
                     </button>

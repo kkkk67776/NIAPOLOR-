@@ -9,8 +9,10 @@ import {
   MessageSquare,
   RotateCcw,
   ArrowUpRight,
-  Sparkles
+  Sparkles,
+  WifiOff
 } from 'lucide-react';
+import { handleStoreImageError } from '../lib/imageFallback';
 
 export const FloatingActions: React.FC = () => {
   const { 
@@ -23,7 +25,8 @@ export const FloatingActions: React.FC = () => {
     setSelectedProductId,
     setCurrentView,
     language,
-    t 
+    t,
+    isOnline
   } = useStore();
 
   const [hubOpen, setHubOpen] = useState(false);
@@ -36,15 +39,15 @@ export const FloatingActions: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages, isChatReplying, chatOpen]);
 
-  // Poll server for live Owner replies while the customer chat window is open
+  // Poll server for live Owner replies while the customer chat window is open and online
   useEffect(() => {
-    if (!chatOpen) return;
+    if (!chatOpen || !isOnline) return;
     refreshChatThread();
     const timer = setInterval(() => {
       refreshChatThread();
     }, 4000);
     return () => clearInterval(timer);
-  }, [chatOpen]);
+  }, [chatOpen, isOnline]);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -261,6 +264,8 @@ export const FloatingActions: React.FC = () => {
                               <img
                                 src={prod.image}
                                 alt={prod.name}
+                                referrerPolicy="no-referrer"
+                                onError={handleStoreImageError}
                                 className="w-8 h-8 rounded-lg object-contain bg-white p-0.5 shrink-0"
                               />
                             )}
@@ -340,19 +345,26 @@ export const FloatingActions: React.FC = () => {
           )}
 
           {/* Footer Input */}
+          {!isOnline && (
+            <div className="px-3 py-2 bg-[#FFF7F2] dark:bg-slate-900 border-t border-[#FF6B00]/25 text-[11px] font-bold text-[#FF6B00] flex items-center gap-1.5">
+              <WifiOff className="w-3.5 h-3.5 shrink-0" />
+              <span>{t.offline.chatOfflineNotice}</span>
+            </div>
+          )}
           <form onSubmit={handleSendMessage} className="p-3 bg-white dark:bg-[#1E293B] border-t border-slate-200 dark:border-slate-700 flex gap-2">
             <input
               type="text"
-              placeholder={t.chat.placeholder}
+              disabled={!isOnline}
+              placeholder={isOnline ? t.chat.placeholder : t.offline.chatOfflineNotice}
               value={chatInput}
               onChange={e => setChatInput(e.target.value)}
-              className="flex-1 text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-600 dark:bg-[#0F172A] dark:text-white focus:outline-none focus:border-[#FF6B00]"
+              className="flex-1 text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-600 dark:bg-[#0F172A] dark:text-white focus:outline-none focus:border-[#FF6B00] disabled:opacity-60"
             />
             <button
               type="submit"
-              disabled={!chatInput.trim() || isChatReplying}
+              disabled={!chatInput.trim() || isChatReplying || !isOnline}
               aria-label={t.chat.send}
-              className="p-2 bg-[#FF6B00] hover:bg-[#e05e00] disabled:opacity-50 text-white rounded-xl shadow-xs cursor-pointer"
+              className="p-2 bg-[#FF6B00] hover:bg-[#e05e00] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl shadow-xs cursor-pointer"
             >
               <Send className="w-4 h-4" />
             </button>

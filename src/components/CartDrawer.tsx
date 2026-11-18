@@ -10,8 +10,10 @@ import {
   ArrowRight, 
   Tag, 
   CheckCircle2, 
-  Truck 
+  Truck,
+  WifiOff
 } from 'lucide-react';
+import { handleStoreImageError } from '../lib/imageFallback';
 
 interface CartDrawerProps {
   onOpenCheckout: () => void;
@@ -34,7 +36,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
     couponCode,
     applyCoupon,
     siteSettings,
-    paymentConfig
+    paymentConfig,
+    isOnline
   } = useStore();
 
   const [inputCoupon, setInputCoupon] = useState('');
@@ -128,6 +131,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
                   src={item.product.images[0] || '/assets/images/echox-logo.webp'} 
                   alt={item.product.name[language]}
                   referrerPolicy="no-referrer"
+                  onError={handleStoreImageError}
                   className="w-16 h-16 rounded-xl object-cover bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shrink-0"
                 />
                 
@@ -242,13 +246,29 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
               </div>
             </div>
 
+            {/* Offline checkout guard */}
+            {!isOnline && (
+              <div className="p-3 rounded-xl bg-[#FF6B00]/10 border border-[#FF6B00]/25 text-xs space-y-1">
+                <p className="font-black text-[#FF6B00] flex items-center gap-1.5">
+                  <WifiOff className="w-3.5 h-3.5 shrink-0" />
+                  <span>{t.offline.checkoutBlockedTitle}</span>
+                </p>
+                <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                  {t.offline.checkoutBlockedDesc}
+                </p>
+              </div>
+            )}
+
             {/* Checkout Action Button */}
             <button
+              type="button"
+              disabled={!isOnline}
               onClick={() => {
+                if (!isOnline) return;
                 setIsCartOpen(false);
                 onOpenCheckout();
               }}
-              className="w-full py-3.5 px-4 rounded-xl bg-[#FF6B00] hover:bg-[#e05e00] text-white font-bold text-sm shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+              className="w-full py-3.5 px-4 rounded-xl bg-[#FF6B00] hover:bg-[#e05e00] disabled:opacity-45 disabled:cursor-not-allowed text-white font-bold text-sm shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98"
             >
               <span>{t.cart.proceedToCheckout}</span>
               {language === 'ar' ? <ArrowLeft className="w-4 h-4" /> : <ArrowRight className="w-4 h-4" />}

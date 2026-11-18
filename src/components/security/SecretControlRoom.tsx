@@ -27,6 +27,8 @@ import {
   dryRunServerRecovery,
   applyServerRecovery,
   rollbackServerRecovery,
+  emergencyLockdownCall,
+  notifySessionExpired,
   SystemIntegrityReport,
   SecurityAuditLogEntry,
   QuarantineVaultItem,
@@ -99,6 +101,10 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
   const [stepUpPin, setStepUpPin] = useState('');
   const [stepUpError, setStepUpError] = useState('');
   const [stepUpBusy, setStepUpBusy] = useState(false);
+
+  // Emergency Lockdown confirmation state
+  const [confirmLockdownOpen, setConfirmLockdownOpen] = useState(false);
+  const [lockdownBusy, setLockdownBusy] = useState(false);
 
   const loadRoomData = useCallback(async (sev: string = severityFilter) => {
     setLoading(true);
@@ -228,11 +234,64 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
     }
     if (action === 'inspect' && res.item) {
       setInspectedItem(res.item);
+      const logRes = await fetchSecurityAuditLogs(100, severityFilter);
+      if (logRes.success) {
+        setAuditEntries(logRes.entries);
+        setAuditChainIntact(logRes.chainIntact);
+        setAuditTotalEntries(logRes.totalEntries);
+        setAuditBrokenAtSeq(logRes.brokenAtSeq);
+      }
     } else if (action === 'purge') {
       if (inspectedItem?.id === id) setInspectedItem(null);
       setBannerSuccess('تم التخلص النهائي من العينة المحجورة وتسجيل العملية في سجل التدقيق.');
       await loadRoomData();
     }
+  };
+
+  const handleEmergencyLockdown = async () => {
+    setLockdownBusy(true);
+    setBannerError('');
+    setBannerSuccess('');
+    try {
+      const ok = await emergencyLockdownCall();
+      setConfirmLockdownOpen(false);
+      if (ok) {
+        notifySessionExpired();
+      } else {
+        setBannerError('تعذر تنفيذ القفل الأمني الفوري عبر الخادم.');
+      }
+    } catch {
+      setBannerError('حدث خطأ أثناء تنفيذ الإغلاق الأمني الفوري.');
+    } finally {
+      setLockdownBusy(false);
+    }
+  };
+
+  const handleExportAuditReport = () => {
+    const reportPayload = {
+      exportedAt: new Date().toISOString(),
+      chainIntact: auditChainIntact,
+      totalEntries: auditTotalEntries,
+      brokenAtSeq: auditBrokenAtSeq ?? null,
+      integritySummary: integrityReport
+        ? {
+            overallStatus: integrityReport.overallStatus,
+            checkedAt: integrityReport.checkedAt,
+            checks: integrityReport.checks,
+          }
+        : null,
+      entries: auditEntries,
+    };
+    const blob = new Blob([JSON.stringify(reportPayload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `echox-security-audit-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    setBannerSuccess('تم تصدير تقرير التدقيق وسلسلة التشفير SHA-256 بنجاح.');
   };
 
   const openStepUpModal = (action: PendingPinAction) => {
@@ -335,16 +394,51 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={() => loadRoomData()}
-            disabled={loading}
-            className="px-3.5 py-2 rounded-xl border border-[#E2E8F0] dark:border-slate-700 bg-[#F8FAFC] dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-bold text-[#0F172A] dark:text-white flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-60 self-start lg:self-auto"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            <span>تحديث الفحص الأمني</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
+            <button
+              type="button"
+              onClick={() => loadRoomData()}
+              disabled={loading}
+              className="px-3.5 py-2 rounded-xl border border-[#E2E8F0] dark:border-slate-700 bg-[#F8FAFC] dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-bold text-[#0F172A] dark:text-white flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-60"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+              <span>تحديث الفحص الأمني</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmLockdownOpen((prev) => !prev)}
+              className="px-3.5 py-2 rounded-xl border border-red-200 dark:border-red-800/70 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-900/40 text-xs font-bold text-red-700 dark:text-red-300 flex items-center gap-1.5 cursor-pointer transition-colors"
+            >
+              <ShieldAlert className="w-3.5 h-3.5" />
+              <span>إغلاق أمني فوري</span>
+            </button>
+          </div>
         </div>
+
+        {confirmLockdownOpen && (
+          <div className="p-3.5 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-300 dark:border-red-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <span className="font-bold text-red-800 dark:text-red-200">
+              تأكيد الإغلاق الطارئ: سيتم إبطال جميع الجلسات النشطة وتوقيعات الكوكيز على كل الأجهزة فوراً.
+            </span>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setConfirmLockdownOpen(false)}
+                className="px-3 py-1.5 rounded-lg border border-red-200 dark:border-red-700 text-red-700 dark:text-red-200 font-bold cursor-pointer"
+              >
+                تراجع
+              </button>
+              <button
+                type="button"
+                disabled={lockdownBusy}
+                onClick={handleEmergencyLockdown}
+                className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white font-bold cursor-pointer disabled:opacity-60"
+              >
+                {lockdownBusy ? 'جاري الإبطال...' : 'تنفيذ الإغلاق الآن'}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* High-Signal Architectural Telemetry Row */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 pt-4 border-t border-[#E2E8F0] dark:border-slate-800 text-xs">
@@ -923,7 +1017,7 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
               </p>
             </div>
 
-            <div className="flex items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
               {(
                 [
                   { id: 'all', label: 'الكل' },
@@ -945,6 +1039,14 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
                   {f.label}
                 </button>
               ))}
+              <button
+                type="button"
+                onClick={handleExportAuditReport}
+                className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer border border-[#E2E8F0] dark:border-slate-700 bg-white dark:bg-[#0F172A] text-[#0F172A] dark:text-white hover:border-[#FF6B00] flex items-center gap-1"
+              >
+                <Download className="w-3 h-3" />
+                <span>تصدير التقرير</span>
+              </button>
             </div>
           </div>
 

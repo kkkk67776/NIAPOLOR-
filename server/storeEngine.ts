@@ -8,6 +8,11 @@ import {
   savePersistentJson,
 } from './cloudPersistence';
 import {
+  isMediaSafeUrl,
+  quarantineSuspiciousItem,
+} from './securityEngine';
+import { normalizeProductImageUrl } from '../src/lib/imageUrl';
+import {
   INITIAL_COMPANIES,
   INITIAL_OWNER_SETTINGS,
   INITIAL_PRODUCTS,
@@ -205,15 +210,113 @@ export function getAdminStoreState() {
   };
 }
 
-export async function updateAdminStoreState(patch: Partial<StorefrontDatabase>): Promise<{
+function validateStorePatchSecurity(
+  patch: Partial<StorefrontDatabase>,
+  actorIp: string
+): { ok: boolean; error?: string; quarantined?: boolean } {
+  if (Array.isArray(patch.products)) {
+    for (let i = 0; i < patch.products.length; i++) {
+      const p = patch.products[i];
+      if (!p || typeof p.id !== 'string' || !p.id.trim()) {
+        return { ok: false, error: `معرف المنتج رقم ${i + 1} غير صالح.` };
+      }
+      if (typeof p.price !== 'number' || !Number.isFinite(p.price) || p.price < 0) {
+        return { ok: false, error: `سعر المنتج (${p.id}) غير صالح.` };
+      }
+      if (p.stock !== undefined && (typeof p.stock !== 'number' || !Number.isFinite(p.stock) || p.stock < 0)) {
+        return { ok: false, error: `كمية المخزون للمنتج (${p.id}) غير صالحة.` };
+      }
+      const normalizedImages: string[] = [];
+      for (const rawImg of p.images || []) {
+        const trimmed = typeof rawImg === 'string' ? rawImg.trim() : rawImg;
+        const norm = typeof trimmed === 'string' ? normalizeProductImageUrl(trimmed) : null;
+        const candidate =
+          norm && norm.url && (!norm.issue || norm.issue === 'http_insecure')
+            ? norm.url
+            : trimmed;
+        if (!isMediaSafeUrl(candidate)) {
+          quarantineSuspiciousItem({
+            source: 'admin_store_product_media',
+            reason: `Blocked unsafe media URI in product ${p.id}`,
+            severity: 'critical',
+            actorIp,
+            mimeDeclared: String(rawImg).slice(0, 40),
+            payloadPreview: String(rawImg).slice(0, 100),
+          });
+          return {
+            ok: false,
+            quarantined: true,
+            error: `تم رفض وعزل رابط صورة غير آمن في المنتج (${p.id}) حفاظاً على سلامة المتجر.`,
+          };
+        }
+        if (typeof candidate === 'string' && candidate) {
+          normalizedImages.push(candidate);
+        }
+      }
+      p.images = normalizedImages;
+    }
+  }
+
+  if (Array.isArray(patch.companies)) {
+    for (let i = 0; i < patch.companies.length; i++) {
+      const c = patch.companies[i];
+      if (!c || typeof c.id !== 'string' || !c.id.trim() || typeof c.name !== 'string') {
+        return { ok: false, error: `بيانات الشركة رقم ${i + 1} غير صالحة.` };
+      }
+      if (c.logo && !isMediaSafeUrl(c.logo)) {
+        quarantineSuspiciousItem({
+          source: 'admin_store_company_logo',
+          reason: `Blocked unsafe logo URI in company ${c.id}`,
+          severity: 'critical',
+          actorIp,
+          mimeDeclared: String(c.logo).slice(0, 40),
+          payloadPreview: String(c.logo).slice(0, 100),
+        });
+        return {
+          ok: false,
+          quarantined: true,
+          error: `تم رفض وعزل شعار غير آمن للشركة (${c.id}) حفاظاً على سلامة المتجر.`,
+        };
+      }
+    }
+  }
+
+  if (Array.isArray(patch.banners)) {
+    for (let i = 0; i < patch.banners.length; i++) {
+      const b = patch.banners[i];
+      if (!b || typeof b.id !== 'string' || !b.id.trim() || typeof b.title !== 'string') {
+        return { ok: false, error: `بيانات البانر رقم ${i + 1} غير صالحة.` };
+      }
+    }
+  }
+
+  return { ok: true };
+}
+
+export async function updateAdminStoreState(
+  patch: Partial<StorefrontDatabase>,
+  actorIp = '127.0.0.1'
+): Promise<{
   ok: boolean;
   statusCode?: number;
   error?: string;
+  quarantined?: boolean;
   state: ReturnType<typeof getAdminStoreState>;
 }> {
   await syncStoreStateIfStale(true);
   if (!patch || typeof patch !== 'object') {
     return { ok: false, statusCode: 400, error: 'بيانات غير صالحة.', state: getAdminStoreState() };
+  }
+
+  const secCheck = validateStorePatchSecurity(patch, actorIp);
+  if (!secCheck.ok) {
+    return {
+      ok: false,
+      statusCode: 400,
+      error: secCheck.error,
+      quarantined: secCheck.quarantined,
+      state: getAdminStoreState(),
+    };
   }
 
   const prev = storeDb;

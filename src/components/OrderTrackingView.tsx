@@ -18,15 +18,11 @@ import {
 } from 'lucide-react';
 import { getGovernorateName } from '../data/governorates';
 import { Order, OrderStatus } from '../types';
-import {
-  getPaymentStatusTone,
-  submitBankTransferProofClient,
-  submitRefundOrCancelRequest,
-  trackOrderServer,
-} from '../lib/payments';
+import { getPaymentStatusTone, submitBankTransferProofClient, submitRefundOrCancelRequest, trackOrderServer } from '../lib/payments';
+import { handleStoreImageError } from '../lib/imageFallback';
 
 export const OrderTrackingView: React.FC = () => {
-  const { orders, language, t, siteSettings, paymentConfig, updateOrderInState } = useStore();
+  const { orders, language, t, siteSettings, paymentConfig, updateOrderInState, isOnline } = useStore();
 
   const [inputCode, setInputCode] = useState('');
   const [searchedOrder, setSearchedOrder] = useState<Order | null>(() => {
@@ -68,6 +64,10 @@ export const OrderTrackingView: React.FC = () => {
     setActionSuccess('');
     setActionError('');
 
+    if (!isOnline) {
+      return;
+    }
+
     const srv = await trackOrderServer(clean);
     if (srv.ok && srv.order) {
       setSearchedOrder(srv.order);
@@ -98,6 +98,10 @@ export const OrderTrackingView: React.FC = () => {
   const handleSubmitProof = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeOrder) return;
+    if (!isOnline) {
+      setActionError(t.offline.serverActionDisabled);
+      return;
+    }
     setActionError('');
     setActionSuccess('');
     setProofSubmitting(true);
@@ -127,6 +131,10 @@ export const OrderTrackingView: React.FC = () => {
   const handleRefundRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeOrder || !refundReason.trim()) return;
+    if (!isOnline) {
+      setActionError(t.offline.serverActionDisabled);
+      return;
+    }
     setActionError('');
     setActionSuccess('');
     setRefundSubmitting(true);
@@ -224,6 +232,12 @@ export const OrderTrackingView: React.FC = () => {
             </button>
           ))}
         </div>
+
+        {!isOnline && (
+          <p className="text-[11px] font-bold text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/25 rounded-xl px-3 py-2 max-w-md mx-auto">
+            {t.offline.trackingCachedNotice}
+          </p>
+        )}
       </div>
 
       {/* Result Container */}
@@ -262,7 +276,7 @@ export const OrderTrackingView: React.FC = () => {
                 <span>{language === 'ar' ? 'اتصال' : 'Call'}</span>
               </a>
               <a
-                href={`https://wa.me/${siteSettings.whatsappPhone}?text=Order%20${activeOrder.trackingNumber}`}
+                href={`https://wa.me/${(siteSettings.whatsappPhone || '').replace(/\D/g, '')}?text=${encodeURIComponent(`Order ${activeOrder.trackingNumber}`)}`}
                 target="_blank"
                 rel="noreferrer"
                 className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition-colors"
@@ -311,6 +325,11 @@ export const OrderTrackingView: React.FC = () => {
                 placeholder={t.payments.refundReasonPlaceholder}
                 className="w-full text-xs py-2.5 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-[#0F172A] outline-none focus:border-[#FF6B00]"
               />
+              {!isOnline && (
+                <p className="text-[11px] font-bold text-amber-700 dark:text-amber-300">
+                  {t.offline.serverActionDisabled}
+                </p>
+              )}
               <div className="flex justify-end gap-2">
                 <button
                   type="button"
@@ -321,8 +340,8 @@ export const OrderTrackingView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={refundSubmitting}
-                  className="px-4 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold cursor-pointer"
+                  disabled={refundSubmitting || !isOnline}
+                  className="px-4 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold cursor-pointer"
                 >
                   {t.ownerDashboard.buttons.confirm}
                 </button>
@@ -418,17 +437,23 @@ export const OrderTrackingView: React.FC = () => {
                         className="text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-[#0F172A] outline-none focus:border-[#FF6B00]"
                       />
                     </div>
+                    {!isOnline && (
+                      <p className="text-[11px] font-bold text-amber-700 dark:text-amber-300">
+                        {t.offline.serverActionDisabled}
+                      </p>
+                    )}
                     <div className="flex flex-col sm:flex-row gap-2 items-center">
                       <input
                         type="file"
                         accept="image/*"
+                        disabled={!isOnline}
                         onChange={handleProofFile}
-                        className="text-[11px] text-slate-500 flex-1"
+                        className="text-[11px] text-slate-500 flex-1 disabled:opacity-50"
                       />
                       <button
                         type="submit"
-                        disabled={proofSubmitting}
-                        className="px-4 py-2 rounded-xl bg-[#FF6B00] hover:bg-[#e05e00] text-white text-xs font-bold cursor-pointer shrink-0"
+                        disabled={proofSubmitting || !isOnline}
+                        className="px-4 py-2 rounded-xl bg-[#FF6B00] hover:bg-[#e05e00] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold cursor-pointer shrink-0"
                       >
                         {proofSubmitting ? t.checkout.submitting : t.payments.submitProofBtn}
                       </button>
@@ -534,6 +559,7 @@ export const OrderTrackingView: React.FC = () => {
                         src={it.productImage || '/assets/images/echox-logo.webp'}
                         alt="item"
                         referrerPolicy="no-referrer"
+                        onError={handleStoreImageError}
                         className="w-10 h-10 rounded-lg object-cover bg-white border border-slate-200 shrink-0"
                       />
                       <div>

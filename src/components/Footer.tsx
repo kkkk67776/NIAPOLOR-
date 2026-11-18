@@ -26,7 +26,10 @@ export const Footer: React.FC = () => {
               <img 
                 src={isDarkMode ? '/assets/aistudio/file_000000003d20821088780f690ee97fed_f8e408f8.png' : '/assets/images/echox-logo.webp'} 
                 alt="ECHOX Logo" 
-                className="w-8 h-8 rounded-full object-contain border border-[#FF6B00]/40"
+                width={32}
+                height={32}
+                data-echox-logo="footer"
+                className="w-8 h-8 rounded-full object-contain border border-[#FF6B00]/40 shrink-0"
               />
               <div>
                 <span className="text-lg font-black tracking-tight text-white block leading-none">

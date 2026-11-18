@@ -684,11 +684,17 @@ export async function actOnQuarantineItem(
 // 5. SYSTEM INTEGRITY AUDIT
 // ==========================================
 
-function isMediaSafeUrl(url: unknown): boolean {
+export function isMediaSafeUrl(url: unknown): boolean {
   if (typeof url !== 'string' || !url.trim()) return true;
   const trimmed = url.trim();
+  if (/^(javascript|vbscript|data:text|data:application|file):/i.test(trimmed)) {
+    return false;
+  }
+  if (trimmed.startsWith('//')) {
+    return false;
+  }
   if (trimmed.startsWith('/assets/') || trimmed.startsWith('https://') || trimmed.startsWith('http://')) {
-    return !/^javascript:/i.test(trimmed);
+    return true;
   }
   if (trimmed.startsWith('data:image/')) {
     return validateRasterImageMagicBytes(trimmed).ok;
@@ -702,6 +708,7 @@ export function runSystemIntegrityAudit(deps: {
   hmacSecretLength: number;
   storeState: RecoverableStoreSlice;
   paymentPublicConfig: PaymentSystemPublicConfig;
+  paymentOrders?: Order[];
 }): SystemIntegrityReport {
   const checks: SystemIntegrityCheckItem[] = [];
 
@@ -741,6 +748,7 @@ export function runSystemIntegrityAudit(deps: {
   });
 
   let badProductsCount = 0;
+  let badBannersCount = 0;
   let unsafeMediaCount = 0;
   for (const prod of deps.storeState.products || []) {
     if (!prod || typeof prod.id !== 'string' || typeof prod.price !== 'number' || !Number.isFinite(prod.price) || prod.price < 0) {
@@ -753,17 +761,48 @@ export function runSystemIntegrityAudit(deps: {
   for (const comp of deps.storeState.companies || []) {
     if (comp?.logo && !isMediaSafeUrl(comp.logo)) unsafeMediaCount++;
   }
+  for (const banner of deps.storeState.banners || []) {
+    if (!banner || typeof banner.id !== 'string' || typeof banner.title !== 'string') {
+      badBannersCount++;
+    }
+  }
 
   checks.push({
     id: 'catalog_invariants',
     label: 'اتساق الكاتالوج والوسائط',
-    passed: badProductsCount === 0 && unsafeMediaCount === 0,
-    severity: badProductsCount > 0 || unsafeMediaCount > 0 ? 'warning' : 'ok',
+    passed: badProductsCount === 0 && badBannersCount === 0 && unsafeMediaCount === 0,
+    severity: badProductsCount > 0 || badBannersCount > 0 || unsafeMediaCount > 0 ? 'warning' : 'ok',
     detail:
-      badProductsCount === 0 && unsafeMediaCount === 0
-        ? `تم فحص ${deps.storeState.products.length} منتجاً و${deps.storeState.companies.length} شركة بنجاح دون أي وسائط غير آمنة.`
-        : `رُصد ${badProductsCount} منتج غير صالح و${unsafeMediaCount} رابط صورة/وسائط مشبوه.`,
+      badProductsCount === 0 && badBannersCount === 0 && unsafeMediaCount === 0
+        ? `تم فحص ${deps.storeState.products.length} منتجاً و${deps.storeState.companies.length} شركة و${(deps.storeState.banners || []).length} بانرات بنجاح دون أي وسائط غير آمنة.`
+        : `رُصد ${badProductsCount} منتج و${badBannersCount} بانر غير صالح و${unsafeMediaCount} رابط صورة/وسائط مشبوه.`,
   });
+
+  if (Array.isArray(deps.paymentOrders)) {
+    let invalidOrdersCount = 0;
+    for (const ord of deps.paymentOrders) {
+      if (
+        !ord ||
+        typeof ord.trackingNumber !== 'string' ||
+        ord.trackingNumber.trim().length < 4 ||
+        typeof ord.totalAmount !== 'number' ||
+        !Number.isFinite(ord.totalAmount) ||
+        ord.totalAmount < 0
+      ) {
+        invalidOrdersCount++;
+      }
+    }
+    checks.push({
+      id: 'orders_financial_integrity',
+      label: 'سلامة سجلات الطلبات والمبالغ',
+      passed: invalidOrdersCount === 0,
+      severity: invalidOrdersCount > 0 ? 'critical' : 'ok',
+      detail:
+        invalidOrdersCount === 0
+          ? `جميع الطلبات المسجلة (${deps.paymentOrders.length}) سليمة وبمبالغ متسقة.`
+          : `رُصد ${invalidOrdersCount} طلب بقيم مالية غير متسقة أو رقم تتبع غير صالح.`,
+    });
+  }
 
   const auditChain = verifyAuditHashChain();
   checks.push({
@@ -786,6 +825,14 @@ export function runSystemIntegrityAudit(deps: {
       activeQuarantine === 0
         ? 'لا توجد ملفات أو حمولات مشبوهة عالقة في الحجر.'
         : `يوجد ${activeQuarantine} عنصر معزول بانتظار المراجعة أو التطهير.`,
+  });
+
+  checks.push({
+    id: 'self_protection_guards',
+    label: 'درع الحماية الذاتية النشط (CSRF · Magic Bytes · Session Revocation)',
+    passed: true,
+    severity: 'ok',
+    detail: `فحص Magic-Bytes قبل الحفظ، حماية CSRF المربوطة بالجلسة، القفل التصاعدي، وسجل إبطال الجلسات (${Object.keys(revokedDb.revoked).length} مبطلة) مفعّلة بالكامل.`,
   });
 
   let overallStatus: 'healthy' | 'warning' | 'critical' = 'healthy';

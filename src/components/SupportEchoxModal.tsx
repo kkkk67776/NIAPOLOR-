@@ -25,6 +25,7 @@ export const SupportEchoxModal: React.FC = () => {
     isSupportModalOpen,
     setIsSupportModalOpen,
     paymentConfig,
+    isOnline,
     language,
     t,
   } = useStore();
@@ -85,6 +86,11 @@ export const SupportEchoxModal: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
+
+    if (!isOnline) {
+      setErrorMsg(t.offline.serverActionDisabled);
+      return;
+    }
 
     const parsedAmount = parseFloat(amountInput);
     if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
@@ -496,10 +502,17 @@ export const SupportEchoxModal: React.FC = () => {
                 </div>
               )}
 
+              {!isOnline && (
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-800 dark:text-amber-300 font-bold flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{t.offline.serverActionDisabled}</span>
+                </div>
+              )}
+
               <button
                 type="submit"
-                disabled={submitting || (!codEnabled && !bankEnabled && !onlineReady)}
-                className="w-full py-3 rounded-xl bg-[#FF6B00] hover:bg-[#e05e00] disabled:opacity-50 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                disabled={submitting || !isOnline || (!codEnabled && !bankEnabled && !onlineReady)}
+                className="w-full py-3 rounded-xl bg-[#FF6B00] hover:bg-[#e05e00] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <HeartHandshake className="w-4 h-4" />}
                 <span>{t.supportEchox.submitBtn}</span>

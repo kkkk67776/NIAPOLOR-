@@ -143,14 +143,51 @@ export function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return outputArray;
 }
 
+let swUpdateListenerBound = false;
+
 export function registerEchoxServiceWorker(): Promise<ServiceWorkerRegistration | null> {
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
     return Promise.resolve(null);
   }
+
+  if (!swUpdateListenerBound) {
+    swUpdateListenerBound = true;
+    const hadController = Boolean(navigator.serviceWorker.controller);
+
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadController) return;
+      try {
+        const lastReload = Number(sessionStorage.getItem('echox_sw_reload_ts') || '0');
+        if (Date.now() - lastReload < 15000) return;
+        sessionStorage.setItem('echox_sw_reload_ts', String(Date.now()));
+      } catch {
+        // ignore storage restrictions
+      }
+      window.dispatchEvent(new CustomEvent('echox_sw_updated'));
+      window.location.reload();
+    });
+
+    window.addEventListener('online', () => {
+      swRegistrationPromise?.then((reg) => reg?.update().catch(() => {})).catch(() => {});
+    });
+  }
+
   if (!swRegistrationPromise) {
     swRegistrationPromise = navigator.serviceWorker
       .register('/sw.js', { scope: '/', updateViaCache: 'none' })
       .then((reg) => {
+        if (reg.waiting) {
+          reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+        }
+        reg.addEventListener('updatefound', () => {
+          const installing = reg.installing;
+          if (!installing) return;
+          installing.addEventListener('statechange', () => {
+            if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+              installing.postMessage({ type: 'SKIP_WAITING' });
+            }
+          });
+        });
         reg.update().catch(() => {});
         return reg;
       })

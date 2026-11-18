@@ -45,12 +45,12 @@ export const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 auth.languageCode = 'ar';
 
-/* CRITICAL: Initialize Firestore with the database ID and auto-detect long polling for iframe/proxy compatibility */
+/* CRITICAL: Initialize Firestore with the database ID and forced long polling for iframe/proxy compatibility */
 export const db = (() => {
   try {
     return initializeFirestore(
       app,
-      { experimentalAutoDetectLongPolling: true },
+      { experimentalForceLongPolling: true },
       firestoreDatabaseId
     );
   } catch {
@@ -60,6 +60,18 @@ export const db = (() => {
 
 // Validate connection per Firebase skill instructions
 async function testConnection() {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    if (typeof window !== 'undefined') {
+      window.addEventListener(
+        'online',
+        () => {
+          void testConnection();
+        },
+        { once: true }
+      );
+    }
+    return;
+  }
   try {
     if (db) {
       await getDocFromServer(doc(db, 'test', 'connection'));
@@ -73,7 +85,7 @@ async function testConnection() {
     }
   }
 }
-testConnection();
+void testConnection();
 
 export enum OperationType {
   CREATE = 'create',

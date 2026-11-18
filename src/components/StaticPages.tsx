@@ -22,6 +22,7 @@ import {
   ScopedVendorFinancialsResponse
 } from '../lib/payments';
 import { isOwnerUnlocked } from '../lib/security';
+import { handleStoreImageError } from '../lib/imageFallback';
 
 // 1. The Promise Page (الوعد)
 export const PromiseView: React.FC = () => {
@@ -96,7 +97,7 @@ export const PromiseView: React.FC = () => {
 
 // 2. Partner Companies Page (الشركات)
 export const CompaniesView: React.FC = () => {
-  const { companies, products, language, t, setSelectedProductId } = useStore();
+  const { companies, products, language, t, setSelectedProductId, isOnline } = useStore();
   const [selectedVendorName, setSelectedVendorName] = useState<string>('');
   const [vendorFinancials, setVendorFinancials] = useState<ScopedVendorFinancialsResponse | null>(null);
   const [loadingVendor, setLoadingVendor] = useState(false);
@@ -106,6 +107,10 @@ export const CompaniesView: React.FC = () => {
     setSelectedVendorName(vendorName);
     setVendorFinancials(null);
     setVendorError(null);
+    if (!isOnline) {
+      setVendorError(t.offline.serverActionDisabled);
+      return;
+    }
     setLoadingVendor(true);
     try {
       const data = await fetchScopedVendorFinancials(vendorId);
@@ -142,8 +147,10 @@ export const CompaniesView: React.FC = () => {
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-5">
                 <div className="flex items-center gap-4">
                   <img 
-                    src={comp.logo} 
-                    alt={comp.name} 
+                    src={comp.logo || '/assets/images/echox-logo.webp'} 
+                    alt={comp.name}
+                    referrerPolicy="no-referrer"
+                    onError={handleStoreImageError}
                     className="w-16 h-16 rounded-2xl object-contain bg-slate-50 p-1.5 border border-slate-200" 
                   />
                   <div>
@@ -202,10 +209,11 @@ export const CompaniesView: React.FC = () => {
                         className="p-3 rounded-2xl bg-[#FAF8F5] dark:bg-[#1E293B] border border-slate-200 dark:border-slate-700 hover:border-[#FF6B00] cursor-pointer flex items-center gap-3 transition-all"
                       >
                         <img 
-                          src={p.images[0]} 
-                          alt="thumb" 
+                          src={p.images[0] || '/assets/images/echox-logo.webp'} 
+                          alt={p.name[language] || 'product'} 
                           referrerPolicy="no-referrer"
-                          className="w-12 h-12 rounded-xl object-cover bg-white" 
+                          onError={handleStoreImageError}
+                          className="w-12 h-12 rounded-xl object-cover bg-white shrink-0" 
                         />
                         <div className="overflow-hidden">
                           <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{p.name[language]}</p>
@@ -346,25 +354,39 @@ export const CompaniesView: React.FC = () => {
 
 // 3. Contact Us Page (اتصل بنا)
 export const ContactView: React.FC = () => {
-  const { siteSettings, sendInquiry, language, t } = useStore();
+  const { siteSettings, sendInquiry, language, t, isOnline } = useStore();
   const [senderName, setSenderName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
   const [sentSuccess, setSentSuccess] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSendError('');
+    if (!isOnline) {
+      setSendError(t.offline.serverActionDisabled);
+      return;
+    }
     if (!senderName || !phone || !message) return;
 
-    sendInquiry({
+    setSending(true);
+    const res = await sendInquiry({
       senderName,
       phone,
       email: email || 'contact@client.tn',
       subject: subject || 'استفسار عام',
       message
     });
+    setSending(false);
+
+    if (!res.ok) {
+      setSendError(res.error || 'تعذر إرسال الرسالة حالياً.');
+      return;
+    }
 
     setSentSuccess(true);
     setSenderName('');
@@ -464,6 +486,12 @@ export const ContactView: React.FC = () => {
             </div>
           )}
 
+          {sendError && (
+            <div className="p-3.5 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/60 text-red-700 dark:text-red-300 rounded-2xl text-xs font-bold">
+              {sendError}
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
@@ -515,11 +543,18 @@ export const ContactView: React.FC = () => {
               />
             </div>
 
+            {!isOnline && (
+              <p className="text-[11px] font-bold text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/25 rounded-xl px-3 py-2">
+                {t.offline.serverActionDisabled}
+              </p>
+            )}
+
             <button
               type="submit"
-              className="px-6 py-3 bg-[#FF6B00] hover:bg-[#e05e00] text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer"
+              disabled={sending || !isOnline}
+              className="px-6 py-3 bg-[#FF6B00] hover:bg-[#e05e00] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer"
             >
-              <Send className="w-4 h-4" />
+              {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
               <span>{t.contactModal.sendBtn}</span>
             </button>
           </form>

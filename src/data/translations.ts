@@ -532,6 +532,21 @@ export const translations = {
       termsOfService: 'شروط الاستخدام',
       returnPolicy: 'سياسة الإرجاع والضمان',
       ownerPortalLink: '🔒 مركز التحكم',
+    },
+
+    offline: {
+      title: 'أنت تتصفح في وضع عدم الاتصال بالإنترنت',
+      cachedNotice: 'تُعرض آخر نسخة محفوظة من المتجر. قد لا تكون الأسعار أو المخزون محدثين حتى يعود الاتصال.',
+      noCachedNotice: 'تعذر تحميل بيانات حديثة من الخادم لعدم توفر الاتصال حالياً.',
+      lastSyncedPrefix: 'آخر مزامنة:',
+      retryBtn: 'إعادة المحاولة',
+      retryingBtn: 'جاري التحقق...',
+      restoredNotice: 'تمت استعادة الاتصال وتحديث بيانات المتجر والأسعار ✓',
+      checkoutBlockedTitle: 'إتمام الطلب يتطلب اتصالاً بالإنترنت',
+      checkoutBlockedDesc: 'يمكنك مراجعة سلتك وتعديل الكميات الآن، وعند عودة الإنترنت يمكنك تأكيد الطلب والتحقق من الأسعار والمخزون الفعلي.',
+      serverActionDisabled: 'هذا الإجراء يحتاج اتصالاً نشطاً بالخادم ولا يمكن تنفيذه دون إنترنت.',
+      chatOfflineNotice: 'أنت غير متصل حالياً — الرد الفوري من المتجر يتطلب اتصالاً بالإنترنت.',
+      trackingCachedNotice: 'وضع عدم الاتصال: يتم البحث فقط ضمن الطلبات المحفوظة مسبقاً على جهازك.',
     }
   },
 
@@ -1066,6 +1081,21 @@ export const translations = {
       termsOfService: 'Conditions Générales',
       returnPolicy: 'Politique de Retour',
       ownerPortalLink: "🔒 Panneau d'administration",
+    },
+
+    offline: {
+      title: 'Vous naviguez hors ligne',
+      cachedNotice: 'Les dernières données enregistrées sont affichées. Les prix et les stocks peuvent ne pas être à jour.',
+      noCachedNotice: 'Impossible d’actualiser les données du magasin hors ligne.',
+      lastSyncedPrefix: 'Dernière synchronisation :',
+      retryBtn: 'Réessayer',
+      retryingBtn: 'Vérification...',
+      restoredNotice: 'Connexion rétablie et catalogue actualisé ✓',
+      checkoutBlockedTitle: 'Connexion requise pour valider la commande',
+      checkoutBlockedDesc: 'Vous pouvez consulter votre panier hors ligne. Reconnectez-vous pour vérifier les prix, le stock et finaliser la commande.',
+      serverActionDisabled: 'Cette action nécessite une connexion active au serveur.',
+      chatOfflineNotice: 'Hors ligne — la messagerie en direct nécessite une connexion internet.',
+      trackingCachedNotice: 'Mode hors ligne : recherche limitée aux commandes déjà enregistrées sur votre appareil.',
     }
   },
 
@@ -1600,6 +1630,21 @@ export const translations = {
       termsOfService: 'Terms of Service',
       returnPolicy: 'Return Policy & Warranty',
       ownerPortalLink: '🔒 Admin Panel',
+    },
+
+    offline: {
+      title: 'You are browsing in offline mode',
+      cachedNotice: 'Showing the latest saved store data. Prices and stock availability may not be up to date until you reconnect.',
+      noCachedNotice: 'Unable to fetch fresh store data while offline.',
+      lastSyncedPrefix: 'Last synced:',
+      retryBtn: 'Retry',
+      retryingBtn: 'Checking...',
+      restoredNotice: 'Connection restored and store catalog refreshed ✓',
+      checkoutBlockedTitle: 'Internet connection required to place order',
+      checkoutBlockedDesc: 'You can keep browsing and updating your cart offline. Reconnect to verify live stock, prices, and submit your order.',
+      serverActionDisabled: 'This action requires an active server connection and is disabled while offline.',
+      chatOfflineNotice: 'Currently offline — live store chat requires an active internet connection.',
+      trackingCachedNotice: 'Offline mode: search is limited to orders previously saved on this device.',
     }
   }
 };

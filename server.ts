@@ -110,6 +110,7 @@ import {
   runSystemIntegrityAudit,
   type RecoveryPayloadBundle,
 } from './server/securityEngine';
+import { inspectImageUrlOnServer } from './server/mediaInspector';
 
 dotenv.config();
 
@@ -144,9 +145,82 @@ function isHttpsRequest(req: Request): boolean {
   return req.secure || proto.split(',')[0].trim().toLowerCase() === 'https';
 }
 
+function extractHostname(rawHostOrUrl: string): string {
+  const cleaned = (rawHostOrUrl || '').split(',')[0].trim().toLowerCase();
+  if (!cleaned) return '';
+  try {
+    if (cleaned.includes('://')) {
+      return new URL(cleaned).hostname.toLowerCase();
+    }
+    return new URL(`http://${cleaned}`).hostname.toLowerCase();
+  } catch {
+    return cleaned.replace(/:\d+$/, '').trim();
+  }
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '0.0.0.0' || hostname === '::1';
+}
+
+function isTrustedRunAppHostname(hostname: string): boolean {
+  return /^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.run\.app$/i.test(hostname);
+}
+
+function isTrustedStorefrontHostname(hostname: string): boolean {
+  if (!hostname) return false;
+  if (
+    hostname === 'echoxstore.pages.dev' ||
+    hostname === 'echox-store.onrender.com' ||
+    isLoopbackHostname(hostname) ||
+    isTrustedRunAppHostname(hostname) ||
+    /^([a-z0-9-]+\.)*echox[a-z0-9-]*\.pages\.dev$/i.test(hostname)
+  ) {
+    return true;
+  }
+  const configuredHost = extractHostname(process.env.SITE_URL || process.env.VITE_SITE_URL || '');
+  return Boolean(configuredHost && hostname === configuredHost);
+}
+
+function resolveAuthoritativeHost(req: Request): string {
+  const rawHost = extractHostname(req.get('host') || '');
+  // If the concrete Host header is already a non-loopback host (e.g. echox-store.onrender.com),
+  // NEVER let client-supplied X-Forwarded-Host override it.
+  if (rawHost && !isLoopbackHostname(rawHost)) {
+    return rawHost;
+  }
+  const fwdHost = extractHostname(String(req.headers['x-forwarded-host'] || ''));
+  return fwdHost || rawHost;
+}
+
+function isAiStudioPreviewRequest(req: Request): boolean {
+  const rawHost = extractHostname(req.get('host') || '');
+  // Concrete non-loopback host (e.g. production echox-store.onrender.com) is authoritative.
+  if (rawHost && !isLoopbackHostname(rawHost)) {
+    return isTrustedRunAppHostname(rawHost);
+  }
+
+  const fwdHost = extractHostname(String(req.headers['x-forwarded-host'] || ''));
+  if (fwdHost) {
+    return isTrustedRunAppHostname(fwdHost);
+  }
+
+  // Only allow strict Referer/Origin hostname fallback on non-production loopback requests
+  if (process.env.NODE_ENV !== 'production' && isLoopbackHostname(rawHost)) {
+    const refererHost = extractHostname(String(req.headers['referer'] || ''));
+    const originHost = extractHostname(String(req.headers['origin'] || ''));
+    const matchesStrictStudioHost = (h: string) =>
+      h === 'aistudio.google.com' || /^[a-z0-9-]+\.scf\.usercontent\.goog$/i.test(h);
+    return matchesStrictStudioHost(refererHost) || matchesStrictStudioHost(originHost);
+  }
+
+  return false;
+}
+
 function buildSessionCookie(req: Request, value: string, maxAgeSeconds: number): string {
-  const secureFlag = isHttpsRequest(req) ? '; Secure' : '';
-  return `__session=${value}; Path=/; Max-Age=${maxAgeSeconds}; SameSite=Lax; HttpOnly${secureFlag}`;
+  const https = isHttpsRequest(req);
+  const sameSite = https && isAiStudioPreviewRequest(req) ? 'None' : 'Lax';
+  const secureFlag = https || sameSite === 'None' ? '; Secure' : '';
+  return `__session=${value}; Path=/; Max-Age=${maxAgeSeconds}; SameSite=${sameSite}; HttpOnly${secureFlag}`;
 }
 
 function normalizeIpString(raw: string): string {
@@ -168,18 +242,22 @@ function getClientIp(req: Request): string {
 }
 
 function getRequestOrigin(req: Request): string {
-  const hostHeader = (req.headers['x-forwarded-host'] as string) || req.get('host') || '';
+  const rawHost = (req.get('host') || '').trim();
+  const fwdHost = String(req.headers['x-forwarded-host'] || '').split(',')[0].trim();
+  const candidate = rawHost && !isLoopbackHostname(extractHostname(rawHost)) ? rawHost : fwdHost || rawHost;
+  const candidateHostname = extractHostname(candidate);
   const protoHeader = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
-  const proto = protoHeader.split(',')[0].trim();
-  if (hostHeader && !hostHeader.includes('localhost') && !hostHeader.includes('127.0.0.1') && !hostHeader.includes('0.0.0.0')) {
-    return `${proto}://${hostHeader}`.replace(/\/$/, '');
+  const proto = protoHeader.split(',')[0].trim().toLowerCase() === 'http' ? 'http' : 'https';
+
+  if (candidate && isTrustedStorefrontHostname(candidateHostname) && !isLoopbackHostname(candidateHostname)) {
+    return `${proto}://${candidate}`.replace(/\/$/, '');
   }
 
   const configured = (process.env.SITE_URL || process.env.VITE_SITE_URL || '').trim().replace(/\/$/, '');
   if (configured) return configured;
 
-  if (hostHeader) {
-    return `${proto}://${hostHeader}`.replace(/\/$/, '');
+  if (candidate && isLoopbackHostname(candidateHostname)) {
+    return `${proto}://${candidate}`.replace(/\/$/, '');
   }
   return 'https://echox-store.onrender.com';
 }
@@ -242,11 +320,9 @@ app.use((req: Request, res: Response, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
-  const hostHeader = (req.get('host') || '').toLowerCase();
-  const isPreviewOrLocalHost =
-    hostHeader.includes('.run.app') ||
-    hostHeader.includes('localhost') ||
-    hostHeader.includes('127.0.0.1');
+  const effectiveHost = resolveAuthoritativeHost(req);
+  const isLocalHost = isLoopbackHostname(effectiveHost);
+  const isPreviewOrLocalHost = isAiStudioPreviewRequest(req) || isLocalHost;
   if (!isPreviewOrLocalHost) {
     res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   }
@@ -265,7 +341,7 @@ app.use((req: Request, res: Response, next) => {
       "object-src 'none'",
       "base-uri 'self'",
       isPreviewOrLocalHost
-        ? "frame-ancestors 'self' https://aistudio.google.com https://*.google.com https://*.googleusercontent.com"
+        ? "frame-ancestors 'self' https://aistudio.google.com https://*.google.com https://*.googleusercontent.com https://*.usercontent.goog"
         : "frame-ancestors 'self'",
     ].join('; ')
   );
@@ -660,8 +736,10 @@ function verifyCsrfToken(token: string, expectedSessionId: string): boolean {
 }
 
 function buildCsrfCookie(req: Request, value: string, maxAgeSeconds: number): string {
-  const secureFlag = isHttpsRequest(req) ? '; Secure' : '';
-  return `echox_csrf=${value}; Path=/; Max-Age=${maxAgeSeconds}; SameSite=Lax${secureFlag}`;
+  const https = isHttpsRequest(req);
+  const sameSite = https && isAiStudioPreviewRequest(req) ? 'None' : 'Lax';
+  const secureFlag = https || sameSite === 'None' ? '; Secure' : '';
+  return `echox_csrf=${value}; Path=/; Max-Age=${maxAgeSeconds}; SameSite=${sameSite}${secureFlag}`;
 }
 
 function extractSessionTokenFromReq(req: Request): string {
@@ -1750,6 +1828,13 @@ app.post('/api/security/updateAccessCode', async (req: Request, res: Response) =
     }
 
     resetBucket('accessCode', ip);
+    appendSecurityAuditEvent({
+      event: 'ACCESS_CODE_CHANGED',
+      severity: 'warning',
+      actor: OWNER_EMAIL,
+      ip,
+      summary: 'تغيير رمز الوصول السري وإعادة تشفيره عبر Argon2id.',
+    });
     emitAdminNotification({
       category: 'security',
       severity: 'warning',
@@ -1831,6 +1916,13 @@ app.post('/api/security/updatePin', async (req: Request, res: Response) => {
     ownerLockConfig = legacyLock;
 
     resetBucket('pin', ip);
+    appendSecurityAuditEvent({
+      event: 'OWNER_PIN_CHANGED',
+      severity: 'warning',
+      actor: OWNER_EMAIL,
+      ip,
+      summary: 'تغيير رمز الـ PIN الإداري وإعادة تشفيره عبر Argon2id.',
+    });
     emitAdminNotification({
       category: 'security',
       severity: 'warning',
@@ -2259,10 +2351,20 @@ app.put('/api/admin/payments/config', async (req: Request, res: Response) => {
     resetBucket('bankPinConfirm', ip);
   }
 
+  const bankChanged = isBankIdentityChange(body.bankTransfer);
   const result = await updateAdminPaymentConfig(body);
   if (!result.ok) {
     return res.status(result.statusCode || 400).json({ success: false, error: result.error });
   }
+  appendSecurityAuditEvent({
+    event: bankChanged ? 'BANK_IDENTITY_MODIFIED' : 'PAYMENT_CONFIG_UPDATED',
+    severity: bankChanged ? 'warning' : 'info',
+    actor: OWNER_EMAIL,
+    ip: getClientIp(req),
+    summary: bankChanged
+      ? 'تحديث بيانات الحساب البنكي وإعادة ختم RIB Integrity Seal بعد تأكيد PIN.'
+      : 'تحديث إعدادات بوابات الدفع والعمولات.',
+  });
   emitAdminNotification({
     category: 'activity',
     severity: 'info',
@@ -2295,15 +2397,31 @@ app.post('/api/admin/payments/verify', async (req: Request, res: Response) => {
   if (!result.ok) {
     return res.status(result.statusCode || 400).json({ success: false, error: result.error });
   }
+  appendSecurityAuditEvent({
+    event: 'PAYMENT_VERIFICATION_DECISION',
+    severity: 'info',
+    actor: admin.email,
+    ip: getClientIp(req),
+    summary: `اعتماد/مراجعة دفع الطلب ${result.order?.trackingNumber || req.body?.orderId || ''}.`,
+    meta: { action: String(req.body?.action || 'verify') },
+  });
   return res.json({ success: true, order: result.order, transaction: result.transaction });
 });
 
 app.post('/api/admin/payments/refund', async (req: Request, res: Response) => {
-  if (!requireAdminAuth(req, res)) return;
+  const admin = requireAdminAuth(req, res);
+  if (!admin) return;
   const result = await adminProcessRefundOrCancel(req.body || {});
   if (!result.ok) {
     return res.status(result.statusCode || 400).json({ success: false, error: result.error });
   }
+  appendSecurityAuditEvent({
+    event: 'PAYMENT_REFUND_OR_CANCEL',
+    severity: 'warning',
+    actor: admin.email,
+    ip: getClientIp(req),
+    summary: `معالجة طلب استرجاع/إلغاء (${result.order?.trackingNumber || req.body?.orderId || ''}).`,
+  });
   return res.json({ success: true, order: result.order });
 });
 
@@ -2506,10 +2624,20 @@ app.get('/api/admin/store/state', async (req: Request, res: Response) => {
 });
 
 app.put('/api/admin/store/state', async (req: Request, res: Response) => {
-  if (!requireAdminAuth(req, res)) return;
+  const admin = requireAdminAuth(req, res);
+  if (!admin) return;
+  const ip = getClientIp(req);
   const prevState = getPublicStoreState();
-  const result = await updateAdminStoreState(req.body || {});
+  const result = await updateAdminStoreState(req.body || {}, ip);
   if (!result.ok) {
+    if (result.quarantined) {
+      emitSecurityAlertRateLimited(`store_media_sec_${ip}`, {
+        severity: 'critical',
+        title: '🚨 صد وعزل وسائط غير آمنة عند تعديل المتجر',
+        body: `${result.error || 'رابط صورة غير آمن'} (IP: ${ip})`,
+        url: '/owner/dashboard',
+      });
+    }
     return res.status(result.statusCode || 400).json({ success: false, error: result.error });
   }
   // Keep server-side payment catalog prices in exact sync with edited products
@@ -2528,6 +2656,14 @@ app.put('/api/admin/store/state', async (req: Request, res: Response) => {
   if (Array.isArray(req.body?.banners)) changedSections.push('البانرات');
   if (req.body?.siteSettings) changedSections.push('إعدادات المتجر');
   if (req.body?.ownerSettings) changedSections.push('إعدادات المالك');
+
+  appendSecurityAuditEvent({
+    event: 'STORE_STATE_UPDATED',
+    severity: 'info',
+    actor: admin.email,
+    ip,
+    summary: changedSections.length > 0 ? `تحديث بيانات المتجر (${changedSections.join('، ')}).` : 'تحديث بيانات المتجر.',
+  });
 
   emitAdminNotification({
     category: 'activity',
@@ -2563,6 +2699,28 @@ app.put('/api/admin/store/state', async (req: Request, res: Response) => {
     success: true,
     ...result.state,
     persistenceStatus: getPersistenceStatus(),
+  });
+});
+
+app.post('/api/admin/media/inspect', async (req: Request, res: Response) => {
+  if (!requireAdminAuth(req, res)) return;
+  const ip = getClientIp(req);
+  const rate = checkSlidingWindowLimit('adminMediaInspect', ip, 40, 60 * 1000);
+  if (!rate.allowed) {
+    return res.status(429).json({
+      success: false,
+      error: `تم تجاوز حد فحص الصور مؤقتاً، يرجى الانتظار ${rate.retryAfterSeconds} ثانية.`,
+    });
+  }
+  const urlInput = typeof req.body?.url === 'string' ? req.body.url : '';
+  const allowLoopback =
+    process.env.NODE_ENV !== 'production' &&
+    process.env.ECHOX_ALLOW_TEST_LOOPBACK_MEDIA === '1' &&
+    isLoopbackHostname(getClientIp(req));
+  const result = await inspectImageUrlOnServer(urlInput, { allowLoopbackForTest: allowLoopback });
+  return res.json({
+    success: true,
+    result,
   });
 });
 
@@ -2782,12 +2940,14 @@ app.get('/api/admin/security/integrity', async (req: Request, res: Response) => 
     syncStoreStateIfStale(true).catch(() => {}),
     syncPaymentDbIfStale(true).catch(() => {}),
   ]);
+  const paymentOverview = getAdminPaymentOverview();
   const report = runSystemIntegrityAudit({
     actorIp: getClientIp(req),
     centralSecurityConfig,
     hmacSecretLength: getHmacSecret().length,
     storeState: getStoreRecoverySnapshot(),
     paymentPublicConfig: getPublicPaymentConfig(),
+    paymentOrders: paymentOverview.orders,
   });
   return res.json({
     success: true,
@@ -3098,6 +3258,8 @@ async function startServer() {
           if (base === 'sw.js') {
             res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
             res.setHeader('Service-Worker-Allowed', '/');
+          } else if (base === 'sw-precache.json' || base === 'index.html') {
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
           } else if (base === 'manifest.webmanifest' || base === 'manifest.json') {
             res.setHeader('Cache-Control', 'no-cache, must-revalidate');
             res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
@@ -3111,11 +3273,12 @@ async function startServer() {
       if (req.path.startsWith('/api/')) {
         return res.status(404).json({ success: false, error: 'Endpoint not found' });
       }
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       return res.sendFile(path.join(distDir, 'index.html'));
     });
   } else {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, allowedHosts: ['.run.app', 'localhost', '127.0.0.1'] },
       appType: 'spa',
     });
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Building2, Plus, Trash2, Phone, Mail, Image as ImageIcon, CheckCircle, X, AlertTriangle } from 'lucide-react';
+import { handleStoreImageError, handleStoreImageLoad } from '../lib/imageFallback';
 
 export interface Partner {
   id: number | string;
@@ -160,7 +161,14 @@ export default function PartnersManager() {
               <div className="flex items-start gap-3.5">
                 <div className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shrink-0 overflow-hidden">
                   {partner.logo ? (
-                    <img src={partner.logo} alt={renderLocalized(partner.name)} className="w-full h-full object-cover" />
+                    <img
+                      src={partner.logo}
+                      alt={renderLocalized(partner.name)}
+                      referrerPolicy="no-referrer"
+                      onError={handleStoreImageError}
+                      onLoad={handleStoreImageLoad}
+                      className="w-full h-full object-cover"
+                    />
                   ) : (
                     <Building2 className="w-6 h-6 text-[#F59E0B]" />
                   )}

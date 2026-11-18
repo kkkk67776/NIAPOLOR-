@@ -16,6 +16,7 @@ import {
   MessageSquare
 } from 'lucide-react';
 import { getGovernorateName } from '../data/governorates';
+import { handleStoreImageError, handleStoreImageLoad } from '../lib/imageFallback';
 
 export const ProductDetailModal: React.FC = () => {
   const { 
@@ -28,7 +29,8 @@ export const ProductDetailModal: React.FC = () => {
     wishlist, 
     toggleWishlist, 
     addProductReview,
-    setIsCartOpen
+    setIsCartOpen,
+    isOnline
   } = useStore();
 
   const product = products.find(p => p.id === selectedProductId);
@@ -60,6 +62,7 @@ export const ProductDetailModal: React.FC = () => {
 
   const handleReviewSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isOnline) return;
     if (!reviewAuthor.trim() || !reviewComment.trim()) return;
 
     addProductReview(product.id, {
@@ -106,9 +109,11 @@ export const ProductDetailModal: React.FC = () => {
             <div className="lg:col-span-7 space-y-4">
               <div className="relative aspect-4/3 rounded-2xl bg-[#F5F2EB] dark:bg-[#1E293B] overflow-hidden border border-[#E8E4DD] dark:border-slate-700">
                 <img 
-                  src={product.images[activeImageIndex] || product.images[0]} 
+                  src={product.images[activeImageIndex] || product.images[0] || '/assets/images/echox-logo.webp'} 
                   alt={product.name[language]}
                   referrerPolicy="no-referrer"
+                  onError={handleStoreImageError}
+                  onLoad={handleStoreImageLoad}
                   className="w-full h-full object-cover object-center transition-all duration-300"
                 />
 
@@ -134,6 +139,8 @@ export const ProductDetailModal: React.FC = () => {
                         src={img} 
                         alt="Thumbnail" 
                         referrerPolicy="no-referrer" 
+                        onError={handleStoreImageError}
+                        onLoad={handleStoreImageLoad}
                         className="w-full h-full object-cover"
                       />
                     </button>
@@ -410,9 +417,15 @@ export const ProductDetailModal: React.FC = () => {
                     className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-white focus:outline-hidden focus:border-[#FF6B00]" 
                   />
                 </div>
+                {!isOnline && (
+                  <p className="text-[11px] font-bold text-[#FF6B00]">
+                    {t.offline.serverActionDisabled}
+                  </p>
+                )}
                 <button 
                   type="submit" 
-                  className="px-4 py-2 rounded-xl bg-[#0B0F17] dark:bg-[#FF6B00] hover:bg-[#FF6B00] dark:hover:bg-[#E05E00] text-white text-xs font-bold transition-colors cursor-pointer"
+                  disabled={!isOnline}
+                  className="px-4 py-2 rounded-xl bg-[#0B0F17] dark:bg-[#FF6B00] hover:bg-[#FF6B00] dark:hover:bg-[#E05E00] text-white text-xs font-bold transition-colors cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed"
                 >
                   {t.product.submitReview}
                 </button>
@@ -435,9 +448,10 @@ export const ProductDetailModal: React.FC = () => {
                     className="p-3 rounded-xl border border-[#E8E4DD] dark:border-slate-700 hover:border-[#FF6B00] bg-[#FAF8F5] dark:bg-[#1E293B] cursor-pointer transition-all flex items-center gap-3"
                   >
                     <img 
-                      src={rel.images[0]} 
+                      src={rel.images[0] || '/assets/images/echox-logo.webp'} 
                       alt={rel.name[language]} 
                       referrerPolicy="no-referrer"
+                      onError={handleStoreImageError}
                       className="w-14 h-14 rounded-lg object-cover bg-white dark:bg-slate-800 shrink-0" 
                     />
                     <div className="overflow-hidden">

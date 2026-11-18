@@ -3,6 +3,7 @@ import { Product } from '../types';
 import { useStore } from '../context/StoreContext';
 import { Heart, ShoppingBag, Star, Check } from 'lucide-react';
 import { getGovernorateName } from '../data/governorates';
+import { handleStoreImageError, handleStoreImageLoad } from '../lib/imageFallback';
 
 interface ProductCardProps {
   product: Product;
@@ -47,6 +48,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
             alt={prodName}
             loading="lazy"
             referrerPolicy="no-referrer"
+            onError={handleStoreImageError}
+            onLoad={handleStoreImageLoad}
             className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
           />
 

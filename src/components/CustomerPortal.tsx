@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { TUNISIAN_GOVERNORATES, getDelegationsForGovernorate, getGovernorateName } from '../data/governorates';
 import { getPaymentStatusTone } from '../lib/payments';
+import { handleStoreImageError, handleStoreImageLoad } from '../lib/imageFallback';
 
 export const CustomerPortal: React.FC = () => {
   const { 
@@ -410,9 +411,11 @@ export const CustomerPortal: React.FC = () => {
                 <div key={prod.id} className="bg-white dark:bg-[#0F172A] p-4 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3 flex flex-col justify-between">
                   <div className="flex gap-3 cursor-pointer" onClick={() => setSelectedProductId(prod.id)}>
                     <img 
-                      src={prod.images[0]} 
+                      src={prod.images[0] || '/assets/images/echox-logo.webp'} 
                       alt={prod.name[language]} 
                       referrerPolicy="no-referrer"
+                      onError={handleStoreImageError}
+                      onLoad={handleStoreImageLoad}
                       className="w-16 h-16 rounded-xl object-cover bg-slate-100 dark:bg-slate-800 shrink-0" 
                     />
                     <div className="overflow-hidden">

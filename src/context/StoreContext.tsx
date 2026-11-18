@@ -67,6 +67,7 @@ import {
   getAdminAuthHeaders,
   notifySessionExpired
 } from '../lib/security';
+import { normalizeProductImageUrl } from '../lib/imageUrl';
 
 
 interface StoreContextType {
@@ -199,6 +200,13 @@ interface StoreContextType {
   // Dark Mode
   isDarkMode: boolean;
   toggleDarkMode: () => void;
+
+  // Connectivity & Offline State
+  isOnline: boolean;
+  isReconnecting: boolean;
+  justReconnected: boolean;
+  lastSyncedAt: string | null;
+  retryConnection: () => Promise<boolean>;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -270,6 +278,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [isSupportModalOpen, setIsSupportModalOpen] = useState<boolean>(false);
   const [paymentConfig, setPaymentConfig] = useState<PaymentSystemPublicConfig>(DEFAULT_PUBLIC_PAYMENT_CONFIG);
   const [persistenceStatus, setPersistenceStatus] = useState<ServerPersistenceStatus | null>(null);
+  const [isOnline, setIsOnline] = useState<boolean>(() =>
+    typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean' ? navigator.onLine : true
+  );
+  const [isReconnecting, setIsReconnecting] = useState<boolean>(false);
+  const [justReconnected, setJustReconnected] = useState<boolean>(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('echox_last_synced_at');
+    } catch {
+      return null;
+    }
+  });
 
   const setCurrentView = (view: string) => {
     setCurrentViewState(view);
@@ -317,13 +337,34 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, []);
 
   const normalizeAssetUrl = (url: string): string => {
-    if (!url) return '/assets/images/echox-logo.webp';
-    if (url.includes('file_0000000048188243bc0b721218c854fc_ea3ea21d.png')) return '/assets/images/echox-logo.webp';
-    if (url.includes('product_drill_cordless_pro')) return '/assets/images/product_drill_cordless_pro.webp';
-    if (url.includes('product_automotive_headlight')) return '/assets/images/product_automotive_headlight.webp';
-    if (url.includes('product_digital_multimeter')) return '/assets/images/product_digital_multimeter.webp';
-    if (url.includes('hero_echox_tunisia_store')) return '/assets/images/hero_echox_tunisia_store.webp';
-    return url;
+    if (!url || typeof url !== 'string') return '/assets/images/echox-logo.webp';
+    const trimmed = url.trim();
+    if (!trimmed) return '/assets/images/echox-logo.webp';
+    if (trimmed.includes('file_0000000048188243bc0b721218c854fc_ea3ea21d.png')) return '/assets/images/echox-logo.webp';
+    if (trimmed.includes('product_drill_cordless_pro')) return '/assets/images/product_drill_cordless_pro.webp';
+    if (trimmed.includes('product_automotive_headlight')) return '/assets/images/product_automotive_headlight.webp';
+    if (trimmed.includes('product_digital_multimeter')) return '/assets/images/product_digital_multimeter.webp';
+    if (trimmed.includes('hero_echox_tunisia_store')) return '/assets/images/hero_echox_tunisia_store.webp';
+    const norm = normalizeProductImageUrl(trimmed);
+    if (norm.url && (!norm.issue || norm.issue === 'http_insecure')) {
+      return norm.url;
+    }
+    return trimmed;
+  };
+
+  const normalizeProductImagesList = (p: any): string[] => {
+    const rawList = Array.isArray(p?.images)
+      ? p.images
+      : typeof p?.images === 'string' && p.images.trim()
+      ? [p.images]
+      : typeof p?.image === 'string' && p.image.trim()
+      ? [p.image]
+      : [];
+    const cleaned = rawList
+      .map((item: unknown) => (typeof item === 'string' ? item.trim() : ''))
+      .filter(Boolean)
+      .map(normalizeAssetUrl);
+    return cleaned.length > 0 ? cleaned : ['/assets/images/echox-logo.webp'];
   };
 
   // 3. Products
@@ -332,7 +373,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const saved = localStorage.getItem('echox_products');
       if (!saved) return INITIAL_PRODUCTS;
       const parsed: Product[] = JSON.parse(saved);
-      return parsed.map(p => ({ ...p, images: (p.images || []).map(normalizeAssetUrl) }));
+      return parsed.map(p => ({ ...p, images: normalizeProductImagesList(p) }));
     } catch {
       return INITIAL_PRODUCTS;
     }
@@ -651,7 +692,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (Array.isArray(data.products)) {
       const normProducts = data.products.map((p: Product) => ({
         ...p,
-        images: (p.images || []).map(normalizeAssetUrl),
+        images: normalizeProductImagesList(p),
       }));
       setProducts(normProducts);
     }
@@ -684,13 +725,71 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const refreshStoreState = async (): Promise<void> => {
     try {
       const res = await fetch('/api/store/state', { cache: 'no-store' });
-      if (!res.ok) return;
+      const swCacheHeader = res.headers.get('X-ECHOX-Cache');
+      const isSwOffline = swCacheHeader === 'OFFLINE' || swCacheHeader === 'OFFLINE-MISS';
+      if (!res.ok) {
+        if (isSwOffline || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+          setIsOnline(false);
+        }
+        return;
+      }
       const data = await res.json().catch(() => null);
       if (data && data.success) {
         applyPublicServerState(data);
+        if (isSwOffline || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+          setIsOnline(false);
+        } else {
+          setIsOnline(true);
+          const nowIso = new Date().toISOString();
+          setLastSyncedAt(nowIso);
+          try {
+            localStorage.setItem('echox_last_synced_at', nowIso);
+          } catch {
+            // ignore
+          }
+        }
       }
     } catch {
-      // keep cached state if offline
+      setIsOnline(false);
+    }
+  };
+
+  const retryConnection = async (): Promise<boolean> => {
+    setIsReconnecting(true);
+    try {
+      const res = await fetch('/api/store/state', { cache: 'no-store' });
+      const swCacheHeader = res.headers.get('X-ECHOX-Cache');
+      const isSwOffline = swCacheHeader === 'OFFLINE' || swCacheHeader === 'OFFLINE-MISS';
+      if (!res.ok || isSwOffline) {
+        setIsOnline(false);
+        return false;
+      }
+      const data = await res.json().catch(() => null);
+      if (data && data.success) {
+        applyPublicServerState(data);
+        const nowIso = new Date().toISOString();
+        setLastSyncedAt(nowIso);
+        try {
+          localStorage.setItem('echox_last_synced_at', nowIso);
+        } catch {
+          // ignore
+        }
+        setIsOnline(prev => {
+          if (!prev) {
+            setJustReconnected(true);
+            setTimeout(() => setJustReconnected(false), 4500);
+          }
+          return true;
+        });
+        await Promise.allSettled([refreshPaymentConfig(), refreshChatConfig()]);
+        return true;
+      }
+      return false;
+    } catch {
+      setIsOnline(false);
+      return false;
+    } finally {
+      setIsReconnecting(false);
     }
   };
 
@@ -734,7 +833,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  // Load authoritative storefront state from server on mount & when tab regains focus
+  // Load authoritative storefront state from server on mount, focus, and network reconnect
   useEffect(() => {
     void refreshStoreState();
     let lastRefresh = Date.now();
@@ -745,11 +844,22 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         void refreshPaymentConfig();
       }
     };
+    const handleBrowserOnline = () => {
+      void retryConnection();
+    };
+    const handleBrowserOffline = () => {
+      setIsOnline(false);
+      setJustReconnected(false);
+    };
     window.addEventListener('focus', handleVisibilityOrFocus);
     document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('online', handleBrowserOnline);
+    window.addEventListener('offline', handleBrowserOffline);
     return () => {
       window.removeEventListener('focus', handleVisibilityOrFocus);
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('online', handleBrowserOnline);
+      window.removeEventListener('offline', handleBrowserOffline);
     };
   }, []);
 
@@ -1668,7 +1778,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       updateOwnerSettings,
       
       isDarkMode,
-      toggleDarkMode
+      toggleDarkMode,
+
+      isOnline,
+      isReconnecting,
+      justReconnected,
+      lastSyncedAt,
+      retryConnection
     }}>
       {children}
     </StoreContext.Provider>

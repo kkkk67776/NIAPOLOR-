@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { TUNISIAN_GOVERNORATES } from '../data/governorates';
 import { Product } from '../types';
+import { handleStoreImageError, handleStoreImageLoad } from '../lib/imageFallback';
 
 export const StorefrontView: React.FC = () => {
   const { 
@@ -199,6 +200,9 @@ export const StorefrontView: React.FC = () => {
                           src={product.images[0] || '/assets/images/echox-logo.webp'}
                           alt={prodName}
                           loading="lazy"
+                          referrerPolicy="no-referrer"
+                          onError={handleStoreImageError}
+                          onLoad={handleStoreImageLoad}
                           className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
                         />
                         {product.originalPrice && product.originalPrice > product.price && (
@@ -300,6 +304,9 @@ export const StorefrontView: React.FC = () => {
                           src={product.images[0] || '/assets/images/echox-logo.webp'}
                           alt={prodName}
                           loading="lazy"
+                          referrerPolicy="no-referrer"
+                          onError={handleStoreImageError}
+                          onLoad={handleStoreImageLoad}
                           className="w-full h-full object-contain group-hover:scale-105 transition-transform"
                         />
                       </div>
@@ -383,6 +390,9 @@ export const StorefrontView: React.FC = () => {
                             src={product.images[0] || '/assets/images/echox-logo.webp'}
                             alt={prodName}
                             loading="lazy"
+                            referrerPolicy="no-referrer"
+                            onError={handleStoreImageError}
+                            onLoad={handleStoreImageLoad}
                             className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
                           />
                         </div>
