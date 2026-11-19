@@ -486,6 +486,12 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Cache permanently stored product images (/api/media/products/*) for offline use
+  if (isSameOrigin && url.pathname.startsWith('/api/media/products/')) {
+    event.respondWith(handleImageRequest(request, true));
+    return;
+  }
+
   // Never intercept or cache private, security, owner, or mutating API endpoints
   if (isSameOrigin && url.pathname.startsWith('/api/')) {
     if (PRIVATE_OR_MUTATING_API_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))) {

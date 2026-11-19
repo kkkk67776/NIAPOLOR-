@@ -81,7 +81,8 @@ import {
   notifySessionExpired
 } from '../lib/security';
 import { handleStoreImageError, handleStoreImageLoad } from '../lib/imageFallback';
-import { compressImageFileToDataUrl, normalizeProductImageUrl } from '../lib/imageUrl';
+import { normalizeProductImageUrl } from '../lib/imageUrl';
+import { formatBytesReadable, uploadProductImageToCloud } from '../lib/mediaUpload';
 
 interface OwnerDashboardProps {
   onNavigate?: (route: string, state?: any) => void;
@@ -283,6 +284,11 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
   const [prodFeatured, setProdFeatured] = useState(false);
   const [prodImgInspecting, setProdImgInspecting] = useState(false);
   const [prodImgUploading, setProdImgUploading] = useState(false);
+  const [prodImgUploadProgress, setProdImgUploadProgress] = useState(0);
+  const [prodImgUploadStage, setProdImgUploadStage] = useState<'idle' | 'validating' | 'uploading' | 'confirming' | 'done' | 'error'>('idle');
+  const [prodImgUploadFileName, setProdImgUploadFileName] = useState('');
+  const [prodImgUploadError, setProdImgUploadError] = useState('');
+  const [prodImgUploadInfo, setProdImgUploadInfo] = useState<{ format: string; sizeBytes: number; provider: string } | null>(null);
   const [prodImgDomStatus, setProdImgDomStatus] = useState<Record<string, 'ok' | 'error'>>({});
   const [prodImgInspections, setProdImgInspections] = useState<
     Record<
@@ -336,6 +342,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
   // Authorization Check: exclusively protected by ECHOX VAULT server-side session
   useEffect(() => {
     let cancelled = false;
+    const hadUnlockedSession = isOwnerUnlocked();
 
     async function guard() {
       const serverUnlocked = await checkServerSession();
@@ -343,10 +350,13 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
 
       if (!serverUnlocked) {
         clearOwnerSecuritySession();
+        window.history.replaceState({}, '', '/');
         navigate('/');
-        setTimeout(() => {
-          window.dispatchEvent(new CustomEvent('echox_session_expired'));
-        }, 50);
+        if (hadUnlockedSession) {
+          setTimeout(() => {
+            window.dispatchEvent(new CustomEvent('echox_session_expired'));
+          }, 50);
+        }
         return;
       }
 
@@ -493,6 +503,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
   }, [authorized, activeTab]);
 
   if (checking) {
+    if (!isOwnerUnlocked()) return null;
     return (
       <div className="min-h-[85vh] flex items-center justify-center bg-[#0B0F17] text-white">
         <div className="flex flex-col items-center gap-3">
@@ -778,16 +789,59 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
   };
 
   const handleLocalImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const files = Array.from(e.target.files || []);
     e.target.value = '';
-    if (!file) return;
+    if (files.length === 0) return;
+
     setEntityModalError('');
+    setProdImgUploadError('');
+    setProdImgUploadInfo(null);
     setProdImgUploading(true);
+    setProdImgUploadProgress(2);
+    setProdImgUploadStage('validating');
+
+    let succeededCount = 0;
+
     try {
-      const dataUrl = await compressImageFileToDataUrl(file);
-      setProdImagesText(prev => (prev.trim() ? `${prev.trim()}\n${dataUrl}` : dataUrl));
+      for (let idx = 0; idx < files.length; idx++) {
+        const file = files[idx];
+        setProdImgUploadFileName(file.name || `صورة ${idx + 1}`);
+        const uploaded = await uploadProductImageToCloud(file, {
+          onProgress: (pct, stage) => {
+            const overallPct = Math.round(((idx + pct / 100) / files.length) * 100);
+            setProdImgUploadProgress(overallPct);
+            setProdImgUploadStage(stage);
+          },
+        });
+
+        // Only append permanent URL AFTER server/cloud storage explicitly confirms persistence
+        setProdImagesText(prev => (prev.trim() ? `${prev.trim()}\n${uploaded.url}` : uploaded.url));
+        setProdImgInspections(prev => ({
+          ...prev,
+          [uploaded.url]: {
+            ok: true,
+            kind: 'image',
+            format: uploaded.format,
+          },
+        }));
+        setProdImgUploadInfo({
+          format: uploaded.format,
+          sizeBytes: uploaded.sizeBytes,
+          provider: uploaded.provider,
+        });
+        succeededCount++;
+      }
+
+      if (succeededCount > 0) {
+        setProdImgUploadProgress(100);
+        setProdImgUploadStage('done');
+      }
     } catch (err: any) {
-      setEntityModalError(err?.message || 'تعذر تجهيز الصورة المختارة.');
+      const msg = err?.message || 'فشل رفع الصورة إلى التخزين السحابي الدائم.';
+      setProdImgUploadStage('error');
+      setProdImgUploadProgress(0);
+      setProdImgUploadError(msg);
+      setEntityModalError(msg);
     } finally {
       setProdImgUploading(false);
     }
@@ -797,6 +851,10 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!prodNameAr.trim() || !prodPrice) return;
+    if (prodImgUploading) {
+      setEntityModalError('يرجى انتظار اكتمال رفع الصورة وتأكيد تخزينها أولاً.');
+      return;
+    }
 
     setEntitySaving(true);
     setEntityModalError('');
@@ -872,6 +930,11 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
     setProdFeatured(false);
     setProdImgDomStatus({});
     setProdImgInspections({});
+    setProdImgUploadProgress(0);
+    setProdImgUploadStage('idle');
+    setProdImgUploadFileName('');
+    setProdImgUploadError('');
+    setProdImgUploadInfo(null);
   };
 
   const openEditProduct = (p: Product) => {
@@ -890,6 +953,11 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
     setProdFeatured(!!p.featured);
     setProdImgDomStatus({});
     setProdImgInspections({});
+    setProdImgUploadProgress(0);
+    setProdImgUploadStage('idle');
+    setProdImgUploadFileName('');
+    setProdImgUploadError('');
+    setProdImgUploadInfo(null);
     setShowAddProdModal(true);
   };
 
@@ -3305,11 +3373,12 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                     >
                       {prodImgInspecting ? 'جارٍ الفحص...' : 'فحص الروابط'}
                     </button>
-                    <label className="px-2.5 py-1 rounded-lg bg-[#FF6B00]/10 hover:bg-[#FF6B00]/20 text-[11px] font-bold text-[#FF6B00] border border-[#FF6B00]/30 cursor-pointer">
-                      {prodImgUploading ? 'جارٍ الرفع...' : '+ رفع صورة'}
+                    <label className={`px-2.5 py-1 rounded-lg bg-[#FF6B00]/10 hover:bg-[#FF6B00]/20 text-[11px] font-bold text-[#FF6B00] border border-[#FF6B00]/30 ${prodImgUploading ? 'opacity-60 cursor-wait' : 'cursor-pointer'}`}>
+                      {prodImgUploading ? `جارٍ الرفع (${prodImgUploadProgress}%)` : '+ رفع صورة'}
                       <input
                         type="file"
-                        accept="image/jpeg,image/png,image/webp"
+                        multiple
+                        accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
                         disabled={prodImgUploading}
                         onChange={handleLocalImageUpload}
                         className="hidden"
@@ -3317,6 +3386,57 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                     </label>
                   </div>
                 </div>
+
+                {(prodImgUploading || prodImgUploadStage === 'done' || prodImgUploadError) && (
+                  <div
+                    className={`p-2.5 rounded-xl border text-[11px] space-y-1.5 ${
+                      prodImgUploadError
+                        ? 'bg-red-500/5 border-red-500/30 text-red-700 dark:text-red-300'
+                        : prodImgUploadStage === 'done'
+                        ? 'bg-emerald-500/5 border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
+                        : 'bg-[#FF6B00]/5 border-[#FF6B00]/30 text-[#0F172A] dark:text-slate-200'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold truncate">
+                        {prodImgUploadError
+                          ? `فشل رفع ${prodImgUploadFileName || 'الصورة'}`
+                          : prodImgUploadStage === 'done'
+                          ? `✓ تم رفع وحفظ ${prodImgUploadFileName || 'الصورة'} بشكل دائم`
+                          : prodImgUploadStage === 'confirming'
+                          ? `جارٍ تأكيد التخزين الدائم لـ ${prodImgUploadFileName || 'الصورة'}...`
+                          : prodImgUploadStage === 'validating'
+                          ? `جارٍ التحقق من الصيغة والحجم...`
+                          : `جارٍ الرفع إلى التخزين السحابي: ${prodImgUploadFileName || 'صورة'}`}
+                      </span>
+                      <span className="font-mono font-bold shrink-0">
+                        {prodImgUploadError ? 'خطأ' : `${prodImgUploadProgress}%`}
+                      </span>
+                    </div>
+
+                    {!prodImgUploadError && (
+                      <div className="w-full h-1.5 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                        <div
+                          className={`h-full transition-all duration-200 ${
+                            prodImgUploadStage === 'done' ? 'bg-emerald-500' : 'bg-[#FF6B00]'
+                          }`}
+                          style={{ width: `${Math.max(4, Math.min(100, prodImgUploadProgress))}%` }}
+                        />
+                      </div>
+                    )}
+
+                    {prodImgUploadError && (
+                      <p className="text-[10px] font-bold">{prodImgUploadError}</p>
+                    )}
+
+                    {prodImgUploadStage === 'done' && prodImgUploadInfo && (
+                      <p className="text-[10px] opacity-85">
+                        الصيغة: {prodImgUploadInfo.format} · الحجم: {formatBytesReadable(prodImgUploadInfo.sizeBytes)} · مزود التخزين: {prodImgUploadInfo.provider === 'cloudflare-r2' ? 'Cloudflare R2' : 'الخادم السحابي الدائم'}
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 <textarea
                   rows={2}
                   value={prodImagesText}
@@ -3364,7 +3484,11 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                           />
                           <div className="min-w-0 flex-1 space-y-1">
                             <p className="font-mono text-[10px] truncate opacity-80" dir="ltr">
-                              {rawLine.startsWith('data:image/') ? '[صورة مرفوعة محلياً جاهزة]' : rawLine}
+                              {rawLine.startsWith('data:image/')
+                                ? '[صورة مرفوعة بصيغة Base64]'
+                                : rawLine.startsWith('/api/media/products/')
+                                ? `✓ رابط التخزين الدائم: ${rawLine}`
+                                : rawLine}
                             </p>
                             {norm.issue ? (
                               <p className="font-bold text-[10px]">{norm.reason}</p>

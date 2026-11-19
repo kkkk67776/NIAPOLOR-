@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Shield, Lock, AlertTriangle, CheckCircle, RefreshCw, LayoutDashboard } from 'lucide-react';
 import emailjs from '@emailjs/browser';
 import {
@@ -10,6 +10,8 @@ import {
   getAdminAuthHeaders,
   verifyPinServer,
   updatePinServer,
+  consumePendingVaultGateToken,
+  hasPendingVaultGateToken,
 } from '../../lib/security';
 
 const EMAILJS_SERVICE_ID = import.meta.env.VITE_EMAILJS_SERVICE_ID || 'YOUR_SERVICE_ID';
@@ -40,9 +42,9 @@ export default function OwnerSecurityRoom({ onUnlockSuccess, onNavigate, vaultOp
 
   const [attempts, setAttempts] = useState(0);
   const [lockoutTime, setLockoutTime] = useState(0);
+  const wasUnlockedRef = useRef(false);
 
   const openModal = (changeMode = false, initialError = '') => {
-    (window as any).__echoxVaultOpenPending = false;
     setIsModalOpen(true);
     setIsChangeMode(changeMode);
     setError(initialError);
@@ -73,6 +75,7 @@ export default function OwnerSecurityRoom({ onUnlockSuccess, onNavigate, vaultOp
           const serverAlive = await checkServerSession();
           if (!active) return;
           if (serverAlive) {
+            wasUnlockedRef.current = true;
             setIsUnlocked(true);
             setOwnerUnlocked(true);
             setOwnerGoogleUser({
@@ -80,16 +83,19 @@ export default function OwnerSecurityRoom({ onUnlockSuccess, onNavigate, vaultOp
               uid: 'echox_owner_session',
             });
           } else {
+            wasUnlockedRef.current = false;
             clearOwnerSecuritySession();
             setIsUnlocked(false);
           }
         } else {
+          wasUnlockedRef.current = false;
           clearOwnerSecuritySession();
         }
       } else {
         const serverAlive = await checkServerSession();
         if (!active) return;
         if (serverAlive) {
+          wasUnlockedRef.current = true;
           setIsUnlocked(true);
           setOwnerUnlocked(true);
           setOwnerGoogleUser({
@@ -99,7 +105,7 @@ export default function OwnerSecurityRoom({ onUnlockSuccess, onNavigate, vaultOp
         }
       }
 
-      if (active && (window as any).__echoxVaultOpenPending) {
+      if (active && hasPendingVaultGateToken() && consumePendingVaultGateToken()) {
         openModal(false);
       }
     };
@@ -114,40 +120,31 @@ export default function OwnerSecurityRoom({ onUnlockSuccess, onNavigate, vaultOp
     if (vaultOpenNonce > 0) {
       if (isUnlocked) {
         if (onUnlockSuccess) onUnlockSuccess();
-      } else {
+      } else if (consumePendingVaultGateToken()) {
         openModal(false);
       }
     }
   }, [vaultOpenNonce, isUnlocked]);
 
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.shiftKey && (e.key === 'E' || e.key === 'e')) {
-        e.preventDefault();
-        if (isUnlocked) {
-          if (onUnlockSuccess) onUnlockSuccess();
-        } else {
-          openModal(false);
-        }
-      }
-    };
     const handleOpenVaultEvent = () => {
       if (isUnlocked) {
-        (window as any).__echoxVaultOpenPending = false;
         if (onUnlockSuccess) onUnlockSuccess();
-      } else {
+      } else if (consumePendingVaultGateToken()) {
         openModal(false);
       }
     };
     const handleSessionExpired = () => {
+      const hadActiveSession = wasUnlockedRef.current;
+      wasUnlockedRef.current = false;
       setIsUnlocked(false);
-      openModal(false, 'انتهت جلسة الخادم (أو أُعيد تشغيل الخادم). أدخل رمز الـ PIN لتنشيط الجلسة ومتابعة التعديل.');
+      if (hadActiveSession) {
+        openModal(false, 'انتهت جلسة الخادم (أو أُعيد تشغيل الخادم). أدخل رمز الـ PIN لتنشيط الجلسة ومتابعة التعديل.');
+      }
     };
-    window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('open_echox_vault', handleOpenVaultEvent);
     window.addEventListener('echox_session_expired', handleSessionExpired);
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('open_echox_vault', handleOpenVaultEvent);
       window.removeEventListener('echox_session_expired', handleSessionExpired);
     };
@@ -306,6 +303,7 @@ export default function OwnerSecurityRoom({ onUnlockSuccess, onNavigate, vaultOp
   };
 
   const unlockVault = () => {
+    wasUnlockedRef.current = true;
     setIsUnlocked(true);
     setIsModalOpen(false);
 
@@ -332,6 +330,7 @@ export default function OwnerSecurityRoom({ onUnlockSuccess, onNavigate, vaultOp
       credentials: 'same-origin',
       headers: authHeaders,
     }).catch(() => {});
+    wasUnlockedRef.current = false;
     setIsUnlocked(false);
     setIsModalOpen(false);
     clearOwnerSecuritySession();

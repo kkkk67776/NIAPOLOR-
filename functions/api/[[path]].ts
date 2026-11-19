@@ -536,7 +536,7 @@ export async function onRequest(context: EdgeContext): Promise<Response> {
         'Access-Control-Allow-Origin': reqOrigin,
         'Access-Control-Allow-Credentials': 'true',
         'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-CSRF-Token, X-File-Name',
         'Cache-Control': 'no-store',
         'X-Robots-Tag': 'noindex, nofollow',
       },

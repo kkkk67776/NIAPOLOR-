@@ -15,6 +15,7 @@ import { BottomNavigation } from './components/BottomNavigation';
 import OwnerSecurityRoom from './components/security/OwnerSecurityRoom';
 import { applySeo } from './lib/seo';
 import { verifyGatewayReturnClient } from './lib/payments';
+import { checkServerSession, isOwnerUnlocked } from './lib/security';
 import { OfflineBanner } from './components/OfflineBanner';
 import { CheckCircle2, AlertCircle, X, WifiOff, RefreshCw } from 'lucide-react';
 
@@ -100,7 +101,6 @@ const AppContent: React.FC = () => {
   } | null>(null);
 
   const requestOpenVault = useCallback(() => {
-    (window as any).__echoxVaultOpenPending = true;
     setVaultOpenNonce((prev) => prev + 1);
   }, []);
 
@@ -124,10 +124,18 @@ const AppContent: React.FC = () => {
         if (productParam) {
           setSelectedProductId(productParam);
         }
-        window.history.pushState({}, '', `${parsed.pathname}${parsed.search}`);
         if (path === '/owner/dashboard' || path === '/owner_dashboard') {
-          setCurrentView('/owner/dashboard');
+          void checkServerSession().then((ok) => {
+            if (ok) {
+              window.history.pushState({}, '', `${parsed.pathname}${parsed.search}`);
+              setCurrentView('/owner/dashboard');
+            } else {
+              window.history.replaceState({}, '', '/');
+              setCurrentView('store');
+            }
+          });
         } else {
+          window.history.pushState({}, '', `${parsed.pathname}${parsed.search}`);
           setCurrentView('store');
         }
       } catch {
@@ -220,11 +228,21 @@ const AppContent: React.FC = () => {
       }
 
       if (path === '/owner/dashboard' || path === '/owner_dashboard') {
-        setCurrentView('/owner/dashboard');
-      } else if (path === '/owner/login' || path === '/owner/lock' || path === '/owner/security-code') {
+        if (isOwnerUnlocked()) {
+          setCurrentView('/owner/dashboard');
+        } else {
+          void checkServerSession().then((ok) => {
+            if (ok) {
+              setCurrentView('/owner/dashboard');
+            } else {
+              window.history.replaceState({}, '', '/');
+              setCurrentView('store');
+            }
+          });
+        }
+      } else if (path === '/owner/login' || path === '/owner/lock' || path === '/owner/security-code' || path === '/owner') {
         window.history.replaceState({}, '', '/');
         setCurrentView('store');
-        requestOpenVault();
       } else if (path === '/promise') {
         setCurrentView('promise');
       } else if (path === '/companies') {
@@ -245,7 +263,7 @@ const AppContent: React.FC = () => {
     syncRouteFromUrl();
     window.addEventListener('popstate', syncRouteFromUrl);
     return () => window.removeEventListener('popstate', syncRouteFromUrl);
-  }, [setCurrentView, setLanguage, setSelectedCategory, setSelectedProductId, setSearchQuery, requestOpenVault, updateOrderInState]);
+  }, [setCurrentView, setLanguage, setSelectedCategory, setSelectedProductId, setSearchQuery, updateOrderInState]);
 
   const activeProduct = products.find((p) => p.id === selectedProductId) || null;
 

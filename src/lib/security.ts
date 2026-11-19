@@ -111,6 +111,7 @@ export function setOwnerUnlocked(unlocked: boolean) {
 
 let activeMemorySessionToken: string | null = null;
 let activeCsrfToken: string | null = null;
+let activeVaultGateToken: { token: string; expiresAt: number } | null = null;
 
 // Purge any legacy bearer token left in Web Storage from older builds
 try {
@@ -119,6 +120,34 @@ try {
     localStorage.removeItem('echox_admin_session_token');
   }
 } catch {}
+
+export function setPendingVaultGateToken(token: string | null) {
+  if (token && token.trim()) {
+    activeVaultGateToken = {
+      token: token.trim(),
+      expiresAt: Date.now() + 3 * 60 * 1000,
+    };
+  } else {
+    activeVaultGateToken = null;
+  }
+}
+
+export function consumePendingVaultGateToken(): string | null {
+  if (!activeVaultGateToken) return null;
+  const { token, expiresAt } = activeVaultGateToken;
+  activeVaultGateToken = null;
+  if (Date.now() > expiresAt) return null;
+  return token;
+}
+
+export function hasPendingVaultGateToken(): boolean {
+  if (!activeVaultGateToken) return false;
+  if (Date.now() > activeVaultGateToken.expiresAt) {
+    activeVaultGateToken = null;
+    return false;
+  }
+  return true;
+}
 
 function readCookie(name: string): string | null {
   try {
@@ -168,6 +197,7 @@ export function getAdminAuthHeaders(extra: Record<string, string> = {}): Record<
 export function clearOwnerSecuritySession() {
   activeMemorySessionToken = null;
   activeCsrfToken = null;
+  activeVaultGateToken = null;
   try {
     sessionStorage.removeItem('echox_admin_session_token');
     sessionStorage.removeItem(GOOGLE_USER_KEY);
@@ -175,6 +205,9 @@ export function clearOwnerSecuritySession() {
     sessionStorage.removeItem(OWNER_UNLOCKED_KEY);
     sessionStorage.removeItem('echox_owner_code_verified');
     sessionStorage.removeItem('echox_owner_session');
+    localStorage.removeItem('echox_owner_settings');
+    localStorage.removeItem('echox_owner_login_email');
+    localStorage.removeItem('echox_owner_phone');
   } catch {}
   if (typeof window !== 'undefined' && (window as any).confirmationResult) {
     delete (window as any).confirmationResult;
@@ -519,6 +552,7 @@ async function fetchSecurityPostWithWakeRetry(
 
 export async function verifyAccessCodeServer(code: string): Promise<{
   success: boolean;
+  gateToken?: string;
   lockedOut?: boolean;
   remainingSeconds?: number;
   attemptsLeft?: number;
@@ -529,30 +563,22 @@ export async function verifyAccessCodeServer(code: string): Promise<{
     const { res, data } = await fetchSecurityPostWithWakeRetry('/api/security/verifyAccessCode', {
       code: code.trim()
     });
-    if (res.status === 503) {
-      return {
-        success: false,
-        httpStatus: 503,
-        error:
-          data.error ||
-          'الخادم الخلفي في وضع الاستيقاظ الآن، يرجى الانتظار 15 ثانية ثم إعادة المحاولة.'
-      };
-    }
-    if (res.status >= 500) {
+    if (res.status >= 500 || res.status === 429 || res.status === 401 || res.status === 400) {
       return {
         success: false,
         httpStatus: res.status,
-        error: data.error || 'تعذر الاتصال بخادم التحقق الخلفي حالياً، يرجى المحاولة بعد لحظات.'
       };
     }
+    if (data.success && typeof data.gateToken === 'string' && data.gateToken) {
+      setPendingVaultGateToken(data.gateToken);
+    }
     return {
-      ...data,
       success: Boolean(data.success),
+      gateToken: typeof data.gateToken === 'string' ? data.gateToken : undefined,
       httpStatus: res.status
     };
-  } catch (err) {
-    console.warn('[Security] verifyAccessCodeServer notice:', err);
-    return { success: false, httpStatus: 0, error: 'فشل الاتصال بالخادم لفحص رمز الوصول.' };
+  } catch {
+    return { success: false, httpStatus: 0 };
   }
 }
 

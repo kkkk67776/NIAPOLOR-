@@ -3,6 +3,7 @@ import fs from 'fs';
 import net from 'net';
 import path from 'path';
 import { normalizeProductImageUrl } from '../src/lib/imageUrl';
+import { readStoredProductImage } from './mediaStorage';
 import { validateRasterImageMagicBytes } from './securityEngine';
 
 export interface MediaInspectResult {
@@ -276,6 +277,32 @@ export async function inspectImageUrlOnServer(
       directUrl: norm.url,
       mime,
       format,
+      statusCode: 200,
+    };
+  }
+
+  // Uploaded permanent product image check (/api/media/products/...)
+  if (norm.url.startsWith('/api/media/products/')) {
+    const fileName = norm.url.slice('/api/media/products/'.length).split('?')[0];
+    const stored = await readStoredProductImage(fileName);
+    if (!stored) {
+      return {
+        ok: false,
+        kind: 'error',
+        inputUrl: rawUrl,
+        normalizedUrl: norm.url,
+        statusCode: 404,
+        error: 'ملف الصورة المرفوع غير موجود في التخزين السحابي/الدائم.',
+      };
+    }
+    return {
+      ok: true,
+      kind: 'image',
+      inputUrl: rawUrl,
+      normalizedUrl: norm.url,
+      directUrl: norm.url,
+      mime: stored.mime,
+      format: stored.format,
       statusCode: 200,
     };
   }

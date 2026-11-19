@@ -14,6 +14,20 @@
   "publicSubscriptions": [],
   "events": [
     {
+      "id": "notif_1795083992167_4d4391",
+      "category": "security",
+      "severity": "warning",
+      "title": "⚠️ محاولة فاشلة للدخول عبر رمز الوصول",
+      "body": "محاولة إدخال رمز وصول غير صحيح من IP: 127.0.0.1 (المتبقي 4).",
+      "url": "/owner/dashboard",
+      "read": false,
+      "createdAt": "2026-11-19T10:26:32.167Z",
+      "meta": {
+        "ip": "127.0.0.1",
+        "attemptsLeft": 4
+      }
+    },
+    {
       "id": "notif_1794733186589_47d630",
       "category": "security",
       "severity": "critical",
@@ -29,5 +43,5 @@
     }
   ],
   "publicAnnouncements": [],
-  "updatedAt": "2026-11-15T08:59:46.589Z"
+  "updatedAt": "2026-11-19T10:26:32.167Z"
 }

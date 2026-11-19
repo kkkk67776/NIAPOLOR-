@@ -1,0 +1,20 @@
+{
+  "entries": [
+    {
+      "seq": 1,
+      "id": "aud_1795083992165_800c97",
+      "timestamp": "2026-11-19T10:26:32.165Z",
+      "event": "ACCESS_CODE_FAILED",
+      "severity": "warning",
+      "actor": "vault_gate",
+      "ip": "127.0.0.1",
+      "summary": "محاولة فاشلة لإدخال رمز الوصول (المتبقي 4).",
+      "meta": {
+        "attemptsLeft": 4
+      },
+      "prevHash": "ECHOX_AUDIT_GENESIS_V1",
+      "entryHash": "e552ac267bcb93d9de0f1c3addb050a7aa74ddbcefe00fb57ce0060d8a109c2f"
+    }
+  ],
+  "updatedAt": "2026-11-19T10:26:32.165Z"
+}

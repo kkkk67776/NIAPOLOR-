@@ -99,8 +99,16 @@ export function normalizeProductImageUrl(raw: string): NormalizedImageUrlResult 
     };
   }
 
-  // Relative local assets
-  if (candidate.startsWith('/assets/')) {
+  // Relative local & permanent uploaded product media paths
+  if (candidate.startsWith('/assets/') || candidate.startsWith('/api/media/products/')) {
+    if (candidate.includes('..')) {
+      return {
+        url: candidate,
+        original,
+        issue: 'unsupported_scheme',
+        reason: 'مسار الصورة غير صالح.',
+      };
+    }
     return { url: candidate, original };
   }
 
@@ -125,12 +133,16 @@ export function normalizeProductImageUrl(raw: string): NormalizedImageUrlResult 
     }
   }
 
-  if (candidate.startsWith('/') && !candidate.startsWith('/assets/')) {
+  if (
+    candidate.startsWith('/') &&
+    !candidate.startsWith('/assets/') &&
+    !candidate.startsWith('/api/media/products/')
+  ) {
     return {
       url: candidate,
       original,
       issue: 'missing_protocol',
-      reason: 'المسار المحلي غير موجود ضمن مجلد صور المتجر (/assets/).',
+      reason: 'المسار المحلي غير موجود ضمن مجلد صور المتجر (/assets/) أو مخزن الوسائط.',
     };
   }
 

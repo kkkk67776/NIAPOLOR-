@@ -690,10 +690,15 @@ export function isMediaSafeUrl(url: unknown): boolean {
   if (/^(javascript|vbscript|data:text|data:application|file):/i.test(trimmed)) {
     return false;
   }
-  if (trimmed.startsWith('//')) {
+  if (trimmed.startsWith('//') || trimmed.includes('..')) {
     return false;
   }
-  if (trimmed.startsWith('/assets/') || trimmed.startsWith('https://') || trimmed.startsWith('http://')) {
+  if (
+    trimmed.startsWith('/assets/') ||
+    trimmed.startsWith('/api/media/products/') ||
+    trimmed.startsWith('https://') ||
+    trimmed.startsWith('http://')
+  ) {
     return true;
   }
   if (trimmed.startsWith('data:image/')) {

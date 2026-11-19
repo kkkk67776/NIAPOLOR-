@@ -111,6 +111,12 @@ import {
   type RecoveryPayloadBundle,
 } from './server/securityEngine';
 import { inspectImageUrlOnServer } from './server/mediaInspector';
+import {
+  getMediaStorageStatus,
+  MAX_PRODUCT_IMAGE_UPLOAD_BYTES,
+  readStoredProductImage,
+  uploadVerifiedProductImage,
+} from './server/mediaStorage';
 
 dotenv.config();
 
@@ -311,7 +317,7 @@ app.use((req: Request, res: Response, next) => {
     res.setHeader('Vary', 'Origin');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-CSRF-Token');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-CSRF-Token, X-File-Name');
     if (req.method === 'OPTIONS') {
       return res.status(204).end();
     }
@@ -407,9 +413,6 @@ Allow: /promise
 Allow: /companies
 Allow: /contact
 Allow: /assets/
-Disallow: /owner
-Disallow: /owner/
-Disallow: /owner_dashboard
 Disallow: /my_orders
 Disallow: /account
 Disallow: /wishlist
@@ -1520,7 +1523,15 @@ app.post('/api/security/logoutAllDevices', async (req: Request, res: Response) =
 // 🛡️ ARGON2ID ACCESS CODE & PIN ENDPOINTS
 // ==========================================
 
-// 1. Verify Secret Access Code (invoked from search bar)
+function createVaultGateToken(): string {
+  const exp = Date.now() + 3 * 60 * 1000;
+  const nonce = crypto.randomBytes(16).toString('hex');
+  const payload = `gate1.${exp}.${nonce}`;
+  const sig = crypto.createHmac('sha256', getHmacSecret()).update(payload).digest('hex');
+  return `${payload}.${sig}`;
+}
+
+// 1. Verify Secret Access Code (invoked silently from search bar; NEVER grants admin permissions)
 app.post('/api/security/verifyAccessCode', async (req: Request, res: Response) => {
   try {
     const ip = getClientIp(req);
@@ -1564,6 +1575,7 @@ app.post('/api/security/verifyAccessCode', async (req: Request, res: Response) =
       });
       return res.json({
         success: true,
+        gateToken: createVaultGateToken(),
         message: 'تم التحقق من رمز الوصول بنجاح.'
       });
     }
@@ -2722,6 +2734,123 @@ app.post('/api/admin/media/inspect', async (req: Request, res: Response) => {
     success: true,
     result,
   });
+});
+
+app.get('/api/admin/media/status', async (req: Request, res: Response) => {
+  if (!requireAdminAuth(req, res)) return;
+  return res.json({
+    success: true,
+    ...getMediaStorageStatus(),
+  });
+});
+
+app.post(
+  '/api/admin/media/upload',
+  express.raw({
+    type: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'application/octet-stream'],
+    limit: MAX_PRODUCT_IMAGE_UPLOAD_BYTES + 1024 * 64,
+  }),
+  async (req: Request, res: Response) => {
+    const admin = requireAdminAuth(req, res);
+    if (!admin) return;
+
+    const ip = getClientIp(req);
+    const rate = checkSlidingWindowLimit('adminMediaUpload', ip, 30, 60 * 1000);
+    if (!rate.allowed) {
+      return res.status(429).json({
+        success: false,
+        error: `تم تجاوز حد رفع الصور مؤقتاً، يرجى الانتظار ${rate.retryAfterSeconds} ثانية.`,
+      });
+    }
+
+    if (!Buffer.isBuffer(req.body)) {
+      return res.status(415).json({
+        success: false,
+        error: 'تنسيق الطلب غير مدعوم. يرجى إرسال ملف الصورة الفعلي (JPEG / PNG / WebP).',
+      });
+    }
+
+    const rawFileNameHeader = String(req.headers['x-file-name'] || '');
+    let decodedFileName = rawFileNameHeader;
+    try {
+      decodedFileName = decodeURIComponent(rawFileNameHeader);
+    } catch {
+      decodedFileName = rawFileNameHeader;
+    }
+
+    const result = await uploadVerifiedProductImage({
+      buffer: req.body,
+      declaredMime: String(req.headers['content-type'] || ''),
+      originalName: decodedFileName,
+      actorIp: ip,
+      actorEmail: admin.email,
+    });
+
+    if (!result.ok || !result.url) {
+      return res.status(result.statusCode || 400).json({
+        success: false,
+        error: result.error || 'تعذر حفظ الصورة في التخزين السحابي الدائم.',
+      });
+    }
+
+    appendSecurityAuditEvent({
+      event: 'PRODUCT_MEDIA_UPLOADED',
+      severity: 'info',
+      actor: admin.email,
+      ip,
+      summary: `رفع صورة منتج (${result.format || 'IMAGE'}) بحجم ${result.sizeBytes || 0} بايت عبر ${result.provider}.`,
+      meta: {
+        mediaId: result.mediaId || '',
+        provider: result.provider || '',
+        sizeBytes: result.sizeBytes || 0,
+        url: result.url,
+      },
+    });
+
+    return res.status(201).json({
+      success: true,
+      mediaId: result.mediaId,
+      fileName: result.fileName,
+      url: result.url,
+      mime: result.mime,
+      format: result.format,
+      sizeBytes: result.sizeBytes,
+      provider: result.provider,
+    });
+  }
+);
+
+app.use((err: any, req: Request, res: Response, next: any) => {
+  if (req.path === '/api/admin/media/upload' && (err?.type === 'entity.too.large' || err?.status === 413)) {
+    return res.status(413).json({
+      success: false,
+      error: 'حجم الصورة يتجاوز الحد الأقصى المسموح به (10 ميغابايت).',
+    });
+  }
+  return next(err);
+});
+
+app.get('/api/media/products/:fileName', async (req: Request, res: Response) => {
+  const asset = await readStoredProductImage(req.params.fileName || '');
+  if (!asset) {
+    return res.status(404).json({
+      success: false,
+      error: 'ملف الصورة غير موجود.',
+    });
+  }
+
+  const ifNoneMatch = String(req.headers['if-none-match'] || '').trim();
+  if (ifNoneMatch && ifNoneMatch === asset.etag) {
+    return res.status(304).end();
+  }
+
+  res.setHeader('Content-Type', asset.mime);
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.setHeader('ETag', asset.etag);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.setHeader('Content-Length', String(asset.buffer.length));
+  return res.status(200).send(asset.buffer);
 });
 
 app.post('/api/store/products/:productId/reviews', async (req: Request, res: Response) => {
