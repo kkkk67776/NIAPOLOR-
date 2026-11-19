@@ -139,8 +139,14 @@ async function run(): Promise<void> {
     );
 
     // 1c. Verify SameSite=Lax on production vs SameSite=None on verified HTTPS preview login cookie
+    const prodAcRes = await fetch(`${baseUrl}/api/security/verifyAccessCode`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.11' },
+      body: JSON.stringify({ code: TEST_ACCESS_CODE }),
+    });
+    const prodAcJson = (await prodAcRes.json()) as any;
     const prodLoginRaw = await new Promise<{ headers: http.IncomingHttpHeaders }>((resolve, reject) => {
-      const body = JSON.stringify({ pin: TEST_PIN });
+      const body = JSON.stringify({ pin: TEST_PIN, gateToken: prodAcJson.gateToken });
       const req = http.request(
         {
           hostname: '127.0.0.1',
@@ -193,28 +199,36 @@ async function run(): Promise<void> {
       body: JSON.stringify({ code: TEST_ACCESS_CODE }),
     });
     assertEq(acRes.status, 200, 'Valid access code accepted');
+    const acJson = (await acRes.json()) as any;
 
-    // Trigger progressive brute-force lockout from isolated IP
+    // Acquire gateToken for isolated brute-force IP and verify progressive lockout
+    const bfAcRes = await fetch(`${baseUrl}/api/security/verifyAccessCode`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.55' },
+      body: JSON.stringify({ code: TEST_ACCESS_CODE }),
+    });
+    const bfAcJson = (await bfAcRes.json()) as any;
+
     for (let i = 0; i < 4; i++) {
       const badPin = await fetch(`${baseUrl}/api/security/verifyPin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.55' },
-        body: JSON.stringify({ pin: '000000' }),
+        body: JSON.stringify({ pin: '000000', gateToken: bfAcJson.gateToken }),
       });
       assertEq(badPin.status, 401, `Wrong PIN attempt #${i + 1} returns 401`);
     }
     const lockedPinRes = await fetch(`${baseUrl}/api/security/verifyPin`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.55' },
-      body: JSON.stringify({ pin: '000000' }),
+      body: JSON.stringify({ pin: '000000', gateToken: bfAcJson.gateToken }),
     });
     assertEq(lockedPinRes.status, 429, '5th wrong PIN triggers brute-force lockout (429)');
 
-    // Login cleanly from admin IP
+    // Login cleanly from admin IP using its single-use gateToken
     const loginRes = await fetch(`${baseUrl}/api/security/verifyPin`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.10' },
-      body: JSON.stringify({ pin: TEST_PIN }),
+      body: JSON.stringify({ pin: TEST_PIN, gateToken: acJson.gateToken }),
     });
     assertEq(loginRes.status, 200, 'Valid PIN returns 200');
     const loginJson = (await loginRes.json()) as any;
@@ -312,12 +326,21 @@ async function run(): Promise<void> {
     const shortTrackRes = await fetch(`${baseUrl}/api/payments/track/ABC`);
     assertEq(shortTrackRes.status, 400, 'Tracking code shorter than 6 chars returns 400');
 
-    // Public visitor tracking strips PII (customerEmail & notes)
+    // Public visitor tracking masks PII (customerEmail, notes, customerName, customerPhone, street, transferProof)
     const publicTrackRes = await fetch(`${baseUrl}/api/payments/track/${encodeURIComponent(trackingCode)}`);
     assertEq(publicTrackRes.status, 200, 'Public order tracking returns 200');
     const publicTrackJson = (await publicTrackRes.json()) as any;
+    assertEq(publicTrackJson.order.piiMasked, true, 'Anonymous tracking marks piiMasked: true');
     assertEq(publicTrackJson.order.customerEmail, '', 'Anonymous tracking strips customerEmail');
     assertEq(publicTrackJson.order.notes, '', 'Anonymous tracking strips internal notes');
+    assertEq(publicTrackJson.order.shippingAddress.street, '***', 'Anonymous tracking masks street address');
+    assertTrue(publicTrackJson.order.customerPhone !== '22123456' && publicTrackJson.order.customerPhone.includes('*'), 'Anonymous tracking masks customerPhone');
+
+    // Phone proof reveals non-sensitive recipient delivery fields while keeping notes/email private
+    const phoneTrackRes = await fetch(`${baseUrl}/api/payments/track/${encodeURIComponent(trackingCode)}?phone=22123456`);
+    const phoneTrackJson = (await phoneTrackRes.json()) as any;
+    assertEq(phoneTrackJson.order.piiMasked, false, 'Phone proof unmasks order tracking details');
+    assertEq(phoneTrackJson.order.shippingAddress.street, 'شارع الحبيب بورقيبة', 'Phone proof reveals street');
 
     // Authenticated owner sees full order on track endpoint
     const adminTrackRes = await fetch(`${baseUrl}/api/payments/track/${encodeURIComponent(trackingCode)}`, {
@@ -692,11 +715,17 @@ async function run(): Promise<void> {
     });
     assertEq(reusedTokenRes.status, 401, 'Revoked v2 session token rejected with 401 after logout');
 
-    // Re-authenticate, then verify Emergency Lockdown invalidates active token immediately
+    // Re-authenticate with fresh gateToken, then verify Emergency Lockdown invalidates active token immediately
+    const reloginAcRes = await fetch(`${baseUrl}/api/security/verifyAccessCode`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.10' },
+      body: JSON.stringify({ code: TEST_ACCESS_CODE }),
+    });
+    const reloginAcJson = (await reloginAcRes.json()) as any;
     const reloginRes = await fetch(`${baseUrl}/api/security/verifyPin`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.10' },
-      body: JSON.stringify({ pin: TEST_PIN }),
+      body: JSON.stringify({ pin: TEST_PIN, gateToken: reloginAcJson.gateToken }),
     });
     assertEq(reloginRes.status, 200, 'Re-login succeeds (200)');
     const reloginJson = (await reloginRes.json()) as any;
@@ -714,6 +743,103 @@ async function run(): Promise<void> {
       headers: { Authorization: `Bearer ${reloginJson.sessionToken}` },
     });
     assertEq(postLockdownMeRes.status, 401, 'Emergency lockdown immediately invalidates active session tokens (401)');
+
+    // =========================================================
+    // 7. Banking-Grade Hardening Checks (XSS, Legacy Routes, Info Minimization, Catalog Integrity, Chat & Push HMAC)
+    // =========================================================
+    const xssGoogleRes = await fetch(`${baseUrl}/google%3Cscript%3Ealert(1)%3C/script%3E.html`);
+    assertEq(xssGoogleRes.status, 404, 'Malicious /google<script>.html verification route returns 404');
+
+    const lockHashRes = await fetch(`${baseUrl}/api/security/verifyLockHash`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hash: 'abc' }),
+    });
+    assertEq(lockHashRes.status, 403, 'Legacy /api/security/verifyLockHash is blocked (403)');
+
+    const logFailRes = await fetch(`${baseUrl}/api/security/logFailedAttempt`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'pin' }),
+    });
+    assertEq(logFailRes.status, 403, 'Legacy /api/security/logFailedAttempt is blocked (403)');
+
+    const pubHealthJson = (await (await fetch(`${baseUrl}/api/health`)).json()) as any;
+    assertEq(pubHealthJson.dataDir, undefined, 'Public /api/health hides internal dataDir path');
+    const pubSysJson = (await (await fetch(`${baseUrl}/api/security/systemStatus`)).json()) as any;
+    assertEq(pubSysJson.defaultCodeAvailable, undefined, 'Public /api/security/systemStatus hides defaultCodeAvailable');
+
+    const unknownProdRes = await fetch(`${baseUrl}/api/payments/checkout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.77' },
+      body: JSON.stringify({
+        customerName: 'عميل اختبار',
+        customerPhone: '22123456',
+        shippingAddress: { governorate: 'tunis', delegation: 'المدينة', street: 'شارع اختبار' },
+        paymentMethod: 'cod',
+        items: [{ productId: 'nonexistent_prod_999', productName: 'Fake', quantity: 1, unitPrice: 1 }],
+      }),
+    });
+    assertEq(unknownProdRes.status, 400, 'Checkout with unknown productId rejected with 400');
+
+    // Chat token enforcement
+    const chatPost = await fetch(`${baseUrl}/api/chat/session/sess_sec_test_1/message`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        language: 'ar',
+        customerText: 'مرحباً <script>alert(1)</script>',
+        autoReplyText: 'أهلاً بك',
+        actionView: 'invalid_action_xx',
+      }),
+    });
+    assertEq(chatPost.status, 200, 'Chat POST returns 200');
+    const chatPostJson = (await chatPost.json()) as any;
+    assertTrue(typeof chatPostJson.chatToken === 'string' && chatPostJson.chatToken.startsWith('chat1.'), 'Chat POST issues signed X-Chat-Token');
+    assertTrue(!JSON.stringify(chatPostJson.thread).includes('<script>'), 'Chat sanitized HTML/script tags');
+    assertEq(chatPostJson.thread.messages[1].actionView, undefined, 'Invalid actionView rejected');
+
+    const chatNoTok = await fetch(`${baseUrl}/api/chat/session/sess_sec_test_1`);
+    assertEq(chatNoTok.status, 403, 'Chat GET without X-Chat-Token returns 403');
+    const chatWithTok = await fetch(`${baseUrl}/api/chat/session/sess_sec_test_1`, {
+      headers: { 'X-Chat-Token': chatPostJson.chatToken },
+    });
+    assertEq(chatWithTok.status, 200, 'Chat GET with valid X-Chat-Token returns 200');
+
+    // Public push unsubscribe HMAC enforcement
+    const pubSubRes = await fetch(`${baseUrl}/api/notifications/public/subscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        subscription: {
+          endpoint: 'https://fcm.googleapis.com/fcm/send/test-sub-endpoint-12345',
+          keys: { p256dh: 'dGVzdA', auth: 'dGVzdA' },
+        },
+      }),
+    });
+    assertEq(pubSubRes.status, 200, 'Public push subscribe returns 200');
+    const pubSubJson = (await pubSubRes.json()) as any;
+    assertTrue(typeof pubSubJson.unsubscribeToken === 'string' && pubSubJson.unsubscribeToken.startsWith('unsub1.'), 'Public push subscribe returns HMAC unsubscribeToken');
+
+    const badUnsubRes = await fetch(`${baseUrl}/api/notifications/public/unsubscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        endpoint: 'https://fcm.googleapis.com/fcm/send/test-sub-endpoint-12345',
+        unsubscribeToken: 'unsub1.invalid',
+      }),
+    });
+    assertEq(badUnsubRes.status, 403, 'Public push unsubscribe without valid HMAC token returns 403');
+
+    const okUnsubRes = await fetch(`${baseUrl}/api/notifications/public/unsubscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        endpoint: 'https://fcm.googleapis.com/fcm/send/test-sub-endpoint-12345',
+        unsubscribeToken: pubSubJson.unsubscribeToken,
+      }),
+    });
+    assertEq(okUnsubRes.status, 200, 'Public push unsubscribe with valid HMAC token succeeds (200)');
 
     console.log('ALL ECHOX SECURITY & CONTROL ROOM REGRESSION TESTS PASSED');
   } finally {

@@ -172,13 +172,19 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
   const knownNotifIdsRef = React.useRef<Set<string>>(new Set());
   const notifBootstrappedRef = React.useRef(false);
 
-  // Confirmation Delete Modal
+  // Confirmation Delete Modal (2-Step Permanent Hard Delete)
   const [deleteConfirmModal, setDeleteConfirmModal] = useState<{
     isOpen: boolean;
+    step: 1 | 2;
     type: 'product' | 'category' | 'partner' | 'banner' | 'order';
     id: string;
     title: string;
-  }>({ isOpen: false, type: 'product', id: '', title: '' });
+  }>({ isOpen: false, step: 1, type: 'product', id: '', title: '' });
+  const [deleteSuccessSummary, setDeleteSuccessSummary] = useState<{
+    title: string;
+    details: string[];
+    notes: string[];
+  } | null>(null);
 
   // 1. Account & Security Form States
   const [editOwnerEmail, setEditOwnerEmail] = useState(ownerSettings.loginEmail || getAuthorizedOwnerEmail());
@@ -1091,14 +1097,16 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
     setManualNotes('');
   };
 
-  // Execute Confirmed Delete
+  // Execute Confirmed Delete (Only allowed on Step 2)
   const executeDelete = async () => {
-    if (!deleteConfirmModal.id) return;
+    if (!deleteConfirmModal.id || deleteConfirmModal.step !== 2) return;
 
     setDeleteBusy(true);
     setDeleteError('');
+    setDeleteSuccessSummary(null);
 
-    let res: { ok: boolean; error?: string } = { ok: false, error: 'نوع عنصر غير معروف.' };
+    const targetTitle = deleteConfirmModal.title;
+    let res: Awaited<ReturnType<typeof deleteProduct>> = { ok: false, error: 'نوع عنصر غير معروف.' };
     if (deleteConfirmModal.type === 'product') {
       res = await deleteProduct(deleteConfirmModal.id);
     } else if (deleteConfirmModal.type === 'category') {
@@ -1113,11 +1121,34 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
 
     setDeleteBusy(false);
     if (!res.ok) {
-      setDeleteError(res.error || 'تعذر تنفيذ الحذف على الخادم الدائم.');
+      setDeleteError(res.error || 'تعذر تنفيذ الحذف النهائي على الخادم الدائم.');
       return;
     }
 
-    setDeleteConfirmModal({ isOpen: false, type: 'product', id: '', title: '' });
+    const details: string[] = [];
+    if (res.verified) {
+      details.push('تم التحقق من المسح النهائي من قاعدة البيانات على الخادم.');
+    }
+    if ((res.deletedMediaFiles?.length || 0) > 0) {
+      details.push(`تم حذف ${res.deletedMediaFiles!.length} ملف صورة مرتبط نهائياً من التخزين السحابي/الخادم.`);
+    }
+    if ((res.skippedSharedMediaFiles?.length || 0) > 0) {
+      details.push(`تم الإبقاء على ${res.skippedSharedMediaFiles!.length} ملف صورة لأنها مستخدمة في عناصر أو طلبات أخرى.`);
+    }
+    if ((res.cleanedDependencies?.length || 0) > 0) {
+      details.push(`تنظيف الروابط والبيانات التابعة: ${res.cleanedDependencies!.join('، ')}.`);
+    }
+
+    const notes = [res.retainedLegalRecordsNote, res.backupRetentionNote].filter(
+      (n): n is string => Boolean(n)
+    );
+
+    setDeleteSuccessSummary({
+      title: `تم تنفيذ الحذف النهائي لـ «${targetTitle}»`,
+      details,
+      notes,
+    });
+    setDeleteConfirmModal({ isOpen: false, step: 1, type: 'product', id: '', title: '' });
   };
 
   // Export CSV
@@ -1484,6 +1515,36 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           >
             <X className="w-3.5 h-3.5" />
           </button>
+        </div>
+      )}
+
+      {deleteSuccessSummary && (
+        <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-xs space-y-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 font-black text-emerald-700 dark:text-emerald-300">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span>{deleteSuccessSummary.title}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDeleteSuccessSummary(null)}
+              className="text-slate-400 hover:text-slate-700 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          {deleteSuccessSummary.details.length > 0 && (
+            <ul className="list-disc list-inside text-[11px] text-emerald-800 dark:text-emerald-200 space-y-0.5">
+              {deleteSuccessSummary.details.map((d, idx) => (
+                <li key={idx}>{d}</li>
+              ))}
+            </ul>
+          )}
+          {deleteSuccessSummary.notes.length > 0 && (
+            <p className="text-[10px] text-slate-600 dark:text-slate-300 pt-1 border-t border-emerald-500/20">
+              {deleteSuccessSummary.notes.join(' — ')}
+            </p>
+          )}
         </div>
       )}
 
@@ -2793,14 +2854,18 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                     </button>
                     <button
                       type="button"
-                      onClick={() => setDeleteConfirmModal({
-                        isOpen: true,
-                        type: 'product',
-                        id: p.id,
-                        title: prodName
-                      })}
+                      onClick={() => {
+                        setDeleteError('');
+                        setDeleteConfirmModal({
+                          isOpen: true,
+                          step: 1,
+                          type: 'product',
+                          id: p.id,
+                          title: prodName,
+                        });
+                      }}
                       className="p-1.5 rounded-lg bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 cursor-pointer"
-                      title="حذف المنتج"
+                      title="حذف المنتج نهائياً"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -2856,14 +2921,18 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   {c.id !== 'all' && (
                     <button
                       type="button"
-                      onClick={() => setDeleteConfirmModal({
-                        isOpen: true,
-                        type: 'category',
-                        id: c.id,
-                        title: c.label
-                      })}
+                      onClick={() => {
+                        setDeleteError('');
+                        setDeleteConfirmModal({
+                          isOpen: true,
+                          step: 1,
+                          type: 'category',
+                          id: c.id,
+                          title: c.label,
+                        });
+                      }}
                       className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-500/10 cursor-pointer transition-colors"
-                      title="حذف هذا القسم"
+                      title="حذف هذا القسم نهائياً"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -2923,14 +2992,18 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
 
                 <button
                   type="button"
-                  onClick={() => setDeleteConfirmModal({
-                    isOpen: true,
-                    type: 'partner',
-                    id: comp.id,
-                    title: comp.name
-                  })}
+                  onClick={() => {
+                    setDeleteError('');
+                    setDeleteConfirmModal({
+                      isOpen: true,
+                      step: 1,
+                      type: 'partner',
+                      id: comp.id,
+                      title: comp.name,
+                    });
+                  }}
                   className="p-2 rounded-xl bg-red-500/10 text-red-600 hover:bg-red-500/20 cursor-pointer"
-                  title="حذف هذا الشريك"
+                  title="حذف هذا الشريك نهائياً"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -3003,14 +3076,18 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
 
                   <button
                     type="button"
-                    onClick={() => setDeleteConfirmModal({
-                      isOpen: true,
-                      type: 'banner',
-                      id: b.id,
-                      title: b.title
-                    })}
+                    onClick={() => {
+                      setDeleteError('');
+                      setDeleteConfirmModal({
+                        isOpen: true,
+                        step: 1,
+                        type: 'banner',
+                        id: b.id,
+                        title: b.title,
+                      });
+                    }}
                     className="p-1.5 rounded-xl text-red-600 hover:bg-red-500/10 cursor-pointer"
-                    title="حذف هذا البانر"
+                    title="حذف هذا البانر نهائياً"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -3157,14 +3234,18 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                       </span>
                       <button
                         type="button"
-                        onClick={() => setDeleteConfirmModal({
-                          isOpen: true,
-                          type: 'order',
-                          id: o.id,
-                          title: `الطلب ${o.trackingNumber} (${o.customerName})`
-                        })}
+                        onClick={() => {
+                          setDeleteError('');
+                          setDeleteConfirmModal({
+                            isOpen: true,
+                            step: 1,
+                            type: 'order',
+                            id: o.id,
+                            title: `الطلب ${o.trackingNumber} (${o.customerName})`,
+                          });
+                        }}
                         className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-500/10 cursor-pointer"
-                        title="حذف هذا الطلب"
+                        title="حذف هذا الطلب نهائياً"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -3935,47 +4016,125 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
         </div>
       )}
 
-      {/* Confirmation Delete Dialog */}
+      {/* Double Confirmation Hard Delete Dialog (Steps 1 & 2) */}
       {deleteConfirmModal.isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-fadeIn">
-          <div className="w-full max-w-sm bg-white dark:bg-[#1E293B] rounded-3xl p-5 border border-red-500/30 shadow-2xl space-y-4">
-            <div className="flex items-center gap-2.5 text-red-600">
-              <AlertTriangle className="w-5 h-5 shrink-0" />
-              <h3 className="text-sm font-black">تأكيد الحذف النهائي</h3>
-            </div>
+          <div
+            className={`w-full max-w-md bg-white dark:bg-[#1E293B] rounded-3xl p-5 shadow-2xl space-y-4 border ${
+              deleteConfirmModal.step === 2 ? 'border-red-600/60' : 'border-amber-500/40'
+            }`}
+          >
+            {deleteConfirmModal.step === 1 ? (
+              <>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5 text-amber-600 dark:text-amber-400">
+                    <AlertTriangle className="w-5 h-5 shrink-0" />
+                    <h3 className="text-sm font-black">تأكيد الحذف (الخطوة 1 من 2)</h3>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600">
+                    طلب مراجعة
+                  </span>
+                </div>
 
-            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-              هل أنت متأكد من رغبتك في حذف <strong className="text-red-600">{deleteConfirmModal.title}</strong>؟ لا يمكن التراجع عن هذه العملية بعد التأكيد.
-            </p>
+                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                  هل تريد بالفعل حذف <strong className="text-red-600 dark:text-red-400">{deleteConfirmModal.title}</strong>؟
+                  عند المتابعة ستنتقل إلى رسالة التأكيد النهائية قبل تنفيذ أي حذف على الخادم.
+                </p>
 
-            {deleteError && (
-              <div className="p-3 rounded-2xl bg-red-500/10 border border-red-500/30 text-xs font-bold text-red-600 dark:text-red-400 flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 shrink-0" />
-                <span>{deleteError}</span>
-              </div>
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDeleteError('');
+                      setDeleteConfirmModal({ isOpen: false, step: 1, type: 'product', id: '', title: '' });
+                    }}
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                  >
+                    إلغاء
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDeleteError('');
+                      setDeleteConfirmModal(prev => ({ ...prev, step: 2 }));
+                    }}
+                    className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-xs cursor-pointer active:scale-95"
+                  >
+                    متابعة للحذف النهائي
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5 text-red-600">
+                    <AlertTriangle className="w-5 h-5 shrink-0" />
+                    <h3 className="text-sm font-black">تحذير نهائي: غير قابل للاسترجاع (2 من 2)</h3>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/15 text-red-600">
+                    حذف دائم
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-red-500/10 border border-red-500/30 text-xs text-red-700 dark:text-red-300 space-y-1.5 leading-relaxed">
+                  <p>
+                    أنت على وشك حذف <strong>{deleteConfirmModal.title}</strong> حذفاً نهائياً وحقيقياً.
+                  </p>
+                  <p className="font-bold">
+                    هذا الإجراء نهائي وغير قابل للاسترجاع من النظام أو من واجهة المتجر:
+                  </p>
+                  <ul className="list-disc list-inside text-[11px] space-y-0.5">
+                    <li>إزالة السجل نهائياً من قاعدة البيانات الدائمة وتنظيف الروابط المرتبطة به.</li>
+                    {(deleteConfirmModal.type === 'product' || deleteConfirmModal.type === 'partner') && (
+                      <li>حذف ملفات الصور المرفوعة الخاصة به من التخزين السحابي (Cloudflare R2) ما لم تكن مشتركة مع عنصر أو طلب آخر.</li>
+                    )}
+                    <li>الطلبات المالية المدفوعة والنسخ الاحتياطية المُنشأة مسبقاً تبقى محفوظة وفق سياسة الاحتفاظ القانونية.</li>
+                  </ul>
+                </div>
+
+                {deleteError && (
+                  <div className="p-3 rounded-2xl bg-red-500/15 border border-red-500/40 text-xs font-bold text-red-700 dark:text-red-300 flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>{deleteError}</span>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+                  <button
+                    type="button"
+                    disabled={deleteBusy}
+                    onClick={() => {
+                      setDeleteError('');
+                      setDeleteConfirmModal(prev => ({ ...prev, step: 1 }));
+                    }}
+                    className="px-3 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 cursor-pointer"
+                  >
+                    رجوع
+                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={deleteBusy}
+                      onClick={() => {
+                        setDeleteError('');
+                        setDeleteConfirmModal({ isOpen: false, step: 1, type: 'product', id: '', title: '' });
+                      }}
+                      className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 cursor-pointer"
+                    >
+                      إلغاء
+                    </button>
+                    <button
+                      type="button"
+                      disabled={deleteBusy}
+                      onClick={() => void executeDelete()}
+                      className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-black shadow-xs cursor-pointer disabled:opacity-60 active:scale-95"
+                    >
+                      {deleteBusy ? 'جارٍ الحذف والتحقق من الخادم...' : 'نعم، تنفيذ الحذف النهائي الآن'}
+                    </button>
+                  </div>
+                </div>
+              </>
             )}
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
-              <button
-                type="button"
-                disabled={deleteBusy}
-                onClick={() => {
-                  setDeleteError('');
-                  setDeleteConfirmModal({ isOpen: false, type: 'product', id: '', title: '' });
-                }}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50"
-              >
-                إلغاء
-              </button>
-              <button
-                type="button"
-                disabled={deleteBusy}
-                onClick={() => void executeDelete()}
-                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-xs cursor-pointer disabled:opacity-60 active:scale-95"
-              >
-                {deleteBusy ? 'جارٍ الحذف...' : 'تأكيد الحذف'}
-              </button>
-            </div>
           </div>
         </div>
       )}

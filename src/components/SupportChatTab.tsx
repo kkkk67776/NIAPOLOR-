@@ -40,6 +40,12 @@ export const SupportChatTab: React.FC = () => {
   const [savingConfig, setSavingConfig] = useState(false);
 
   const [notice, setNotice] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const [pendingDeleteThread, setPendingDeleteThread] = useState<{
+    sessionId: string;
+    label: string;
+    step: 1 | 2;
+  } | null>(null);
+  const [deletingThread, setDeletingThread] = useState(false);
 
   const showNotice = (type: 'ok' | 'err', text: string) => {
     setNotice({ type, text });
@@ -94,12 +100,17 @@ export const SupportChatTab: React.FC = () => {
     showNotice('ok', 'تم إرسال ردك المباشر إلى نافذة الحريف فوراً.');
   };
 
-  const handleDeleteThread = async (sessionId: string) => {
+  const handleConfirmDeleteThread = async () => {
+    if (!pendingDeleteThread || pendingDeleteThread.step !== 2) return;
+    const { sessionId } = pendingDeleteThread;
+    setDeletingThread(true);
     const ok = await deleteAdminChatThreadServer(sessionId);
+    setDeletingThread(false);
     if (!ok) {
-      showNotice('err', 'تعذر حذف المحادثة.');
+      showNotice('err', 'تعذر حذف المحادثة نهائياً من الخادم.');
       return;
     }
+    setPendingDeleteThread(null);
     setThreads((prev) => {
       const next = prev.filter((th) => th.sessionId !== sessionId);
       if (selectedSessionId === sessionId) {
@@ -107,6 +118,7 @@ export const SupportChatTab: React.FC = () => {
       }
       return next;
     });
+    showNotice('ok', 'تم حذف المحادثة نهائياً من قاعدة البيانات.');
   };
 
   const handleAddRule = () => {
@@ -234,10 +246,14 @@ export const SupportChatTab: React.FC = () => {
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleDeleteThread(th.sessionId);
+                            setPendingDeleteThread({
+                              sessionId: th.sessionId,
+                              label: th.customerLabel || th.sessionId,
+                              step: 1,
+                            });
                           }}
-                          title="حذف المحادثة"
-                          className="text-slate-400 hover:text-red-500 p-0.5"
+                          title="حذف المحادثة نهائياً"
+                          className="text-slate-400 hover:text-red-500 p-0.5 cursor-pointer"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -539,6 +555,85 @@ export const SupportChatTab: React.FC = () => {
           </button>
         </div>
       </form>
+
+      {/* Double Confirmation Hard Delete Modal for Chat Threads */}
+      {pendingDeleteThread && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-fadeIn">
+          <div className="w-full max-w-md bg-white dark:bg-[#1E293B] rounded-3xl p-5 border border-red-500/40 shadow-2xl space-y-4">
+            {pendingDeleteThread.step === 1 ? (
+              <>
+                <div className="flex items-center gap-2.5 text-amber-600 dark:text-amber-400">
+                  <AlertTriangle className="w-5 h-5 shrink-0" />
+                  <h3 className="text-sm font-black">تأكيد حذف المحادثة (الخطوة 1 من 2)</h3>
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                  هل تريد حذف محادثة الحريف <strong className="text-red-600">{pendingDeleteThread.label}</strong>؟
+                  ستظهر لك رسالة التأكيد النهائية في الخطوة التالية.
+                </p>
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => setPendingDeleteThread(null)}
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                  >
+                    إلغاء
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPendingDeleteThread((prev) => (prev ? { ...prev, step: 2 } : null))
+                    }
+                    className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold cursor-pointer"
+                  >
+                    متابعة للحذف النهائي
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-2.5 text-red-600">
+                  <AlertTriangle className="w-5 h-5 shrink-0" />
+                  <h3 className="text-sm font-black">تحذير نهائي: حذف غير قابل للاسترجاع (2 من 2)</h3>
+                </div>
+                <p className="text-xs text-red-700 dark:text-red-300 leading-relaxed p-3 rounded-2xl bg-red-500/10 border border-red-500/30">
+                  سيتم مسح سجل المحادثة <strong>{pendingDeleteThread.label}</strong> نهائياً من قاعدة البيانات
+                  ولا يمكن استرجاعه من النظام بعد التأكيد.
+                </p>
+                <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+                  <button
+                    type="button"
+                    disabled={deletingThread}
+                    onClick={() =>
+                      setPendingDeleteThread((prev) => (prev ? { ...prev, step: 1 } : null))
+                    }
+                    className="px-3 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                  >
+                    رجوع
+                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={deletingThread}
+                      onClick={() => setPendingDeleteThread(null)}
+                      className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                    >
+                      إلغاء
+                    </button>
+                    <button
+                      type="button"
+                      disabled={deletingThread}
+                      onClick={() => void handleConfirmDeleteThread()}
+                      className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-black cursor-pointer disabled:opacity-60"
+                    >
+                      {deletingThread ? 'جارٍ الحذف...' : 'نعم، حذف نهائي الآن'}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

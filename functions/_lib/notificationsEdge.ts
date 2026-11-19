@@ -239,26 +239,41 @@ export async function handleEdgeNotificationsRoute(
       };
     });
     if (!mut.ok) return jsonResponse({ success: false, error: mut.error }, mut.statusCode || 503);
-    return jsonResponse({ success: true });
+    const hmacSecret = await (await import('./firestoreEdge')).resolveSharedHmacSecret(env);
+    let unsubscribeToken: string | undefined;
+    if (hmacSecret) {
+      const { hmacSha256Hex } = await import('./firestoreEdge');
+      unsubscribeToken = `unsub1.${await hmacSha256Hex(hmacSecret, `pub_unsub:${rawSub.endpoint}`)}`;
+    }
+    return jsonResponse({ success: true, unsubscribeToken });
   }
 
   if (method === 'POST' && pathname === '/api/notifications/public/unsubscribe') {
-    const body = (await request.json().catch(() => ({}))) as { endpoint?: string };
+    const body = (await request.json().catch(() => ({}))) as { endpoint?: string; unsubscribeToken?: string };
     const endpoint = String(body?.endpoint || '');
-    if (endpoint) {
-      const mut = await mutateEdgeDocWithRetry<NotificationsDb, boolean>(env, CLOUD_NOTIF_KEY, async (raw) => {
-        const db = normalizeNotificationsDb(raw);
-        return {
-          nextDoc: {
-            ...db,
-            publicSubscriptions: db.publicSubscriptions.filter((s) => s.endpoint !== endpoint),
-            updatedAt: new Date().toISOString(),
-          },
-          result: true,
-        };
-      });
-      if (!mut.ok) return jsonResponse({ success: false, error: mut.error }, mut.statusCode || 503);
+    if (!endpoint) {
+      return jsonResponse({ success: false, error: 'رابط الاشتراك مطلوب لإلغاء الاشتراك.' }, 400);
     }
+    const { resolveSharedHmacSecret, hmacSha256Hex, timingSafeEqualHex } = await import('./firestoreEdge');
+    const hmacSecret = await resolveSharedHmacSecret(env);
+    if (hmacSecret) {
+      const expected = `unsub1.${await hmacSha256Hex(hmacSecret, `pub_unsub:${endpoint}`)}`;
+      if (!body?.unsubscribeToken || !timingSafeEqualHex(String(body.unsubscribeToken).trim(), expected)) {
+        return jsonResponse({ success: false, error: 'رمز تأكيد إلغاء الاشتراك غير صالح أو مفقود.' }, 403);
+      }
+    }
+    const mut = await mutateEdgeDocWithRetry<NotificationsDb, boolean>(env, CLOUD_NOTIF_KEY, async (raw) => {
+      const db = normalizeNotificationsDb(raw);
+      return {
+        nextDoc: {
+          ...db,
+          publicSubscriptions: db.publicSubscriptions.filter((s) => s.endpoint !== endpoint),
+          updatedAt: new Date().toISOString(),
+        },
+        result: true,
+      };
+    });
+    if (!mut.ok) return jsonResponse({ success: false, error: mut.error }, mut.statusCode || 503);
     return jsonResponse({ success: true });
   }
 

@@ -11,6 +11,15 @@ import {
   isMediaSafeUrl,
   quarantineSuspiciousItem,
 } from './securityEngine';
+import {
+  deleteStoredProductImageByUrl,
+  extractManagedMediaDescriptor,
+} from './mediaStorage';
+import {
+  getPaymentRecoverySnapshot,
+  hardRemoveCatalogProduct,
+} from './paymentEngine';
+import { removePublicAnnouncementsForProduct } from './notificationEngine';
 import { normalizeProductImageUrl } from '../src/lib/imageUrl';
 import {
   INITIAL_COMPANIES,
@@ -555,4 +564,534 @@ export async function restoreStoreRecoverySnapshot(
   lastStoreCloudSyncAt = Date.now();
   return { ok: true, state: getAdminStoreState() };
 }
+
+const BACKUP_RETENTION_NOTE =
+  'النسخ الاحتياطية المُنشأة مسبقاً والملفات المصدّرة قبل الحذف تبقى محفوظة وفق سياسة الاحتفاظ بالنسخ ولا تُعدّل بأثر رجعي.';
+const LEGAL_ORDER_RETENTION_NOTE =
+  'الطلبات والفواتير وسجلات الدفع المرتبطة تاريخياً تبقى محفوظة بالنظام التزاماً بالاحتفاظ المحاسبي والقانوني ولا تُحذف تلقائياً.';
+
+export interface HardDeleteEntityResult {
+  ok: boolean;
+  statusCode: number;
+  error?: string;
+  partialFailure?: boolean;
+  entityType: 'product' | 'category' | 'company' | 'banner';
+  deletedId: string;
+  dbDeleted: boolean;
+  verifiedRemovedFromDb: boolean;
+  deletedMediaFiles: string[];
+  skippedSharedMediaFiles: string[];
+  failedMediaFiles: Array<{ url: string; error: string }>;
+  cleanedDependencies: string[];
+  retainedLegalRecordsNote: string;
+  backupRetentionNote: string;
+  state: ReturnType<typeof getAdminStoreState>;
+}
+
+function collectInUseMediaIdentifiers(opts?: {
+  excludeProductId?: string;
+  excludeCompanyId?: string;
+}): { fileNames: Set<string>; urls: Set<string> } {
+  const fileNames = new Set<string>();
+  const urls = new Set<string>();
+
+  const registerUrl = (raw?: string) => {
+    const trimmed = typeof raw === 'string' ? raw.trim() : '';
+    if (!trimmed) return;
+    urls.add(trimmed);
+    const desc = extractManagedMediaDescriptor(trimmed);
+    if (desc) {
+      fileNames.add(desc.fileName);
+      urls.add(desc.canonicalApiUrl);
+    }
+  };
+
+  for (const prod of storeDb.products) {
+    if (opts?.excludeProductId && prod.id === opts.excludeProductId) continue;
+    for (const img of prod.images || []) {
+      registerUrl(img);
+    }
+  }
+
+  for (const comp of storeDb.companies) {
+    if (opts?.excludeCompanyId && comp.id === opts.excludeCompanyId) continue;
+    registerUrl(comp.logo);
+  }
+
+  try {
+    const paymentSnapshot = getPaymentRecoverySnapshot();
+    for (const order of paymentSnapshot.orders || []) {
+      for (const item of order.items || []) {
+        registerUrl(item.productImage);
+      }
+    }
+  } catch {
+    // Non-fatal if payment DB isn't initialized yet
+  }
+
+  return { fileNames, urls };
+}
+
+function verifyEntityRemovedFromDisk(
+  section: 'products' | 'categories' | 'companies' | 'banners',
+  id: string
+): boolean {
+  try {
+    if (!fs.existsSync(STORE_DATA_FILE)) return true;
+    const raw = JSON.parse(fs.readFileSync(STORE_DATA_FILE, 'utf-8')) as Partial<StorefrontDatabase>;
+    const list = Array.isArray(raw?.[section]) ? (raw[section] as Array<{ id?: string }>) : [];
+    return !list.some((item) => item?.id === id);
+  } catch {
+    return false;
+  }
+}
+
+export async function hardDeleteProduct(productId: string): Promise<HardDeleteEntityResult> {
+  await syncStoreStateIfStale(true);
+  const cleanId = (productId || '').trim();
+  const target = storeDb.products.find((p) => p.id === cleanId);
+  if (!cleanId || !target) {
+    return {
+      ok: false,
+      statusCode: 404,
+      error: 'المنتج غير موجود في قاعدة البيانات.',
+      entityType: 'product',
+      deletedId: cleanId,
+      dbDeleted: false,
+      verifiedRemovedFromDb: false,
+      deletedMediaFiles: [],
+      skippedSharedMediaFiles: [],
+      failedMediaFiles: [],
+      cleanedDependencies: [],
+      retainedLegalRecordsNote: LEGAL_ORDER_RETENTION_NOTE,
+      backupRetentionNote: BACKUP_RETENTION_NOTE,
+      state: getAdminStoreState(),
+    };
+  }
+
+  const prev = storeDb;
+  const next: StorefrontDatabase = {
+    ...storeDb,
+    products: storeDb.products.filter((p) => p.id !== cleanId),
+    updatedAt: new Date().toISOString(),
+  };
+
+  const persisted = await persistStoreState(next);
+  if (!persisted.ok) {
+    storeDb = prev;
+    return {
+      ok: false,
+      statusCode: 503,
+      error: persisted.error || 'تعذر تأكيد الحذف النهائي للمنتج من قاعدة البيانات.',
+      entityType: 'product',
+      deletedId: cleanId,
+      dbDeleted: false,
+      verifiedRemovedFromDb: false,
+      deletedMediaFiles: [],
+      skippedSharedMediaFiles: [],
+      failedMediaFiles: [],
+      cleanedDependencies: [],
+      retainedLegalRecordsNote: LEGAL_ORDER_RETENTION_NOTE,
+      backupRetentionNote: BACKUP_RETENTION_NOTE,
+      state: getAdminStoreState(),
+    };
+  }
+
+  storeDb = next;
+  lastStoreCloudSyncAt = Date.now();
+  const verifiedRemoved =
+    !storeDb.products.some((p) => p.id === cleanId) && verifyEntityRemovedFromDisk('products', cleanId);
+
+  const cleanedDependencies: string[] = [];
+  if (Array.isArray(target.reviews) && target.reviews.length > 0) {
+    cleanedDependencies.push(`تقييمات المنتج المضمنة (${target.reviews.length})`);
+  }
+
+  let catalogPurgeError: string | undefined;
+  const catalogRes = await hardRemoveCatalogProduct(cleanId);
+  if (!catalogRes.ok) {
+    catalogPurgeError = catalogRes.error || 'تعذر إزالة مرجع السعر من محرك الدفع.';
+  } else if (catalogRes.removed) {
+    cleanedDependencies.push('مرجع السعر والمخزون في محرك الدفع');
+  }
+
+  try {
+    const removedAnnouncements = await removePublicAnnouncementsForProduct(cleanId);
+    if (removedAnnouncements > 0) {
+      cleanedDependencies.push(`إشعارات الإعلان العامة المرتبطة (${removedAnnouncements})`);
+    }
+  } catch {
+    // Non-fatal auxiliary notification cleanup
+  }
+
+  const inUse = collectInUseMediaIdentifiers({ excludeProductId: cleanId });
+  const candidateUrls = Array.from(
+    new Set(
+      (target.images || [])
+        .map((img) => (typeof img === 'string' ? img.trim() : ''))
+        .filter(Boolean)
+    )
+  );
+
+  const deletedMediaFiles: string[] = [];
+  const skippedSharedMediaFiles: string[] = [];
+  const failedMediaFiles: Array<{ url: string; error: string }> = [];
+
+  for (const url of candidateUrls) {
+    const desc = extractManagedMediaDescriptor(url);
+    if (!desc) {
+      continue;
+    }
+    if (inUse.fileNames.has(desc.fileName) || inUse.urls.has(url) || inUse.urls.has(desc.canonicalApiUrl)) {
+      skippedSharedMediaFiles.push(url);
+      continue;
+    }
+    const delRes = await deleteStoredProductImageByUrl(url);
+    if (delRes.ok) {
+      deletedMediaFiles.push(url);
+      if (desc.canonicalApiUrl !== url) {
+        deletedMediaFiles.push(desc.canonicalApiUrl);
+      }
+    } else {
+      failedMediaFiles.push({
+        url,
+        error: delRes.error || 'فشل حذف ملف الصورة من التخزين السحابي.',
+      });
+    }
+  }
+
+  const uniqueDeletedMedia = Array.from(new Set(deletedMediaFiles));
+
+  if (failedMediaFiles.length > 0 || catalogPurgeError) {
+    const parts: string[] = [];
+    if (failedMediaFiles.length > 0) {
+      parts.push(
+        `تم حذف المنتج من قاعدة البيانات، لكن فشل حذف ${failedMediaFiles.length} ملف صورة من التخزين السحابي (${failedMediaFiles.map((f) => f.error).join('؛ ')}).`
+      );
+    }
+    if (catalogPurgeError) {
+      parts.push(catalogPurgeError);
+    }
+    return {
+      ok: false,
+      statusCode: 207,
+      partialFailure: true,
+      error: parts.join(' '),
+      entityType: 'product',
+      deletedId: cleanId,
+      dbDeleted: true,
+      verifiedRemovedFromDb: verifiedRemoved,
+      deletedMediaFiles: uniqueDeletedMedia,
+      skippedSharedMediaFiles,
+      failedMediaFiles,
+      cleanedDependencies,
+      retainedLegalRecordsNote: LEGAL_ORDER_RETENTION_NOTE,
+      backupRetentionNote: BACKUP_RETENTION_NOTE,
+      state: getAdminStoreState(),
+    };
+  }
+
+  return {
+    ok: true,
+    statusCode: 200,
+    partialFailure: false,
+    entityType: 'product',
+    deletedId: cleanId,
+    dbDeleted: true,
+    verifiedRemovedFromDb: verifiedRemoved,
+    deletedMediaFiles: uniqueDeletedMedia,
+    skippedSharedMediaFiles,
+    failedMediaFiles: [],
+    cleanedDependencies,
+    retainedLegalRecordsNote: LEGAL_ORDER_RETENTION_NOTE,
+    backupRetentionNote: BACKUP_RETENTION_NOTE,
+    state: getAdminStoreState(),
+  };
+}
+
+export async function hardDeleteCategory(categoryId: string): Promise<HardDeleteEntityResult> {
+  await syncStoreStateIfStale(true);
+  const cleanId = (categoryId || '').trim();
+  if (!cleanId || cleanId === 'all') {
+    return {
+      ok: false,
+      statusCode: 400,
+      error: 'لا يمكن حذف التصنيف الأساسي (الكل).',
+      entityType: 'category',
+      deletedId: cleanId,
+      dbDeleted: false,
+      verifiedRemovedFromDb: false,
+      deletedMediaFiles: [],
+      skippedSharedMediaFiles: [],
+      failedMediaFiles: [],
+      cleanedDependencies: [],
+      retainedLegalRecordsNote: 'تبقى جميع المنتجات المرتبطة بهذا التصنيف محفوظة ولن تُحذف.',
+      backupRetentionNote: BACKUP_RETENTION_NOTE,
+      state: getAdminStoreState(),
+    };
+  }
+
+  const target = storeDb.categories.find((c) => c.id === cleanId);
+  if (!target) {
+    return {
+      ok: false,
+      statusCode: 404,
+      error: 'التصنيف غير موجود في قاعدة البيانات.',
+      entityType: 'category',
+      deletedId: cleanId,
+      dbDeleted: false,
+      verifiedRemovedFromDb: false,
+      deletedMediaFiles: [],
+      skippedSharedMediaFiles: [],
+      failedMediaFiles: [],
+      cleanedDependencies: [],
+      retainedLegalRecordsNote: 'تبقى جميع المنتجات محفوظة.',
+      backupRetentionNote: BACKUP_RETENTION_NOTE,
+      state: getAdminStoreState(),
+    };
+  }
+
+  const prev = storeDb;
+  const next: StorefrontDatabase = {
+    ...storeDb,
+    categories: storeDb.categories.filter((c) => c.id !== cleanId),
+    updatedAt: new Date().toISOString(),
+  };
+  const persisted = await persistStoreState(next);
+  if (!persisted.ok) {
+    storeDb = prev;
+    return {
+      ok: false,
+      statusCode: 503,
+      error: persisted.error || 'تعذر حذف التصنيف نهائياً من قاعدة البيانات.',
+      entityType: 'category',
+      deletedId: cleanId,
+      dbDeleted: false,
+      verifiedRemovedFromDb: false,
+      deletedMediaFiles: [],
+      skippedSharedMediaFiles: [],
+      failedMediaFiles: [],
+      cleanedDependencies: [],
+      retainedLegalRecordsNote: 'تبقى جميع المنتجات محفوظة.',
+      backupRetentionNote: BACKUP_RETENTION_NOTE,
+      state: getAdminStoreState(),
+    };
+  }
+
+  storeDb = next;
+  lastStoreCloudSyncAt = Date.now();
+  const verifiedRemoved =
+    !storeDb.categories.some((c) => c.id === cleanId) && verifyEntityRemovedFromDisk('categories', cleanId);
+
+  return {
+    ok: true,
+    statusCode: 200,
+    partialFailure: false,
+    entityType: 'category',
+    deletedId: cleanId,
+    dbDeleted: true,
+    verifiedRemovedFromDb: verifiedRemoved,
+    deletedMediaFiles: [],
+    skippedSharedMediaFiles: [],
+    failedMediaFiles: [],
+    cleanedDependencies: [],
+    retainedLegalRecordsNote: 'تم الإبقاء على كافة المنتجات الموجودة دون حذف أي منتج.',
+    backupRetentionNote: BACKUP_RETENTION_NOTE,
+    state: getAdminStoreState(),
+  };
+}
+
+export async function hardDeleteCompany(companyId: string): Promise<HardDeleteEntityResult> {
+  await syncStoreStateIfStale(true);
+  const cleanId = (companyId || '').trim();
+  const target = storeDb.companies.find((c) => c.id === cleanId);
+  if (!cleanId || !target) {
+    return {
+      ok: false,
+      statusCode: 404,
+      error: 'الشريك أو الشركة غير موجودة في قاعدة البيانات.',
+      entityType: 'company',
+      deletedId: cleanId,
+      dbDeleted: false,
+      verifiedRemovedFromDb: false,
+      deletedMediaFiles: [],
+      skippedSharedMediaFiles: [],
+      failedMediaFiles: [],
+      cleanedDependencies: [],
+      retainedLegalRecordsNote: LEGAL_ORDER_RETENTION_NOTE,
+      backupRetentionNote: BACKUP_RETENTION_NOTE,
+      state: getAdminStoreState(),
+    };
+  }
+
+  const prev = storeDb;
+  const next: StorefrontDatabase = {
+    ...storeDb,
+    companies: storeDb.companies.filter((c) => c.id !== cleanId),
+    updatedAt: new Date().toISOString(),
+  };
+
+  const persisted = await persistStoreState(next);
+  if (!persisted.ok) {
+    storeDb = prev;
+    return {
+      ok: false,
+      statusCode: 503,
+      error: persisted.error || 'تعذر تأكيد الحذف النهائي للشريك من قاعدة البيانات.',
+      entityType: 'company',
+      deletedId: cleanId,
+      dbDeleted: false,
+      verifiedRemovedFromDb: false,
+      deletedMediaFiles: [],
+      skippedSharedMediaFiles: [],
+      failedMediaFiles: [],
+      cleanedDependencies: [],
+      retainedLegalRecordsNote: LEGAL_ORDER_RETENTION_NOTE,
+      backupRetentionNote: BACKUP_RETENTION_NOTE,
+      state: getAdminStoreState(),
+    };
+  }
+
+  storeDb = next;
+  lastStoreCloudSyncAt = Date.now();
+  const verifiedRemoved =
+    !storeDb.companies.some((c) => c.id === cleanId) && verifyEntityRemovedFromDisk('companies', cleanId);
+
+  const deletedMediaFiles: string[] = [];
+  const skippedSharedMediaFiles: string[] = [];
+  const failedMediaFiles: Array<{ url: string; error: string }> = [];
+
+  const logoUrl = typeof target.logo === 'string' ? target.logo.trim() : '';
+  const desc = logoUrl ? extractManagedMediaDescriptor(logoUrl) : null;
+  if (logoUrl && desc) {
+    const inUse = collectInUseMediaIdentifiers({ excludeCompanyId: cleanId });
+    if (inUse.fileNames.has(desc.fileName) || inUse.urls.has(logoUrl) || inUse.urls.has(desc.canonicalApiUrl)) {
+      skippedSharedMediaFiles.push(logoUrl);
+    } else {
+      const delRes = await deleteStoredProductImageByUrl(logoUrl);
+      if (delRes.ok) {
+        deletedMediaFiles.push(logoUrl);
+        if (desc.canonicalApiUrl !== logoUrl) deletedMediaFiles.push(desc.canonicalApiUrl);
+      } else {
+        failedMediaFiles.push({
+          url: logoUrl,
+          error: delRes.error || 'فشل حذف شعار الشريك من التخزين السحابي.',
+        });
+      }
+    }
+  }
+
+  const uniqueDeletedMedia = Array.from(new Set(deletedMediaFiles));
+
+  if (failedMediaFiles.length > 0) {
+    return {
+      ok: false,
+      statusCode: 207,
+      partialFailure: true,
+      error: `تم حذف سجل الشريك من قاعدة البيانات، لكن فشل حذف ملف الشعار من التخزين السحابي (${failedMediaFiles[0].error}).`,
+      entityType: 'company',
+      deletedId: cleanId,
+      dbDeleted: true,
+      verifiedRemovedFromDb: verifiedRemoved,
+      deletedMediaFiles: uniqueDeletedMedia,
+      skippedSharedMediaFiles,
+      failedMediaFiles,
+      cleanedDependencies: [],
+      retainedLegalRecordsNote: LEGAL_ORDER_RETENTION_NOTE,
+      backupRetentionNote: BACKUP_RETENTION_NOTE,
+      state: getAdminStoreState(),
+    };
+  }
+
+  return {
+    ok: true,
+    statusCode: 200,
+    partialFailure: false,
+    entityType: 'company',
+    deletedId: cleanId,
+    dbDeleted: true,
+    verifiedRemovedFromDb: verifiedRemoved,
+    deletedMediaFiles: uniqueDeletedMedia,
+    skippedSharedMediaFiles,
+    failedMediaFiles: [],
+    cleanedDependencies: [],
+    retainedLegalRecordsNote: LEGAL_ORDER_RETENTION_NOTE,
+    backupRetentionNote: BACKUP_RETENTION_NOTE,
+    state: getAdminStoreState(),
+  };
+}
+
+export async function hardDeleteBanner(bannerId: string): Promise<HardDeleteEntityResult> {
+  await syncStoreStateIfStale(true);
+  const cleanId = (bannerId || '').trim();
+  const target = storeDb.banners.find((b) => b.id === cleanId);
+  if (!cleanId || !target) {
+    return {
+      ok: false,
+      statusCode: 404,
+      error: 'البانر الإعلاني غير موجود في قاعدة البيانات.',
+      entityType: 'banner',
+      deletedId: cleanId,
+      dbDeleted: false,
+      verifiedRemovedFromDb: false,
+      deletedMediaFiles: [],
+      skippedSharedMediaFiles: [],
+      failedMediaFiles: [],
+      cleanedDependencies: [],
+      retainedLegalRecordsNote: 'لا تتأثر أي بيانات منتجات أو طلبات بحذف البانر.',
+      backupRetentionNote: BACKUP_RETENTION_NOTE,
+      state: getAdminStoreState(),
+    };
+  }
+
+  const prev = storeDb;
+  const next: StorefrontDatabase = {
+    ...storeDb,
+    banners: storeDb.banners.filter((b) => b.id !== cleanId),
+    updatedAt: new Date().toISOString(),
+  };
+  const persisted = await persistStoreState(next);
+  if (!persisted.ok) {
+    storeDb = prev;
+    return {
+      ok: false,
+      statusCode: 503,
+      error: persisted.error || 'تعذر تأكيد الحذف النهائي للبانر من قاعدة البيانات.',
+      entityType: 'banner',
+      deletedId: cleanId,
+      dbDeleted: false,
+      verifiedRemovedFromDb: false,
+      deletedMediaFiles: [],
+      skippedSharedMediaFiles: [],
+      failedMediaFiles: [],
+      cleanedDependencies: [],
+      retainedLegalRecordsNote: 'لا تتأثر أي بيانات منتجات أو طلبات.',
+      backupRetentionNote: BACKUP_RETENTION_NOTE,
+      state: getAdminStoreState(),
+    };
+  }
+
+  storeDb = next;
+  lastStoreCloudSyncAt = Date.now();
+  const verifiedRemoved =
+    !storeDb.banners.some((b) => b.id === cleanId) && verifyEntityRemovedFromDisk('banners', cleanId);
+
+  return {
+    ok: true,
+    statusCode: 200,
+    partialFailure: false,
+    entityType: 'banner',
+    deletedId: cleanId,
+    dbDeleted: true,
+    verifiedRemovedFromDb: verifiedRemoved,
+    deletedMediaFiles: [],
+    skippedSharedMediaFiles: [],
+    failedMediaFiles: [],
+    cleanedDependencies: [],
+    retainedLegalRecordsNote: 'لا تتأثر أي بيانات منتجات أو طلبات.',
+    backupRetentionNote: BACKUP_RETENTION_NOTE,
+    state: getAdminStoreState(),
+  };
+}
+
 

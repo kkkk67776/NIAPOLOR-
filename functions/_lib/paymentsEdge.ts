@@ -1141,19 +1141,13 @@ export async function handleEdgePaymentsRoute(
             authoritativeVendorId = catalogItem.companyId;
             authoritativeVendorName = catalogItem.companyName;
           } else {
-            const submittedPrice = Number(rawItem.unitPrice);
-            if (!Number.isFinite(submittedPrice) || submittedPrice <= 0) {
-              return { skipWrite: true, result: { errStatus: 400, errMsg: 'سعر المنتج غير صالح.' } };
-            }
-            authoritativeUnitPrice = round3(submittedPrice);
-            authoritativeVendorId = rawItem.companyId || 'comp_echox';
-            authoritativeVendorName = rawItem.companyName || 'ECHOX Distribution Tunisie';
-            nextCatalog[rawItem.productId] = {
-              id: rawItem.productId,
-              price: authoritativeUnitPrice,
-              companyId: authoritativeVendorId,
-              companyName: authoritativeVendorName,
-              active: true,
+            return {
+              skipWrite: true,
+              result: {
+                errStatus: 400,
+                errMsg: `تم رفض الطلب: المنتج (${rawItem.productId}) غير موجود في الكاتالوج المعتمد على الخادم.`,
+                securityAlert: `محاولة طلب منتج غير مسجل بالكاتالوج: ${rawItem.productId}`,
+              },
             };
           }
 
@@ -1195,7 +1189,7 @@ export async function handleEdgePaymentsRoute(
 
         const now = new Date().toISOString();
         const orderId = `ord_${Date.now()}_${randomHex(2)}`;
-        const trackingNumber = `ECH-TN-${Math.floor(100000 + Math.random() * 900000)}`;
+        const trackingNumber = `ECH-TN-${randomHex(4).toUpperCase()}`;
         const paymentReference = `ECH-REF-${randomHex(4).toUpperCase()}`;
         const transactionId = `txn_${Date.now()}_${randomHex(3)}`;
 
@@ -2286,19 +2280,56 @@ export async function handleEdgePaymentsRoute(
     if (isAdmin) {
       return jsonResponse({ success: true, order: found });
     }
-    const sanitizedOrder: Order = {
+    const urlObj = new URL(request.url);
+    const phoneProof = String(urlObj.searchParams.get('phone') || request.headers.get('x-tracking-phone') || '').trim();
+    const oNorm = normalizeTunisianPhone(found.customerPhone || '');
+    const sNorm = normalizeTunisianPhone(phoneProof);
+    const phoneMatched =
+      (oNorm.valid && sNorm.valid && oNorm.normalized === sNorm.normalized) ||
+      (() => {
+        const od = String(found.customerPhone || '').replace(/\D/g, '').slice(-8);
+        const sd = phoneProof.replace(/\D/g, '').slice(-8);
+        return od.length >= 6 && sd.length >= 6 && od === sd;
+      })();
+
+    if (phoneMatched) {
+      return jsonResponse({
+        success: true,
+        order: {
+          ...found,
+          customerEmail: '',
+          notes: '',
+          piiMasked: false,
+        },
+      });
+    }
+
+    const maskName = (raw: string) =>
+      String(raw || '').trim()
+        ? String(raw || '').trim().split(/\s+/).map((p) => (p.length <= 1 ? '*' : `${p.slice(0, 1)}${'*'.repeat(Math.min(4, p.length - 1))}`)).join(' ')
+        : '***';
+    const maskPhone = (raw: string) => {
+      const digits = String(raw || '').replace(/\D/g, '');
+      return digits.length < 4 ? '****' : `${digits.slice(0, 2)}****${digits.slice(-2)}`;
+    };
+
+    const maskedOrder: Order = {
       ...found,
+      customerName: maskName(found.customerName),
+      customerPhone: maskPhone(found.customerPhone),
       customerEmail: '',
       notes: '',
-      transferProof: found.transferProof
-        ? {
-            ...found.transferProof,
-            notes: undefined,
-            receiptImageDataUrl: undefined,
-          }
-        : undefined,
+      shippingAddress: {
+        ...found.shippingAddress,
+        fullName: maskName(found.shippingAddress?.fullName || found.customerName),
+        phone: maskPhone(found.shippingAddress?.phone || found.customerPhone),
+        street: '***',
+        notes: undefined,
+      },
+      transferProof: undefined,
+      piiMasked: true,
     };
-    return jsonResponse({ success: true, order: sanitizedOrder });
+    return jsonResponse({ success: true, order: maskedOrder });
   }
 
   // ==========================================
@@ -2958,7 +2989,7 @@ export async function handleEdgePaymentsRoute(
           input.id && input.id.startsWith('ord_') ? input.id : `ord_manual_${Date.now()}_${randomHex(2)}`;
         const trackingNumber =
           (input.trackingNumber || '').trim().toUpperCase() ||
-          `ECH-TN-${Math.floor(100000 + Math.random() * 900000)}`;
+          `ECH-TN-${randomHex(4).toUpperCase()}`;
         const payMethod = normalizePaymentMethod(input.paymentMethod || 'cod');
         const paymentStatus: PaymentStatus =
           input.paymentStatus || (payMethod === 'cod' ? 'Cash on Delivery' : 'Pending Payment');
@@ -3178,6 +3209,28 @@ export async function handleEdgePaymentsRoute(
         if (!target) {
           return { skipWrite: true, result: { errStatus: 404, errMsg: 'الطلب غير موجود على الخادم.' } };
         }
+        const linkedTxns = db.transactions.filter((t) => t.orderId === target.id);
+        const linkedLedgers = db.vendorLedgers.filter((v) => v.orderId === target.id);
+        const hasProtectedFinancialStatus =
+          target.paymentStatus === 'Paid' ||
+          target.paymentStatus === 'Payment Verification' ||
+          target.paymentStatus === 'Refunded' ||
+          linkedTxns.some(
+            (t) => t.status === 'Paid' || t.status === 'Payment Verification' || t.status === 'Refunded'
+          ) ||
+          linkedLedgers.some(
+            (v) => v.paymentStatus === 'Paid' || v.payoutStatus === 'settled' || v.payoutStatus === 'eligible'
+          );
+        if (hasProtectedFinancialStatus) {
+          return {
+            skipWrite: true,
+            result: {
+              errStatus: 409,
+              errMsg:
+                'لا يمكن حذف هذا الطلب نهائياً لوجود معاملات مالية مدفوعة أو قيد المراجعة أو تسويات بائعين مرتبطة به يجب الاحتفاظ بها قانونياً. استخدم الإلغاء أو الاسترجاع بدلاً من الحذف.',
+            },
+          };
+        }
         return {
           nextDoc: {
             ...db,
@@ -3189,7 +3242,7 @@ export async function handleEdgePaymentsRoute(
               db,
               'ORDER_DELETED',
               'admin',
-              `Admin deleted order ${target.trackingNumber} (${target.customerName}).`,
+              `Admin permanently deleted unpaid/non-financial order ${target.trackingNumber} (${target.customerName}).`,
               target.id,
               target.totalAmount
             ),

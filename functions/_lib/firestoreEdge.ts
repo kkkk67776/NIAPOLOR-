@@ -21,6 +21,7 @@ export interface EdgeEnv {
   LOCKED_BANK_SWIFT?: string;
   GOOGLE_OAUTH_TOKEN_URL?: string;
   FIRESTORE_REST_ORIGIN?: string;
+  CF_PROXY_SECRET?: string;
   [key: string]: string | undefined;
 }
 
@@ -1094,12 +1095,25 @@ export async function requireEdgeAdminAuth(
   return { ok: true, session };
 }
 
+function isPlausibleIpLiteral(raw: string): boolean {
+  if (!raw) return false;
+  const cleaned = raw.replace(/^::ffff:/i, '').trim();
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(cleaned)) {
+    return cleaned.split('.').every((p) => {
+      const n = Number(p);
+      return Number.isInteger(n) && n >= 0 && n <= 255;
+    });
+  }
+  return cleaned.includes(':') && /^[0-9a-f:]{2,45}$/i.test(cleaned);
+}
+
 export function getEdgeClientIp(request: Request): string {
-  const cfIp = request.headers.get('cf-connecting-ip') || '';
-  if (cfIp.trim()) return cfIp.trim();
+  const cfIp = (request.headers.get('cf-connecting-ip') || '').trim();
+  if (isPlausibleIpLiteral(cfIp)) return cfIp;
   const fwd = request.headers.get('x-forwarded-for') || '';
-  const first = fwd.split(',')[0]?.trim();
-  return first || '127.0.0.1';
+  const first = fwd.split(',')[0]?.trim() || '';
+  if (isPlausibleIpLiteral(first)) return first;
+  return '127.0.0.1';
 }
 
 export function getEdgeRequestOrigin(request: Request, env: EdgeEnv): string {

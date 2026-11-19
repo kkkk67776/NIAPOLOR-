@@ -24,6 +24,7 @@ import {
 } from '../types';
 import {
   DEFAULT_CHAT_CONFIG,
+  clearStoredChatToken,
   fetchChatThreadServer,
   fetchPublicChatConfig,
   generateSmartStoreReply,
@@ -69,6 +70,19 @@ import {
 } from '../lib/security';
 import { normalizeProductImageUrl } from '../lib/imageUrl';
 
+
+export interface DeleteActionResult {
+  ok: boolean;
+  error?: string;
+  partialFailure?: boolean;
+  verified?: boolean;
+  deletedMediaFiles?: string[];
+  skippedSharedMediaFiles?: string[];
+  failedMediaFiles?: Array<{ url: string; error: string }>;
+  cleanedDependencies?: string[];
+  retainedLegalRecordsNote?: string;
+  backupRetentionNote?: string;
+}
 
 interface StoreContextType {
   language: Language;
@@ -121,7 +135,7 @@ interface StoreContextType {
   products: Product[];
   addProduct: (product: Omit<Product, 'id' | 'reviews' | 'rating' | 'reviewCount'>) => Promise<{ ok: boolean; error?: string }>;
   updateProduct: (id: string, updates: Partial<Product>) => Promise<{ ok: boolean; error?: string }>;
-  deleteProduct: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  deleteProduct: (id: string) => Promise<DeleteActionResult>;
   toggleProductActive: (id: string) => Promise<{ ok: boolean; error?: string }>;
   addProductReview: (productId: string, review: Omit<Review, 'id' | 'date'>) => Promise<{ ok: boolean; error?: string }>;
   
@@ -129,17 +143,17 @@ interface StoreContextType {
   companies: Company[];
   addCompany: (company: Omit<Company, 'id'>) => Promise<{ ok: boolean; error?: string }>;
   updateCompany: (id: string, updates: Partial<Company>) => Promise<{ ok: boolean; error?: string }>;
-  deleteCompany: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  deleteCompany: (id: string) => Promise<DeleteActionResult>;
   
   // Categories & Chips
   categories: CategoryItem[];
   addCategory: (category: CategoryItem) => Promise<{ ok: boolean; error?: string }>;
-  deleteCategory: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  deleteCategory: (id: string) => Promise<DeleteActionResult>;
   
   // Banners & Promos
   banners: PromoBanner[];
   addBanner: (banner: Omit<PromoBanner, 'id'>) => Promise<{ ok: boolean; error?: string }>;
-  deleteBanner: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  deleteBanner: (id: string) => Promise<DeleteActionResult>;
   toggleBannerActive: (id: string) => Promise<{ ok: boolean; error?: string }>;
 
   // Orders & Payments
@@ -174,7 +188,7 @@ interface StoreContextType {
   refreshAdminOrders: () => Promise<{ ok: boolean; count: number; error?: string }>;
   addManualOrder: (orderData: Partial<Order>) => Promise<{ ok: boolean; order?: Order; error?: string }>;
   updateOrderStatus: (orderId: string, status: OrderStatus, note?: string) => Promise<{ ok: boolean; order?: Order; error?: string }>;
-  deleteOrder: (orderId: string) => Promise<{ ok: boolean; error?: string }>;
+  deleteOrder: (orderId: string) => Promise<DeleteActionResult>;
   isSupportModalOpen: boolean;
   setIsSupportModalOpen: (open: boolean) => void;
   
@@ -513,13 +527,123 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return { ok: true };
   };
 
-  const deleteCategory = async (id: string): Promise<{ ok: boolean; error?: string }> => {
+  const cleanDeletedMediaFromBrowserCaches = async (mediaUrls: string[]) => {
+    if (typeof window === 'undefined' || !('caches' in window)) return;
+    try {
+      const normalizedTargets = mediaUrls
+        .map((u) => (u || '').trim().split('?')[0])
+        .filter(Boolean);
+      const cacheNames = await window.caches.keys();
+      await Promise.all(
+        cacheNames.map(async (cacheName) => {
+          const cache = await window.caches.open(cacheName);
+          const keys = await cache.keys();
+          await Promise.all(
+            keys.map(async (req) => {
+              const reqUrl = req.url.split('?')[0];
+              let pathname = '';
+              try {
+                pathname = new URL(req.url).pathname;
+              } catch {
+                pathname = '';
+              }
+              const isStoreStateApi =
+                pathname === '/api/store/state' || pathname === '/api/admin/store/state';
+              const matchesMedia = normalizedTargets.some(
+                (target) =>
+                  reqUrl === target ||
+                  pathname === target ||
+                  (target.startsWith('http') && reqUrl.startsWith(target))
+              );
+              if (isStoreStateApi || matchesMedia) {
+                await cache.delete(req);
+              }
+            })
+          );
+        })
+      );
+    } catch {
+      // Non-fatal browser cache cleanup
+    }
+  };
+
+  const executeServerHardDelete = async (
+    endpoint: string,
+    fallbackError: string
+  ): Promise<DeleteActionResult> => {
+    try {
+      const res = await fetch(endpoint, {
+        method: 'DELETE',
+        headers: getAdminAuthHeaders(),
+        credentials: 'include',
+        cache: 'no-store',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401 || res.status === 403) {
+        notifySessionExpired();
+      }
+      if (data?.persistenceStatus) {
+        setPersistenceStatus(data.persistenceStatus);
+      }
+
+      if (data?.partialFailure && data?.dbDeleted) {
+        applyPublicServerState(data);
+        return {
+          ok: false,
+          partialFailure: true,
+          verified: Boolean(data.verifiedRemovedFromDb),
+          error: data.error || fallbackError,
+          deletedMediaFiles: Array.isArray(data.deletedMediaFiles) ? data.deletedMediaFiles : [],
+          skippedSharedMediaFiles: Array.isArray(data.skippedSharedMediaFiles)
+            ? data.skippedSharedMediaFiles
+            : [],
+          failedMediaFiles: Array.isArray(data.failedMediaFiles) ? data.failedMediaFiles : [],
+          cleanedDependencies: Array.isArray(data.cleanedDependencies) ? data.cleanedDependencies : [],
+          retainedLegalRecordsNote: data.retainedLegalRecordsNote,
+          backupRetentionNote: data.backupRetentionNote,
+        };
+      }
+
+      if (!res.ok || !data?.success) {
+        return {
+          ok: false,
+          error:
+            data?.error ||
+            (res.status === 401 || res.status === 403
+              ? 'جلسة المالك غير نشطة على الخادم.'
+              : fallbackError),
+        };
+      }
+
+      applyPublicServerState(data);
+      return {
+        ok: true,
+        partialFailure: false,
+        verified: Boolean(data.verified ?? data.verifiedRemovedFromDb ?? true),
+        deletedMediaFiles: Array.isArray(data.deletedMediaFiles) ? data.deletedMediaFiles : [],
+        skippedSharedMediaFiles: Array.isArray(data.skippedSharedMediaFiles)
+          ? data.skippedSharedMediaFiles
+          : [],
+        failedMediaFiles: [],
+        cleanedDependencies: Array.isArray(data.cleanedDependencies) ? data.cleanedDependencies : [],
+        retainedLegalRecordsNote: data.retainedLegalRecordsNote,
+        backupRetentionNote: data.backupRetentionNote,
+      };
+    } catch {
+      return { ok: false, error: 'تعذر الاتصال بالخادم لتنفيذ الحذف النهائي.' };
+    }
+  };
+
+  const deleteCategory = async (id: string): Promise<DeleteActionResult> => {
     if (id === 'all') return { ok: false, error: 'لا يمكن حذف التصنيف الأساسي.' };
-    const next = categories.filter(c => c.id !== id);
-    const res = await pushAdminStoreState({ categories: next });
-    if (!res.ok) return { ok: false, error: res.error };
-    setCategories(Array.isArray(res.data?.categories) ? res.data.categories : next);
-    return { ok: true };
+    const res = await executeServerHardDelete(
+      `/api/admin/store/categories/${encodeURIComponent(id)}`,
+      'تعذر حذف التصنيف نهائياً من الخادم.'
+    );
+    if (res.ok) {
+      void cleanDeletedMediaFromBrowserCaches([]);
+    }
+    return res;
   };
 
   // 5.2 Banners & Promos
@@ -563,12 +687,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return { ok: true };
   };
 
-  const deleteBanner = async (id: string): Promise<{ ok: boolean; error?: string }> => {
-    const next = banners.filter(b => b.id !== id);
-    const res = await pushAdminStoreState({ banners: next });
-    if (!res.ok) return { ok: false, error: res.error };
-    setBanners(Array.isArray(res.data?.banners) ? res.data.banners : next);
-    return { ok: true };
+  const deleteBanner = async (id: string): Promise<DeleteActionResult> => {
+    const res = await executeServerHardDelete(
+      `/api/admin/store/banners/${encodeURIComponent(id)}`,
+      'تعذر حذف البانر نهائياً من الخادم.'
+    );
+    if (res.ok) {
+      void cleanDeletedMediaFromBrowserCaches([]);
+    }
+    return res;
   };
 
   const toggleBannerActive = async (id: string): Promise<{ ok: boolean; error?: string }> => {
@@ -580,7 +707,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   // 5.3 Order Deletion & Manual Order Creation
-  const deleteOrder = async (orderId: string): Promise<{ ok: boolean; error?: string }> => {
+  const deleteOrder = async (orderId: string): Promise<DeleteActionResult> => {
     const res = await deleteAdminOrderServer(orderId);
     if (!res.ok) {
       return { ok: false, error: res.error || 'تعذر حذف الطلب من الخادم.' };
@@ -600,7 +727,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       // ignore
     }
     setOrders(prev => prev.filter(o => o.id !== orderId && o.trackingNumber !== orderId));
-    return { ok: true };
+    return {
+      ok: true,
+      verified: res.verified ?? true,
+      backupRetentionNote: res.backupRetentionNote,
+    };
   };
 
   const addManualOrder = async (
@@ -1105,10 +1236,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   // 10. Owner Security & Auth
-  const [isOwner, setIsOwner] = useState<boolean>(() => {
-    const saved = sessionStorage.getItem('echox_owner_session');
-    return saved === 'authorized_true';
-  });
+  const [isOwner, setIsOwner] = useState<boolean>(false);
 
   const loginOwnerWithGoogle = (_email: string) => {
     setIsOwner(false);
@@ -1153,12 +1281,32 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return { ok: true };
   };
 
-  const deleteProduct = async (id: string): Promise<{ ok: boolean; error?: string }> => {
-    const next = products.filter(p => p.id !== id);
-    const res = await pushAdminStoreState({ products: next });
-    if (!res.ok) return { ok: false, error: res.error };
-    setProducts(Array.isArray(res.data?.products) ? res.data.products : next);
-    return { ok: true };
+  const purgeDeletedProductReferencesFromClient = (productId: string) => {
+    setCart(prev => prev.filter(item => item.product.id !== productId));
+    setWishlist(prev => {
+      const next = prev.filter(wid => wid !== productId);
+      try {
+        localStorage.setItem('echox_wishlist', JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+    if (selectedProductId === productId) {
+      setSelectedProductId(null);
+    }
+  };
+
+  const deleteProduct = async (id: string): Promise<DeleteActionResult> => {
+    const res = await executeServerHardDelete(
+      `/api/admin/store/products/${encodeURIComponent(id)}`,
+      'تعذر حذف المنتج نهائياً من الخادم.'
+    );
+    if (res.ok || res.partialFailure) {
+      purgeDeletedProductReferencesFromClient(id);
+      void cleanDeletedMediaFromBrowserCaches(res.deletedMediaFiles || []);
+    }
+    return res;
   };
 
   const toggleProductActive = async (id: string): Promise<{ ok: boolean; error?: string }> => {
@@ -1211,12 +1359,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return { ok: true };
   };
 
-  const deleteCompany = async (id: string): Promise<{ ok: boolean; error?: string }> => {
-    const next = companies.filter(c => c.id !== id);
-    const res = await pushAdminStoreState({ companies: next });
-    if (!res.ok) return { ok: false, error: res.error };
-    setCompanies(Array.isArray(res.data?.companies) ? res.data.companies : next);
-    return { ok: true };
+  const deleteCompany = async (id: string): Promise<DeleteActionResult> => {
+    const res = await executeServerHardDelete(
+      `/api/admin/store/companies/${encodeURIComponent(id)}`,
+      'تعذر حذف الشريك نهائياً من الخادم.'
+    );
+    if (res.ok || res.partialFailure) {
+      void cleanDeletedMediaFromBrowserCaches(res.deletedMediaFiles || []);
+    }
+    return res;
   };
 
   // 13. Orders
@@ -1668,6 +1819,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const resetChatSession = () => {
+    clearStoredChatToken(chatSessionId);
     const nextId = `sess_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     try {
       localStorage.setItem('echox_chat_session_id', nextId);

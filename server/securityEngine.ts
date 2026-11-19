@@ -551,8 +551,8 @@ export function validateRasterImageMagicBytes(raw?: string): RasterValidationRes
     };
   }
 
-  // Scan decoded bytes (bounded header+tail+sample) for embedded SVG/HTML/XSS script payloads
-  const inspectable = buf.subarray(0, Math.min(buf.length, 65536)).toString('latin1').toLowerCase();
+  // Scan full bounded decoded image bytes (max 3.5MB) for embedded SVG/HTML/XSS polyglot payloads
+  const inspectable = buf.toString('latin1').toLowerCase();
   if (
     inspectable.includes('<svg') ||
     inspectable.includes('<script') ||

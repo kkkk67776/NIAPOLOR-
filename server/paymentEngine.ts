@@ -617,6 +617,25 @@ export async function syncCatalogSnapshot(
   return saveDatabaseStrict(snapshot);
 }
 
+export async function hardRemoveCatalogProduct(
+  productId: string
+): Promise<{ ok: boolean; statusCode?: number; error?: string; removed: boolean }> {
+  const cleanId = (productId || '').trim();
+  if (!cleanId) return { ok: true, removed: false };
+  await syncPaymentDbIfStale(true);
+  if (!Object.prototype.hasOwnProperty.call(paymentDb.catalog, cleanId)) {
+    return { ok: true, removed: false };
+  }
+  const snapshot = JSON.stringify(paymentDb);
+  delete paymentDb.catalog[cleanId];
+  appendActivity('CATALOG_PRODUCT_PURGED', 'admin', `Permanently removed product ${cleanId} from payment catalog.`, cleanId);
+  const saved = await saveDatabaseStrict(snapshot);
+  if (!saved.ok) {
+    return { ok: false, statusCode: saved.statusCode || 503, error: saved.error, removed: false };
+  }
+  return { ok: true, removed: true };
+}
+
 export async function updateAdminPaymentConfig(payload: {
   currency?: 'TND' | 'EUR' | 'USD';
   commissionRatePercent?: number;
@@ -1227,21 +1246,18 @@ export async function processServerCheckout(input: ServerCheckoutInput): Promise
       authoritativeVendorId = catalogItem.companyId;
       authoritativeVendorName = catalogItem.companyName;
     } else {
-      // Dynamic product added by admin in local storefront session; ensure positive valid price and sync
-      const submittedPrice = Number(rawItem.unitPrice);
-      if (!Number.isFinite(submittedPrice) || submittedPrice <= 0) {
-        paymentDb = JSON.parse(checkoutSnapshot) as PaymentSystemDatabase;
-        return { ok: false, statusCode: 400, error: 'سعر المنتج غير صالح.' };
-      }
-      authoritativeUnitPrice = round3(submittedPrice);
-      authoritativeVendorId = rawItem.companyId || 'comp_echox';
-      authoritativeVendorName = rawItem.companyName || 'ECHOX Distribution Tunisie';
-      paymentDb.catalog[rawItem.productId] = {
-        id: rawItem.productId,
-        price: authoritativeUnitPrice,
-        companyId: authoritativeVendorId,
-        companyName: authoritativeVendorName,
-        active: true,
+      paymentDb = JSON.parse(checkoutSnapshot) as PaymentSystemDatabase;
+      appendActivity(
+        'TAMPER_UNKNOWN_PRODUCT_REJECTED',
+        'system',
+        `Rejected checkout with unknown or unregistered product ID: ${rawItem.productId}`,
+        rawItem.productId
+      );
+      saveDatabaseBestEffort();
+      return {
+        ok: false,
+        statusCode: 400,
+        error: `تم رفض الطلب: المنتج (${rawItem.productId}) غير موجود في الكاتالوج المعتمد على الخادم.`,
       };
     }
 
@@ -1279,7 +1295,7 @@ export async function processServerCheckout(input: ServerCheckoutInput): Promise
 
   const now = new Date().toISOString();
   const orderId = `ord_${Date.now()}_${crypto.randomBytes(2).toString('hex')}`;
-  const trackingNumber = `ECH-TN-${Math.floor(100000 + Math.random() * 900000)}`;
+  const trackingNumber = `ECH-TN-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
   const paymentReference = `ECH-REF-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
   const transactionId = `txn_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
 
@@ -1992,7 +2008,7 @@ export async function adminCreateManualOrder(input: Partial<Order>): Promise<{
     : `ord_manual_${Date.now()}_${crypto.randomBytes(2).toString('hex')}`;
   const trackingNumber =
     (input.trackingNumber || '').trim().toUpperCase() ||
-    `ECH-TN-${Math.floor(100000 + Math.random() * 900000)}`;
+    `ECH-TN-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
   const paymentMethod = normalizePaymentMethod(input.paymentMethod || 'cod');
   const paymentStatus: PaymentStatus =
     input.paymentStatus ||
@@ -2080,6 +2096,28 @@ export async function adminDeleteOrder(orderId: string): Promise<{
     return { ok: false, statusCode: 404, error: 'الطلب غير موجود على الخادم.' };
   }
 
+  const linkedTransactions = paymentDb.transactions.filter(t => t.orderId === target.id);
+  const linkedLedgers = paymentDb.vendorLedgers.filter(v => v.orderId === target.id);
+  const hasProtectedFinancialStatus =
+    target.paymentStatus === 'Paid' ||
+    target.paymentStatus === 'Payment Verification' ||
+    target.paymentStatus === 'Refunded' ||
+    linkedTransactions.some(
+      t => t.status === 'Paid' || t.status === 'Payment Verification' || t.status === 'Refunded'
+    ) ||
+    linkedLedgers.some(
+      v => v.paymentStatus === 'Paid' || v.payoutStatus === 'settled' || v.payoutStatus === 'eligible'
+    );
+
+  if (hasProtectedFinancialStatus) {
+    return {
+      ok: false,
+      statusCode: 409,
+      error:
+        'لا يمكن حذف هذا الطلب نهائياً لوجود معاملات مالية مدفوعة أو قيد المراجعة أو تسويات بائعين مرتبطة به يجب الاحتفاظ بها قانونياً. استخدم الإلغاء أو الاسترجاع بدلاً من الحذف.',
+    };
+  }
+
   const snapshot = JSON.stringify(paymentDb);
   paymentDb.orders = paymentDb.orders.filter(o => o.id !== target.id);
   paymentDb.transactions = paymentDb.transactions.filter(t => t.orderId !== target.id);
@@ -2089,7 +2127,7 @@ export async function adminDeleteOrder(orderId: string): Promise<{
   appendActivity(
     'ORDER_DELETED',
     'admin',
-    `Admin deleted order ${target.trackingNumber} (${target.customerName}).`,
+    `Admin permanently deleted unpaid/non-financial order ${target.trackingNumber} (${target.customerName}).`,
     target.id,
     target.totalAmount
   );
@@ -2100,7 +2138,35 @@ export async function adminDeleteOrder(orderId: string): Promise<{
   return { ok: true };
 }
 
-export function trackPublicOrder(code: string, isAdmin = false): {
+function maskPersonName(raw: string): string {
+  const cleaned = String(raw || '').trim();
+  if (!cleaned) return '***';
+  const parts = cleaned.split(/\s+/);
+  return parts
+    .map((p) => (p.length <= 1 ? '*' : `${p.slice(0, 1)}${'*'.repeat(Math.min(4, p.length - 1))}`))
+    .join(' ');
+}
+
+function maskPhoneNumber(raw: string): string {
+  const digits = String(raw || '').replace(/\D/g, '');
+  if (digits.length < 4) return '****';
+  return `${digits.slice(0, 2)}****${digits.slice(-2)}`;
+}
+
+function doesPhoneMatchOrder(orderPhone: string, submittedPhone?: string): boolean {
+  const submitted = String(submittedPhone || '').trim();
+  if (!submitted) return false;
+  const orderNorm = normalizeTunisianPhone(orderPhone || '');
+  const subNorm = normalizeTunisianPhone(submitted);
+  if (orderNorm.valid && subNorm.valid) {
+    return orderNorm.normalized === subNorm.normalized;
+  }
+  const oDigits = String(orderPhone || '').replace(/\D/g, '').slice(-8);
+  const sDigits = submitted.replace(/\D/g, '').slice(-8);
+  return oDigits.length >= 6 && sDigits.length >= 6 && oDigits === sDigits;
+}
+
+export function trackPublicOrder(code: string, isAdmin = false, phoneProof?: string): {
   ok: boolean;
   statusCode?: number;
   error?: string;
@@ -2121,12 +2187,34 @@ export function trackPublicOrder(code: string, isAdmin = false): {
   if (isAdmin) {
     return { ok: true, order: found };
   }
-  const sanitizedOrder: Order = {
+  if (doesPhoneMatchOrder(found.customerPhone, phoneProof)) {
+    return {
+      ok: true,
+      order: {
+        ...found,
+        customerEmail: '',
+        notes: '',
+        piiMasked: false,
+      },
+    };
+  }
+  const maskedOrder: Order = {
     ...found,
+    customerName: maskPersonName(found.customerName),
+    customerPhone: maskPhoneNumber(found.customerPhone),
     customerEmail: '',
     notes: '',
+    shippingAddress: {
+      ...found.shippingAddress,
+      fullName: maskPersonName(found.shippingAddress?.fullName || found.customerName),
+      phone: maskPhoneNumber(found.shippingAddress?.phone || found.customerPhone),
+      street: '***',
+      notes: undefined,
+    },
+    transferProof: undefined,
+    piiMasked: true,
   };
-  return { ok: true, order: sanitizedOrder };
+  return { ok: true, order: maskedOrder };
 }
 
 export function getAdminPaymentOverview() {

@@ -432,6 +432,32 @@ export function generateSmartStoreReply(params: {
 
 // --- Client-Server Persistence API Helpers ---
 
+const CHAT_TOKEN_PREFIX = 'echox_chat_token_';
+
+export function getStoredChatToken(sessionId: string): string | null {
+  if (!sessionId) return null;
+  try {
+    const tok = localStorage.getItem(`${CHAT_TOKEN_PREFIX}${sessionId}`);
+    return tok && tok.trim() ? tok.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setStoredChatToken(sessionId: string, token?: string | null) {
+  if (!sessionId || !token || !token.trim()) return;
+  try {
+    localStorage.setItem(`${CHAT_TOKEN_PREFIX}${sessionId}`, token.trim());
+  } catch {}
+}
+
+export function clearStoredChatToken(sessionId?: string) {
+  if (!sessionId) return;
+  try {
+    localStorage.removeItem(`${CHAT_TOKEN_PREFIX}${sessionId}`);
+  } catch {}
+}
+
 export async function fetchPublicChatConfig(): Promise<SupportChatConfig | null> {
   try {
     const res = await fetch('/api/chat/config', { credentials: 'include' });
@@ -447,8 +473,12 @@ export async function fetchPublicChatConfig(): Promise<SupportChatConfig | null>
 export async function fetchChatThreadServer(sessionId: string): Promise<SupportChatThread | null> {
   if (!sessionId) return null;
   try {
+    const token = getStoredChatToken(sessionId);
+    const headers: Record<string, string> = {};
+    if (token) headers['X-Chat-Token'] = token;
     const res = await fetch(`/api/chat/session/${encodeURIComponent(sessionId)}`, {
       credentials: 'include',
+      headers,
     });
     if (!res.ok) return null;
     const data = await res.json();
@@ -467,14 +497,20 @@ export async function pushChatExchangeServer(params: {
   actionView?: string;
 }): Promise<SupportChatThread | null> {
   try {
+    const token = getStoredChatToken(params.sessionId);
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['X-Chat-Token'] = token;
     const res = await fetch(`/api/chat/session/${encodeURIComponent(params.sessionId)}/message`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       credentials: 'include',
       body: JSON.stringify(params),
     });
     if (!res.ok) return null;
     const data = await res.json();
+    if (typeof data?.chatToken === 'string' && data.chatToken) {
+      setStoredChatToken(params.sessionId, data.chatToken);
+    }
     return data?.thread || null;
   } catch {
     return null;

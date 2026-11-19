@@ -75,6 +75,15 @@ service cloud.firestore {
         data.name is string && data.name.size() >= 2 && data.name.size() <= 150;
     }
 
+    function isValidUser(data, userId) {
+      return data.keys().hasAll(['id', 'email', 'role']) &&
+        data.id is string && data.id == userId &&
+        data.email is string && data.email.size() >= 5 && data.email.size() <= 150 &&
+        data.role in ['customer', 'owner'] &&
+        (!('fullName' in data) || (data.fullName is string && data.fullName.size() <= 100)) &&
+        (!('phone' in data) || (data.phone is string && data.phone.size() <= 25));
+    }
+
     // ===============================================================
     // RESOURCE ACCESS CONTROL MATRIX
     // ===============================================================
@@ -120,20 +129,20 @@ service cloud.firestore {
       allow delete: if isValidId(companyId) && isOwner();
     }
 
-    // 🛒 Orders: Customer submission with schema validation, owner administration
+    // 🛒 Orders: Server-only creation & PII protection; signed-in customers may only read their own verified orders
     match /orders/{orderId} {
       allow get: if isValidId(orderId) && (
         isOwner() || 
-        (isSignedIn() && resource.data.customerId == request.auth.uid)
+        (isSignedIn() && request.auth.token.email_verified == true && resource.data.customerId == request.auth.uid)
       );
-      allow list: if isOwner() || (isSignedIn() && resource.data.customerId == request.auth.uid);
-      allow create: if isValidId(orderId) && isValidOrder(incoming());
+      allow list: if isOwner() || (isSignedIn() && request.auth.token.email_verified == true && resource.data.customerId == request.auth.uid);
+      allow create: if false;
       allow update, delete: if isValidId(orderId) && isOwner();
     }
 
-    // 💬 Customer Inquiries & Contact Messages
+    // 💬 Customer Inquiries: Server-only creation with rate limiting & sanitization
     match /inquiries/{inquiryId} {
-      allow create: if isValidId(inquiryId) && isValidInquiry(incoming());
+      allow create: if false;
       allow get, list, update, delete: if isValidId(inquiryId) && isOwner();
     }
 
@@ -143,16 +152,36 @@ service cloud.firestore {
       allow write: if isValidId(settingId) && isOwner();
     }
 
-    // 🔐 Sovereign Owner Security & Lock Screen Settings (Restricted strictly to verified Owner)
+    // 🔐 Sovereign Owner Security & Lock Screen Settings (Server-only via Service Account)
     match /store_settings/{settingId} {
-      allow get, list, write: if isValidId(settingId) && isOwner();
+      allow read, write: if false;
     }
 
-    // 👤 User Profiles: Split PII Protection
+    // 👤 User Profiles: Strict schema, email verification, and non-escalatable role immutability
     match /users/{userId} {
-      allow get: if isValidId(userId) && (isOwner() || (isSignedIn() && request.auth.uid == userId));
+      allow get: if isValidId(userId) && (
+        isOwner() ||
+        (isSignedIn() && request.auth.token.email_verified == true && request.auth.uid == userId)
+      );
       allow list: if isOwner();
-      allow write: if isValidId(userId) && (isOwner() || (isSignedIn() && request.auth.uid == userId));
+      allow create: if isValidId(userId) && isValidUser(incoming(), userId) && (
+        isOwner() ||
+        (isSignedIn() &&
+          request.auth.token.email_verified == true &&
+          request.auth.uid == userId &&
+          incoming().role == 'customer' &&
+          incoming().email == request.auth.token.email)
+      );
+      allow update: if isValidId(userId) && isValidUser(incoming(), userId) && (
+        isOwner() ||
+        (isSignedIn() &&
+          request.auth.token.email_verified == true &&
+          request.auth.uid == userId &&
+          incoming().id == existing().id &&
+          incoming().role == existing().role &&
+          incoming().role == 'customer')
+      );
+      allow delete: if isValidId(userId) && isOwner();
     }
   }
 }

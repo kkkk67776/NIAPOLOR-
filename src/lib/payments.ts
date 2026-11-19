@@ -122,8 +122,9 @@ export async function fetchPublicPaymentConfig(): Promise<PaymentSystemPublicCon
   return res.json();
 }
 
-export async function trackOrderServer(code: string): Promise<{ ok: boolean; order?: Order; error?: string }> {
-  const res = await fetch(`/api/payments/track/${encodeURIComponent(code)}`, { cache: 'no-store' });
+export async function trackOrderServer(code: string, phone?: string): Promise<{ ok: boolean; order?: Order; error?: string }> {
+  const qs = phone && phone.trim() ? `?phone=${encodeURIComponent(phone.trim())}` : '';
+  const res = await fetch(`/api/payments/track/${encodeURIComponent(code)}${qs}`, { cache: 'no-store' });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.success) {
     return { ok: false, error: data.error || 'Order not found' };
@@ -311,7 +312,9 @@ export async function createAdminManualOrderServer(payload: Partial<Order>): Pro
   return { ok: true, order: data.order };
 }
 
-export async function deleteAdminOrderServer(orderId: string): Promise<{ ok: boolean; error?: string }> {
+export async function deleteAdminOrderServer(
+  orderId: string
+): Promise<{ ok: boolean; error?: string; verified?: boolean; backupRetentionNote?: string }> {
   const res = await fetch(`/api/admin/orders/${encodeURIComponent(orderId)}`, {
     method: 'DELETE',
     credentials: 'include',
@@ -322,7 +325,11 @@ export async function deleteAdminOrderServer(orderId: string): Promise<{ ok: boo
   if (!res.ok || !data.success) {
     return { ok: false, error: data.error || 'Failed to delete order' };
   }
-  return { ok: true };
+  return {
+    ok: true,
+    verified: Boolean(data.verified),
+    backupRetentionNote: data.backupRetentionNote,
+  };
 }
 
 export async function saveAdminPaymentConfig(payload: any): Promise<{ ok: boolean; config?: PaymentSystemPublicConfig; error?: string }> {

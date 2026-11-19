@@ -190,6 +190,75 @@ export async function handleEdgeStoreRoute(
     });
   }
 
+function isEdgeSafeMediaUrl(raw: unknown): boolean {
+  if (typeof raw !== 'string') return false;
+  const trimmed = raw.trim();
+  if (!trimmed) return true;
+  if (trimmed.length > 4_800_000) return false;
+  const lower = trimmed.toLowerCase();
+  if (
+    lower.startsWith('javascript:') ||
+    lower.startsWith('vbscript:') ||
+    lower.startsWith('data:text/') ||
+    lower.startsWith('data:image/svg') ||
+    lower.includes('<svg') ||
+    lower.includes('<script')
+  ) {
+    return false;
+  }
+  if (lower.startsWith('data:image/')) {
+    return /^data:image\/(png|jpeg|jpg|webp|gif);base64,/i.test(trimmed);
+  }
+  return (
+    trimmed.startsWith('/') ||
+    /^https:\/\//i.test(trimmed) ||
+    /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//i.test(trimmed)
+  );
+}
+
+function validateEdgeStorePatch(patch: Partial<StorefrontDatabase>): { ok: boolean; error?: string } {
+  if (Array.isArray(patch.products)) {
+    for (const p of patch.products) {
+      if (!p || typeof p !== 'object') {
+        return { ok: false, error: 'بيانات منتج غير صالحة.' };
+      }
+      if (typeof p.price !== 'number' || !Number.isFinite(p.price) || p.price < 0 || p.price > 10_000_000) {
+        return { ok: false, error: `سعر غير صالح للمنتج ${p.id || ''}.` };
+      }
+      if (typeof p.stock !== 'number' || !Number.isFinite(p.stock) || p.stock < 0 || p.stock > 1_000_000) {
+        return { ok: false, error: `كمية مخزون غير صالحة للمنتج ${p.id || ''}.` };
+      }
+      if (Array.isArray(p.images)) {
+        for (const img of p.images) {
+          if (!isEdgeSafeMediaUrl(img)) {
+            return { ok: false, error: `تم رفض رابط صورة غير آمن أو بصيغة SVG/Script للمنتج ${p.id || ''}.` };
+          }
+        }
+      }
+    }
+  }
+  if (Array.isArray(patch.companies)) {
+    for (const c of patch.companies) {
+      if (c && c.logo && !isEdgeSafeMediaUrl(c.logo)) {
+        return { ok: false, error: `شعار الشركة ${c.id || ''} غير آمن.` };
+      }
+    }
+  }
+  if (Array.isArray(patch.categories)) {
+    for (const cat of patch.categories) {
+      if (cat && (cat as any).imageUrl && !isEdgeSafeMediaUrl((cat as any).imageUrl)) {
+        return { ok: false, error: `صورة التصنيف ${cat.id || ''} غير آمنة.` };
+      }
+    }
+  }
+  if (patch.siteSettings && (patch.siteSettings as any).logoUrl) {
+    if (!isEdgeSafeMediaUrl((patch.siteSettings as any).logoUrl)) {
+      return { ok: false, error: 'رابط شعار المتجر غير آمن.' };
+    }
+  }
+  return { ok: true };
+}
+
   if (method === 'PUT' && pathname === '/api/admin/store/state') {
     const auth = await requireEdgeAdminAuth(request, env);
     if (!auth.ok) return auth.response;
@@ -197,6 +266,11 @@ export async function handleEdgeStoreRoute(
     const patch = (await request.json().catch(() => null)) as Partial<StorefrontDatabase> | null;
     if (!patch || typeof patch !== 'object') {
       return jsonResponse({ success: false, error: 'بيانات غير صالحة.' }, 400);
+    }
+
+    const secCheck = validateEdgeStorePatch(patch);
+    if (!secCheck.ok) {
+      return jsonResponse({ success: false, error: secCheck.error || 'بيانات غير آمنة.' }, 400);
     }
 
     let prevProductsSnapshot: Product[] = [];

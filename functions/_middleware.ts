@@ -27,6 +27,12 @@ export async function onRequest(context: MiddlewareContext): Promise<Response> {
   newResponse.headers.set('X-Content-Type-Options', 'nosniff');
   newResponse.headers.set('X-Frame-Options', 'SAMEORIGIN');
   newResponse.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  newResponse.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  const p = url.pathname.toLowerCase();
+  newResponse.headers.set(
+    'Cross-Origin-Resource-Policy',
+    p.startsWith('/assets/') || p.startsWith('/api/media/') ? 'cross-origin' : 'same-site'
+  );
   newResponse.headers.set(
     'Content-Security-Policy',
     [

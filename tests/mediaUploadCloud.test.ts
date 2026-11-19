@@ -87,6 +87,7 @@ async function runTests(): Promise<void> {
 
   try {
     // 1. Unauthenticated upload & gateToken-only upload must fail closed (401)
+    let validGateToken = '';
     {
       const unauth = await fetch(`${baseUrl}/api/admin/media/upload`, {
         method: 'POST',
@@ -102,6 +103,7 @@ async function runTests(): Promise<void> {
       });
       const codeData = (await codeRes.json()) as { success: boolean; gateToken?: string };
       assert.equal(codeData.success, true);
+      validGateToken = codeData.gateToken || '';
 
       const gateOnlyRes = await fetch(`${baseUrl}/api/admin/media/upload`, {
         method: 'POST',
@@ -119,7 +121,7 @@ async function runTests(): Promise<void> {
     const pinRes = await fetch(`${baseUrl}/api/security/verifyPin`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: TEST_PIN }),
+      body: JSON.stringify({ pin: TEST_PIN, gateToken: validGateToken }),
     });
     assert.equal(pinRes.status, 200);
     const pinData = (await pinRes.json()) as {

@@ -223,24 +223,33 @@ async function run(): Promise<void> {
     assertEq(order.shippingFee, expectedShipping, 'Existing shipping fee rules preserved');
     assertEq(order.subtotal, prod.price, 'Subtotal matches product price');
 
-    // Verify public tracking returns separate governorate & delegation
+    // Verify public tracking returns separate governorate & delegation with masked PII, and unmasks with phone proof
     const trackRes = await fetch(`${baseUrl}/api/payments/track/${encodeURIComponent(order.trackingNumber)}`);
     assertEq(trackRes.status, 200, 'Public tracking returns 200 for new order');
     const trackJson = (await trackRes.json()) as any;
+    assertEq(trackJson.order.piiMasked, true, 'Anonymous tracking marks PII as masked');
+    assertEq(trackJson.order.shippingAddress.street, '***', 'Anonymous tracking masks street address');
     assertEq(trackJson.order.shippingAddress.governorate, 'sfax', 'Tracked order exposes governorate');
     assertEq(trackJson.order.shippingAddress.delegation, 'ساقية الزيت', 'Tracked order exposes delegation');
     assertEq(getGovernorateName(trackJson.order.shippingAddress.governorate, 'ar'), 'صفاقس', 'Governorate name resolves');
 
+    const unmaskedTrackRes = await fetch(`${baseUrl}/api/payments/track/${encodeURIComponent(order.trackingNumber)}?phone=55123456`);
+    assertEq(unmaskedTrackRes.status, 200, 'Tracking with phone proof returns 200');
+    const unmaskedTrackJson = (await unmaskedTrackRes.json()) as any;
+    assertEq(unmaskedTrackJson.order.piiMasked, false, 'Matching phone proof unmasks recipient PII');
+    assertEq(unmaskedTrackJson.order.shippingAddress.street, 'حي الأنس نهج الزيتون منزل 14', 'Unmasked street returned with phone proof');
+
     // Verify admin sees full order & notification includes governorate + delegation
-    await fetch(`${baseUrl}/api/security/verifyAccessCode`, {
+    const codeRes = await fetch(`${baseUrl}/api/security/verifyAccessCode`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.1' },
       body: JSON.stringify({ code: TEST_CODE }),
     });
+    const codeJson = (await codeRes.json()) as any;
     const loginRes = await fetch(`${baseUrl}/api/security/verifyPin`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.1' },
-      body: JSON.stringify({ pin: TEST_PIN }),
+      body: JSON.stringify({ pin: TEST_PIN, gateToken: codeJson.gateToken }),
     });
     const loginJson = (await loginRes.json()) as any;
     const overviewRes = await fetch(`${baseUrl}/api/admin/payments/overview`, {

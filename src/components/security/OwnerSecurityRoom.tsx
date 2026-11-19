@@ -10,7 +10,7 @@ import {
   getAdminAuthHeaders,
   verifyPinServer,
   updatePinServer,
-  consumePendingVaultGateToken,
+  clearPendingVaultGateToken,
   hasPendingVaultGateToken,
 } from '../../lib/security';
 
@@ -105,7 +105,7 @@ export default function OwnerSecurityRoom({ onUnlockSuccess, onNavigate, vaultOp
         }
       }
 
-      if (active && hasPendingVaultGateToken() && consumePendingVaultGateToken()) {
+      if (active && hasPendingVaultGateToken()) {
         openModal(false);
       }
     };
@@ -120,7 +120,7 @@ export default function OwnerSecurityRoom({ onUnlockSuccess, onNavigate, vaultOp
     if (vaultOpenNonce > 0) {
       if (isUnlocked) {
         if (onUnlockSuccess) onUnlockSuccess();
-      } else if (consumePendingVaultGateToken()) {
+      } else if (hasPendingVaultGateToken()) {
         openModal(false);
       }
     }
@@ -130,7 +130,7 @@ export default function OwnerSecurityRoom({ onUnlockSuccess, onNavigate, vaultOp
     const handleOpenVaultEvent = () => {
       if (isUnlocked) {
         if (onUnlockSuccess) onUnlockSuccess();
-      } else if (consumePendingVaultGateToken()) {
+      } else if (hasPendingVaultGateToken()) {
         openModal(false);
       }
     };
@@ -511,7 +511,10 @@ export default function OwnerSecurityRoom({ onUnlockSuccess, onNavigate, vaultOp
         <div className="mt-6 flex items-center justify-end text-xs pt-2 border-t border-white/5">
           <button
             type="button"
-            onClick={() => setIsModalOpen(false)}
+            onClick={() => {
+              setIsModalOpen(false);
+              clearPendingVaultGateToken();
+            }}
             className="text-gray-400 hover:text-white transition cursor-pointer"
           >
             إلغاء وإخفاء

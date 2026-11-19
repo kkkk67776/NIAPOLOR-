@@ -44,7 +44,43 @@ const DEFAULT_CHAT_CONFIG: SupportChatConfig = {
 
 function sanitizeText(input: unknown, maxLen = 1500): string {
   if (typeof input !== 'string') return '';
-  return input.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').trim().slice(0, maxLen);
+  return input
+    .replace(/<[^>]*>/g, '')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+    .trim()
+    .slice(0, maxLen);
+}
+
+const ALLOWED_CHAT_ACTION_VIEWS = new Set(['my_orders', 'promise', 'companies', 'contact']);
+
+function isSafeChatMediaUrl(raw: unknown): boolean {
+  if (typeof raw !== 'string') return false;
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.length > 1000) return false;
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith('javascript:') || lower.startsWith('vbscript:') || lower.includes('<svg')) {
+    return false;
+  }
+  if (lower.startsWith('data:')) {
+    return /^data:image\/(png|jpeg|jpg|webp|gif);base64,/i.test(trimmed);
+  }
+  return trimmed.startsWith('/') || /^https:\/\//i.test(trimmed);
+}
+
+function sanitizeSuggestedProducts(rawList: unknown): ChatSuggestedProduct[] | undefined {
+  if (!Array.isArray(rawList)) return undefined;
+  const out: ChatSuggestedProduct[] = [];
+  for (const item of rawList.slice(0, 4)) {
+    if (!item || typeof item !== 'object') continue;
+    const candidate = item as Partial<ChatSuggestedProduct>;
+    const id = sanitizeText(candidate.id, 80);
+    const name = sanitizeText(candidate.name, 140);
+    const price = Number(candidate.price);
+    const image = isSafeChatMediaUrl(candidate.image) ? String(candidate.image).trim() : '';
+    if (!id || !name || !Number.isFinite(price) || price <= 0) continue;
+    out.push({ id, name, price, image });
+  }
+  return out.length > 0 ? out : undefined;
 }
 
 function loadInitialChatDb(): ChatDatabase {
@@ -285,14 +321,15 @@ export async function recordCustomerChatExchange(params: {
 
   const replyText = sanitizeText(params.autoReplyText, 1600);
   if (replyText && chatDb.config.autoReplyEnabled) {
+    const cleanAction = sanitizeText(params.actionView, 40);
     const autoMsg: ChatMessage = {
       id: `chat_auto_${Date.now() + 1}_${Math.random().toString(36).slice(2, 6)}`,
       sender: 'owner',
       source: 'auto',
       text: replyText,
       timestamp: new Date(Date.now() + 50).toISOString(),
-      suggestedProducts: Array.isArray(params.suggestedProducts) ? params.suggestedProducts.slice(0, 4) : undefined,
-      actionView: sanitizeText(params.actionView, 40) || undefined,
+      suggestedProducts: sanitizeSuggestedProducts(params.suggestedProducts),
+      actionView: ALLOWED_CHAT_ACTION_VIEWS.has(cleanAction) ? cleanAction : undefined,
     };
     thread.messages.push(autoMsg);
   }

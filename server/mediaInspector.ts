@@ -1,5 +1,7 @@
 import dns from 'dns';
 import fs from 'fs';
+import http from 'http';
+import https from 'https';
 import net from 'net';
 import path from 'path';
 import { normalizeProductImageUrl } from '../src/lib/imageUrl';
@@ -57,7 +59,10 @@ function isPrivateOrLoopbackIp(ip: string): boolean {
   return true;
 }
 
-async function assertSafePublicTarget(targetUrl: URL, allowLoopbackForTest: boolean): Promise<void> {
+async function assertSafePublicTarget(
+  targetUrl: URL,
+  allowLoopbackForTest: boolean
+): Promise<{ pinnedAddress: string; family: 4 | 6 } | null> {
   const host = targetUrl.hostname.toLowerCase();
   if (!host) throw new Error('نطاق الرابط غير صالح.');
 
@@ -71,15 +76,16 @@ async function assertSafePublicTarget(targetUrl: URL, allowLoopbackForTest: bool
     throw new Error('لا يُسمح بفحص روابط الشبكة المحلية.');
   }
 
-  if (net.isIP(host)) {
+  const ipVer = net.isIP(host);
+  if (ipVer) {
     if (!allowLoopbackForTest && isPrivateOrLoopbackIp(host)) {
       throw new Error('عنوان IP خاص غير مسموح به لأسباب أمنية.');
     }
-    return;
+    return { pinnedAddress: host, family: ipVer === 6 ? 6 : 4 };
   }
 
   if (allowLoopbackForTest && (host === '127.0.0.1' || host === 'localhost')) {
-    return;
+    return { pinnedAddress: '127.0.0.1', family: 4 };
   }
 
   const records = await dns.promises.lookup(host, { all: true });
@@ -91,6 +97,11 @@ async function assertSafePublicTarget(targetUrl: URL, allowLoopbackForTest: bool
       throw new Error('يشير النطاق إلى عنوان شبكة داخلية محظور أمنياً.');
     }
   }
+  const preferred = records.find((r) => r.family === 4) || records[0];
+  return {
+    pinnedAddress: preferred.address,
+    family: preferred.family === 6 ? 6 : 4,
+  };
 }
 
 function detectFormatFromMagicBytes(buf: Buffer): { mime: string; format: string } | null {
@@ -135,61 +146,124 @@ function extractMetaImageFromHtml(html: string, pageUrl: string): string | undef
   return undefined;
 }
 
-async function fetchRemoteWithSafeRedirects(
-  initialUrl: string,
-  method: 'HEAD' | 'GET',
-  allowLoopbackForTest: boolean
-): Promise<{ finalUrl: string; res: globalThis.Response }> {
-  let currentUrl = initialUrl;
-  for (let hop = 0; hop < 5; hop++) {
-    const parsed = new URL(currentUrl);
-    await assertSafePublicTarget(parsed, allowLoopbackForTest);
+interface PinnedHttpResult {
+  status: number;
+  ok: boolean;
+  headers: Record<string, string>;
+  bodyPrefix: Buffer;
+}
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 7000);
-    try {
-      const res = await fetch(currentUrl, {
+function pinnedHttpRequest(
+  targetUrl: URL,
+  method: 'HEAD' | 'GET',
+  pinned: { pinnedAddress: string; family: 4 | 6 } | null,
+  maxBytes = 65536
+): Promise<PinnedHttpResult> {
+  return new Promise((resolve, reject) => {
+    const isHttps = targetUrl.protocol === 'https:';
+    const transport = isHttps ? https : http;
+    const req = transport.request(
+      targetUrl,
+      {
         method,
-        redirect: 'manual',
-        signal: controller.signal,
         headers: {
           'User-Agent': 'Mozilla/5.0 (compatible; ECHOXStoreMediaCheck/1.0)',
           Accept: 'image/webp,image/png,image/jpeg,image/*;q=0.9,text/html;q=0.5,*/*;q=0.1',
           ...(method === 'GET' ? { Range: 'bytes=0-65535' } : {}),
         },
-      });
-      if (res.status >= 300 && res.status < 400) {
-        const location = res.headers.get('location');
-        if (!location) {
-          return { finalUrl: currentUrl, res };
+        timeout: 7000,
+        ...(pinned
+          ? {
+              lookup: (
+                _hostname: string,
+                opts: dns.LookupOptions,
+                cb: (err: NodeJS.ErrnoException | null, address: string | dns.LookupAddress[], family?: number) => void
+              ) => {
+                if (opts && (opts as any).all) {
+                  cb(null, [{ address: pinned.pinnedAddress, family: pinned.family }]);
+                } else {
+                  cb(null, pinned.pinnedAddress, pinned.family);
+                }
+              },
+            }
+          : {}),
+      },
+      (res) => {
+        const flatHeaders: Record<string, string> = {};
+        for (const [k, v] of Object.entries(res.headers)) {
+          if (typeof v === 'string') flatHeaders[k.toLowerCase()] = v;
+          else if (Array.isArray(v)) flatHeaders[k.toLowerCase()] = v.join(', ');
         }
-        currentUrl = new URL(location, currentUrl).toString();
-        continue;
+        const status = res.statusCode || 0;
+        const ok = status >= 200 && status < 300;
+        if (method === 'HEAD' || (status >= 300 && status < 400)) {
+          res.resume();
+          resolve({ status, ok, headers: flatHeaders, bodyPrefix: Buffer.alloc(0) });
+          return;
+        }
+        const chunks: Buffer[] = [];
+        let total = 0;
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          resolve({
+            status,
+            ok,
+            headers: flatHeaders,
+            bodyPrefix: Buffer.concat(chunks).subarray(0, maxBytes),
+          });
+        };
+        res.on('data', (chunk: Buffer) => {
+          if (settled) return;
+          chunks.push(chunk);
+          total += chunk.length;
+          if (total >= maxBytes) {
+            res.destroy();
+            finish();
+          }
+        });
+        res.on('end', finish);
+        res.on('close', finish);
+        res.on('error', (err) => {
+          if (!settled) {
+            settled = true;
+            reject(err);
+          }
+        });
       }
-      return { finalUrl: currentUrl, res };
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-  throw new Error('تجاوز الرابط الحد الأقصى لإعادة التوجيه.');
+    );
+    req.on('timeout', () => {
+      const err = new Error('انتهت مهلة الاتصال بمصدر الصورة.');
+      (err as any).name = 'AbortError';
+      req.destroy(err);
+    });
+    req.on('error', reject);
+    req.end();
+  });
 }
 
-async function readPrefixBuffer(res: globalThis.Response, maxBytes = 65536): Promise<Buffer> {
-  if (!res.body) return Buffer.alloc(0);
-  const reader = res.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  try {
-    while (total < maxBytes) {
-      const { done, value } = await reader.read();
-      if (done || !value) break;
-      chunks.push(value);
-      total += value.byteLength;
+async function fetchRemoteWithSafeRedirects(
+  initialUrl: string,
+  method: 'HEAD' | 'GET',
+  allowLoopbackForTest: boolean
+): Promise<{ finalUrl: string; res: PinnedHttpResult }> {
+  let currentUrl = initialUrl;
+  for (let hop = 0; hop < 5; hop++) {
+    const parsed = new URL(currentUrl);
+    const pinned = await assertSafePublicTarget(parsed, allowLoopbackForTest);
+    const res = await pinnedHttpRequest(parsed, method, pinned, 65536);
+    if (res.status >= 300 && res.status < 400) {
+      const location = res.headers['location'];
+      if (!location) {
+        return { finalUrl: currentUrl, res };
+      }
+      currentUrl = new URL(location, currentUrl).toString();
+      continue;
     }
-  } finally {
-    await reader.cancel().catch(() => {});
+    return { finalUrl: currentUrl, res };
   }
-  return Buffer.concat(chunks).subarray(0, maxBytes);
+  throw new Error('تجاوز الرابط الحد الأقصى لإعادة التوجيه.');
 }
 
 export async function inspectImageUrlOnServer(
@@ -243,16 +317,23 @@ export async function inspectImageUrlOnServer(
     };
   }
 
-  // Local /assets/... check
+  // Local /assets/... check (with strict root containment)
   if (norm.url.startsWith('/assets/')) {
     const rel = norm.url.replace(/^\/+/, '').split('?')[0];
     if (rel.includes('..')) {
       return { ok: false, kind: 'invalid', inputUrl: rawUrl, normalizedUrl: norm.url, error: 'مسار غير صالح.' };
     }
+    const publicAssetsRoot = path.resolve(process.cwd(), 'public', 'assets') + path.sep;
+    const distAssetsRoot = path.resolve(process.cwd(), 'dist', 'assets') + path.sep;
+    const publicPath = path.resolve(process.cwd(), 'public', rel);
+    const distPath = path.resolve(process.cwd(), 'dist', rel);
     const candidates = [
-      path.resolve(process.cwd(), 'public', rel),
-      path.resolve(process.cwd(), 'dist', rel),
+      ...(publicPath.startsWith(publicAssetsRoot) ? [publicPath] : []),
+      ...(distPath.startsWith(distAssetsRoot) ? [distPath] : []),
     ];
+    if (candidates.length === 0) {
+      return { ok: false, kind: 'invalid', inputUrl: rawUrl, normalizedUrl: norm.url, error: 'مسار غير مصرح به.' };
+    }
     const hit = candidates.find((p) => fs.existsSync(p) && fs.statSync(p).isFile());
     if (!hit) {
       return {
@@ -308,17 +389,17 @@ export async function inspectImageUrlOnServer(
   }
 
   const probeRemote = async (target: string): Promise<MediaInspectResult> => {
-    let headResult = await fetchRemoteWithSafeRedirects(target, 'HEAD', allowLoopbackForTest);
+    const headResult = await fetchRemoteWithSafeRedirects(target, 'HEAD', allowLoopbackForTest);
     let res = headResult.res;
     let finalUrl = headResult.finalUrl;
 
-    if (res.status === 405 || res.status === 501 || res.status === 403 || !res.headers.get('content-type')) {
+    if (res.status === 405 || res.status === 501 || res.status === 403 || !res.headers['content-type']) {
       const getResult = await fetchRemoteWithSafeRedirects(target, 'GET', allowLoopbackForTest);
       res = getResult.res;
       finalUrl = getResult.finalUrl;
     }
 
-    const ctRaw = (res.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+    const ctRaw = (res.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
 
     if (!res.ok) {
       return {
@@ -351,12 +432,10 @@ export async function inspectImageUrlOnServer(
     }
 
     if (ctRaw.includes('text/html') || ctRaw.includes('application/xhtml')) {
-      // Read first 64KB of HTML to discover og:image if available
-      const htmlRes =
-        res.body && !res.bodyUsed
-          ? res
-          : (await fetchRemoteWithSafeRedirects(finalUrl, 'GET', allowLoopbackForTest)).res;
-      const buf = await readPrefixBuffer(htmlRes, 65536);
+      const buf =
+        res.bodyPrefix.length > 0
+          ? res.bodyPrefix
+          : (await fetchRemoteWithSafeRedirects(finalUrl, 'GET', allowLoopbackForTest)).res.bodyPrefix;
       const htmlText = buf.toString('utf8');
       const suggestedImageUrl = extractMetaImageFromHtml(htmlText, finalUrl);
       return {
@@ -373,11 +452,11 @@ export async function inspectImageUrlOnServer(
 
     // Some CDNs serve valid images with application/octet-stream — inspect binary magic bytes
     if (ctRaw === 'application/octet-stream' || !ctRaw) {
-      const byteRes =
-        res.body && !res.bodyUsed
-          ? res
-          : (await fetchRemoteWithSafeRedirects(finalUrl, 'GET', allowLoopbackForTest)).res;
-      const prefix = await readPrefixBuffer(byteRes, 64);
+      const prefix = (
+        res.bodyPrefix.length > 0
+          ? res.bodyPrefix
+          : (await fetchRemoteWithSafeRedirects(finalUrl, 'GET', allowLoopbackForTest)).res.bodyPrefix
+      ).subarray(0, 64);
       const magic = detectFormatFromMagicBytes(prefix);
       if (magic) {
         return {

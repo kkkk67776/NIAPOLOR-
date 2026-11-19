@@ -12,5 +12,13 @@ central_security_config.json
 sovereign_security.json
 owner_lock_config.json
 support_chat_data.json
+store_state.json
+notifications_db.json
+security_audit_logs.json
+security_quarantine.json
+security_revoked_sessions.json
+security_recovery_snapshots.json
+used_gate_nonces.json
+media_uploads/
 .hmac_secret
 .backups/

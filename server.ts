@@ -3,6 +3,7 @@ import { createServer as createViteServer } from 'vite';
 import crypto from 'crypto';
 import dns from 'dns';
 import dotenv from 'dotenv';
+import net from 'net';
 import path from 'path';
 import fs from 'fs';
 import argon2 from 'argon2';
@@ -41,6 +42,11 @@ import {
   getPublicStoreState,
   getAdminStoreState,
   updateAdminStoreState,
+  hardDeleteProduct,
+  hardDeleteCategory,
+  hardDeleteCompany,
+  hardDeleteBanner,
+  type HardDeleteEntityResult,
   addPublicProductReview,
   addPublicInquiry,
   adminReplyToInquiry,
@@ -134,6 +140,7 @@ if (process.env.VITE_FIREBASE_MEASUREMENT_ID === 'VITE_FIREBASE_API_KEY') {
 }
 
 const app = express();
+app.disable('x-powered-by');
 app.set('trust proxy', 1);
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
@@ -240,11 +247,26 @@ function normalizeIpString(raw: string): string {
 }
 
 function getClientIp(req: Request): string {
-  const cfIp = (req.headers['cf-connecting-ip'] as string) || '';
-  if (cfIp.trim()) return normalizeIpString(cfIp);
-  const fwd = (req.headers['x-forwarded-for'] as string) || '';
-  const first = fwd.split(',')[0].trim();
-  return normalizeIpString(first || req.ip || req.socket.remoteAddress || '127.0.0.1');
+  const proxySecret = (process.env.CF_PROXY_SECRET || '').trim();
+  const hasTrustedEdgeHeader =
+    process.env.TRUST_CF_HEADERS === '1' ||
+    (proxySecret.length >= 16 && String(req.headers['x-edge-proxy-secret'] || '') === proxySecret) ||
+    process.env.NODE_ENV !== 'production';
+
+  if (hasTrustedEdgeHeader) {
+    const rawCf = String(req.headers['cf-connecting-ip'] || '').trim();
+    if (rawCf) {
+      const cfIp = normalizeIpString(rawCf);
+      if (net.isIP(cfIp)) return cfIp;
+    }
+    const fwd = ((req.headers['x-forwarded-for'] as string) || '').split(',')[0].trim();
+    if (fwd) {
+      const fwdIp = normalizeIpString(fwd);
+      if (net.isIP(fwdIp)) return fwdIp;
+    }
+  }
+
+  return normalizeIpString(req.ip || req.socket.remoteAddress || '127.0.0.1');
 }
 
 function getRequestOrigin(req: Request): string {
@@ -317,15 +339,29 @@ app.use((req: Request, res: Response, next) => {
     res.setHeader('Vary', 'Origin');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-CSRF-Token, X-File-Name');
+    res.setHeader(
+      'Access-Control-Allow-Headers',
+      'Content-Type, Authorization, X-CSRF-Token, X-File-Name, X-Chat-Token, X-Tracking-Phone'
+    );
     if (req.method === 'OPTIONS') {
       return res.status(204).end();
     }
+  } else if (req.method === 'OPTIONS' && reqOrigin) {
+    return res.status(403).json({ success: false, error: 'Origin not allowed' });
   }
 
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  const p = req.path.toLowerCase();
+  res.setHeader(
+    'Cross-Origin-Resource-Policy',
+    p.startsWith('/api/media/') || p.startsWith('/assets/') ? 'cross-origin' : 'same-site'
+  );
+  if (isHttpsRequest(req)) {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
   const effectiveHost = resolveAuthoritativeHost(req);
   const isLocalHost = isLoopbackHostname(effectiveHost);
   const isPreviewOrLocalHost = isAiStudioPreviewRequest(req) || isLocalHost;
@@ -351,7 +387,6 @@ app.use((req: Request, res: Response, next) => {
         : "frame-ancestors 'self'",
     ].join('; ')
   );
-  const p = req.path.toLowerCase();
   if (
     p.startsWith('/owner') ||
     p === '/my_orders' ||
@@ -379,10 +414,19 @@ app.use('/api/admin', async (_req, _res, next) => {
   next();
 });
 
-// Infrastructure health check endpoint
-app.get('/api/health', async (_req: Request, res: Response) => {
+// Infrastructure health check endpoint (minimized for anonymous callers, full details for owner)
+app.get('/api/health', async (req: Request, res: Response) => {
   res.setHeader('Cache-Control', 'no-store');
   await syncCentralSecurityIfStale().catch(() => null);
+  const session = resolveSessionRecord(req);
+  const isAdmin = Boolean(session && session.email === OWNER_EMAIL && session.owner && session.codeVerified);
+  if (!isAdmin) {
+    return res.json({
+      status: 'ok',
+      service: 'echox-store-api',
+      timestamp: new Date().toISOString(),
+    });
+  }
   const persistence = getPersistenceStatus();
   return res.json({
     status: 'ok',
@@ -396,10 +440,14 @@ app.get('/api/health', async (_req: Request, res: Response) => {
   });
 });
 
-// Google Search Console HTML file verification handler
+// Google Search Console HTML file verification handler (hex ID allowlist prevents reflected XSS)
 app.get('/google:id.html', (req: Request, res: Response) => {
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.send(`google-site-verification: google${req.params.id}.html`);
+  const id = String(req.params.id || '');
+  if (!/^[a-f0-9]{16,64}$/i.test(id)) {
+    return res.status(404).type('text/plain; charset=utf-8').send('Not Found');
+  }
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  return res.send(`google-site-verification: google${id}.html`);
 });
 
 // Search Engine Optimization: dynamic domain-aware robots.txt and sitemap.xml
@@ -582,6 +630,18 @@ async function hydrateRateLimitsFromCloud(): Promise<void> {
   } catch {}
 }
 
+async function syncRateLimitsNow(): Promise<void> {
+  if (!isCloudPersistenceEnabled()) return;
+  const now = Date.now();
+  const active: Record<string, RateLimitBucket> = {};
+  ipRateBuckets.forEach((b, k) => {
+    if (b.lockoutUntil > now || (b.attempts > 0 && now - b.lastSeen < 15 * 60 * 1000)) {
+      active[k] = b;
+    }
+  });
+  await saveCloudJson(CLOUD_RATE_LIMITS_KEY, { buckets: active, updatedAt: new Date().toISOString() }).catch(() => {});
+}
+
 function getBucket(namespace: string, ip: string): RateLimitBucket {
   const key = `${namespace}:${ip}`;
   let bucket = ipRateBuckets.get(key);
@@ -608,6 +668,28 @@ function checkLockout(namespace: string, ip: string): { locked: boolean; remaini
     bucket.lockoutUntil = 0;
   }
   return { locked: false, remainingSeconds: 0, attempts: bucket.attempts };
+}
+
+function checkGlobalAuthLockout(namespace: string): { locked: boolean; remainingSeconds: number } {
+  const globalCheck = checkLockout(`__global_${namespace}`, 'all');
+  return { locked: globalCheck.locked, remainingSeconds: globalCheck.remainingSeconds };
+}
+
+function recordGlobalFailedAuth(namespace: string, maxGlobalAttempts = 25, windowMs = 15 * 60 * 1000, lockoutMs = 15 * 60 * 1000): { locked: boolean; remainingSeconds: number } {
+  const key = `__global_${namespace}`;
+  const bucket = getBucket(key, 'all');
+  const now = Date.now();
+  if (now - bucket.windowStart > windowMs) {
+    bucket.windowStart = now;
+    bucket.attempts = 0;
+  }
+  bucket.attempts += 1;
+  if (bucket.attempts >= maxGlobalAttempts) {
+    bucket.lockoutUntil = now + lockoutMs;
+    syncRateLimitsToCloudAsync();
+    return { locked: true, remainingSeconds: Math.ceil(lockoutMs / 1000) };
+  }
+  return { locked: false, remainingSeconds: 0 };
 }
 
 function recordFailedAttempt(namespace: string, ip: string, maxAttempts: number, lockoutMs: number): { locked: boolean; remainingSeconds: number; attemptsLeft: number } {
@@ -1156,14 +1238,14 @@ app.post('/api/security/emergencyLockdown', async (req: Request, res: Response) 
   }
 });
 
-// 8. securityStatus
+// 8. securityStatus (Minimized public response; omits default code flags)
 app.get('/api/security/status', (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
   const ip = getClientIp(req);
   const lockState = checkLockout('verifyCode', ip);
 
   return res.json({
     activeLayers: 4,
-    defaultCodeAvailable: true,
     locked: lockState.locked,
     remainingSeconds: lockState.remainingSeconds,
     attemptsLeft: Math.max(0, 3 - lockState.attempts),
@@ -1342,126 +1424,34 @@ app.post('/api/security/saveLockConfig', async (req: Request, res: Response) => 
   }
 });
 
-// 3. POST /api/security/verifyLockHash
-app.post('/api/security/verifyLockHash', async (req: Request, res: Response) => {
-  try {
-    const ip = getClientIp(req);
-    const lockState = checkLockout('osLock', ip);
-    if (lockState.locked) {
-      return res.status(429).json({
-        success: false,
-        lockedOut: true,
-        remainingSeconds: lockState.remainingSeconds,
-        error: `المحاولات كثيرة، انتظر ${lockState.remainingSeconds} ثانية`
-      });
-    }
-
-    if (!ownerLockConfig) {
-      ownerLockConfig = loadOwnerLockConfig();
-    }
-    const storedHash = ownerLockConfig?.lock_hash || ownerLockConfig?.code_hash;
-
-    if (!storedHash) {
-      return res.status(400).json({ error: 'لم يتم إعداد قفل الهاتف بعد.' });
-    }
-
-    const { hash, type = 'pattern' } = req.body || {};
-    if (!hash) {
-      return res.status(400).json({ error: 'الرمز المدخل مطلوب.' });
-    }
-
-    const incomingBuf = Buffer.from(String(hash).trim().toLowerCase());
-    const storedBuf = Buffer.from(storedHash.trim().toLowerCase());
-    const isMatch = incomingBuf.length === storedBuf.length && crypto.timingSafeEqual(incomingBuf, storedBuf);
-
-    if (!isMatch) {
-      const fail = recordFailedAttempt('osLock', ip, 5, 30000);
-      const currentAttempts = ownerLockConfig?.failed_attempts || [];
-      const newAttempts = [
-        { timestamp: new Date().toISOString(), type: String(type) },
-        ...currentAttempts
-      ].slice(0, 5);
-
-      if (ownerLockConfig) {
-        ownerLockConfig.failed_attempts = newAttempts;
-        void savePersistentJson(CLOUD_OWNER_LOCK_KEY, OWNER_LOCK_FILE, ownerLockConfig, { allowEphemeral: true });
-      }
-
-      if (fail.locked) {
-        return res.status(429).json({
-          success: false,
-          lockedOut: true,
-          remainingSeconds: fail.remainingSeconds,
-          error: `المحاولات كثيرة، انتظر ${fail.remainingSeconds} ثانية`
-        });
-      }
-
-      return res.status(401).json({
-        success: false,
-        lockedOut: false,
-        remainingSeconds: 0,
-        attemptsLeft: fail.attemptsLeft,
-        error: 'الرمز غير صحيح'
-      });
-    }
-
-    resetBucket('osLock', ip);
-
-    const session = resolveSessionRecord(req);
-    if (session) {
-      const activeSess = activeSessions.get(session.rawSessionId);
-      if (activeSess) {
-        activeSess.codeVerified = true;
-      }
-      const issuedAt = Date.now();
-      const signedCookie = signSessionId(session.rawSessionId, issuedAt, session.expiresAt, true);
-      res.setHeader('Set-Cookie', [
-        buildSessionCookie(req, signedCookie, Math.max(60, Math.floor((session.expiresAt - issuedAt) / 1000)))
-      ]);
-    }
-
-    return res.json({
-      success: true,
-      message: 'تم فك القفل بنجاح والدخول للوحة المالك.'
-    });
-
-  } catch (err: any) {
-    console.error('Error verifying lock hash:', err);
-    return res.status(500).json({ error: 'حدث خطأ أثناء فحص الرمز.' });
-  }
+// 3. POST /api/security/verifyLockHash — permanently disabled in favor of Vault Argon2id gate
+app.post('/api/security/verifyLockHash', (req: Request, res: Response) => {
+  appendSecurityAuditEvent({
+    event: 'LEGACY_LOCK_ENDPOINT_BLOCKED',
+    severity: 'warning',
+    actor: 'anonymous',
+    ip: getClientIp(req),
+    summary: 'تم حظر محاولة استخدام نقطة verifyLockHash المحلية القديمة.',
+  });
+  return res.status(403).json({
+    success: false,
+    error: 'تم تعطيل مسار القفل المحلي القديم؛ المصادقة تمر حصرياً عبر بوابة Vault.',
+  });
 });
 
-// 4. POST /api/security/logFailedAttempt
+// 4. POST /api/security/logFailedAttempt — permanently disabled to prevent unauthenticated state pollution
 app.post('/api/security/logFailedAttempt', (req: Request, res: Response) => {
-  try {
-    const ip = getClientIp(req);
-    const { type = 'pattern' } = req.body || {};
-    const fail = recordFailedAttempt('osLock', ip, 5, 30000);
-
-    if (!ownerLockConfig) {
-      ownerLockConfig = loadOwnerLockConfig();
-    }
-    const currentAttempts = ownerLockConfig?.failed_attempts || [];
-    const newAttempts = [
-      { timestamp: new Date().toISOString(), type: String(type) },
-      ...currentAttempts
-    ].slice(0, 5);
-
-    if (ownerLockConfig) {
-      ownerLockConfig.failed_attempts = newAttempts;
-      void savePersistentJson(CLOUD_OWNER_LOCK_KEY, OWNER_LOCK_FILE, ownerLockConfig, { allowEphemeral: true });
-    }
-
-    return res.json({
-      success: true,
-      consecutiveFailures: 5 - fail.attemptsLeft,
-      lockedOut: fail.locked,
-      remainingSeconds: fail.remainingSeconds,
-      failed_attempts: newAttempts
-    });
-  } catch {
-    return res.status(500).json({ error: 'Failed logging attempt' });
-  }
+  appendSecurityAuditEvent({
+    event: 'LEGACY_LOCK_ENDPOINT_BLOCKED',
+    severity: 'warning',
+    actor: 'anonymous',
+    ip: getClientIp(req),
+    summary: 'تم حظر محاولة استخدام نقطة logFailedAttempt غير المصرح بها.',
+  });
+  return res.status(403).json({
+    success: false,
+    error: 'تم تعطيل هذا المسار؛ تُسجل محاولات الفشل حصرياً داخل الخادم.',
+  });
 });
 
 // 5. POST /api/security/resetLockConfig (Admin authenticated)
@@ -1523,6 +1513,67 @@ app.post('/api/security/logoutAllDevices', async (req: Request, res: Response) =
 // 🛡️ ARGON2ID ACCESS CODE & PIN ENDPOINTS
 // ==========================================
 
+const USED_GATE_NONCES_FILE = getDataFilePath('used_gate_nonces.json');
+const CLOUD_USED_GATE_NONCES_KEY = 'echox:security_used_gate_nonces';
+const usedGateNonces = new Map<string, number>();
+
+function pruneUsedGateNonces(): void {
+  const now = Date.now();
+  usedGateNonces.forEach((exp, nonce) => {
+    if (!Number.isFinite(exp) || exp <= now) {
+      usedGateNonces.delete(nonce);
+    }
+  });
+}
+
+function loadUsedGateNoncesSync(): void {
+  try {
+    if (fs.existsSync(USED_GATE_NONCES_FILE)) {
+      const parsed = JSON.parse(fs.readFileSync(USED_GATE_NONCES_FILE, 'utf-8')) as Record<string, number>;
+      if (parsed && typeof parsed === 'object') {
+        const now = Date.now();
+        Object.entries(parsed).forEach(([nonce, exp]) => {
+          if (typeof exp === 'number' && exp > now) {
+            usedGateNonces.set(nonce, exp);
+          }
+        });
+      }
+    }
+  } catch {}
+}
+
+loadUsedGateNoncesSync();
+
+async function persistUsedGateNonce(nonce: string, expiresAt: number): Promise<void> {
+  pruneUsedGateNonces();
+  usedGateNonces.set(nonce, expiresAt);
+  const obj: Record<string, number> = {};
+  usedGateNonces.forEach((exp, n) => {
+    obj[n] = exp;
+  });
+  try {
+    atomicWriteJsonSync(USED_GATE_NONCES_FILE, obj);
+  } catch {}
+  if (isCloudPersistenceEnabled()) {
+    await saveCloudJson(CLOUD_USED_GATE_NONCES_KEY, obj).catch(() => {});
+  }
+}
+
+async function hydrateUsedGateNoncesFromCloud(): Promise<void> {
+  if (!isCloudPersistenceEnabled()) return;
+  try {
+    const remote = await loadCloudJson<Record<string, number>>(CLOUD_USED_GATE_NONCES_KEY);
+    if (remote && typeof remote === 'object') {
+      const now = Date.now();
+      Object.entries(remote).forEach(([nonce, exp]) => {
+        if (typeof exp === 'number' && exp > now) {
+          usedGateNonces.set(nonce, exp);
+        }
+      });
+    }
+  } catch {}
+}
+
 function createVaultGateToken(): string {
   const exp = Date.now() + 3 * 60 * 1000;
   const nonce = crypto.randomBytes(16).toString('hex');
@@ -1531,10 +1582,64 @@ function createVaultGateToken(): string {
   return `${payload}.${sig}`;
 }
 
+function verifyVaultGateToken(token: unknown): { valid: boolean; nonce?: string; exp?: number } {
+  if (!token || typeof token !== 'string') return { valid: false };
+  const parts = token.trim().split('.');
+  if (parts.length !== 4 || parts[0] !== 'gate1') return { valid: false };
+  const [ver, expStr, nonce, sig] = parts;
+  const exp = Number(expStr);
+  if (!Number.isFinite(exp) || exp <= Date.now() || !/^[a-f0-9]{16,64}$/i.test(nonce)) {
+    return { valid: false };
+  }
+  const payload = `${ver}.${expStr}.${nonce}`;
+  const expected = crypto.createHmac('sha256', getHmacSecret()).update(payload).digest('hex');
+  if (sig.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) {
+    return { valid: false };
+  }
+  pruneUsedGateNonces();
+  if (usedGateNonces.has(nonce)) {
+    return { valid: false };
+  }
+  return { valid: true, nonce, exp };
+}
+
+function verifyReauthSessionToken(token: unknown): { valid: boolean; sessionId?: string; expiresAt?: number } {
+  if (!token || typeof token !== 'string') return { valid: false };
+  const parts = token.trim().split('.');
+  if (parts.length !== 6 || parts[0] !== 'v2') return { valid: false };
+  const [ver, sessionId, iatStr, expStr, cvStr, hmac] = parts;
+  if (cvStr !== '1') return { valid: false };
+  const payload = `${ver}.${sessionId}.${iatStr}.${expStr}.${cvStr}`;
+  const expected = crypto.createHmac('sha256', getHmacSecret()).update(payload).digest('hex');
+  if (hmac.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(hmac), Buffer.from(expected))) {
+    return { valid: false };
+  }
+  const issuedAt = Number(iatStr);
+  const expiresAt = Number(expStr);
+  // Allow re-unlock for recently expired sessions (up to 2 hours past expiry) if not revoked
+  if (!Number.isFinite(issuedAt) || !Number.isFinite(expiresAt) || Date.now() > expiresAt + 2 * 60 * 60 * 1000) {
+    return { valid: false };
+  }
+  const minValidAfter = centralSecurityConfig?.min_session_valid_after || 0;
+  if (issuedAt < minValidAfter || isSessionRevoked(sessionId)) {
+    return { valid: false };
+  }
+  return { valid: true, sessionId, expiresAt };
+}
+
 // 1. Verify Secret Access Code (invoked silently from search bar; NEVER grants admin permissions)
 app.post('/api/security/verifyAccessCode', async (req: Request, res: Response) => {
   try {
     const ip = getClientIp(req);
+    const globalLock = checkGlobalAuthLockout('accessCode');
+    if (globalLock.locked) {
+      return res.status(429).json({
+        success: false,
+        lockedOut: true,
+        remainingSeconds: globalLock.remainingSeconds,
+        error: `تم تجميد بوابة رمز الوصول مؤقتاً لحماية النظام، يرجى الانتظار ${globalLock.remainingSeconds} ثانية.`,
+      });
+    }
     const lockState = checkLockout('accessCode', ip);
     if (lockState.locked) {
       return res.status(429).json({
@@ -1581,27 +1686,31 @@ app.post('/api/security/verifyAccessCode', async (req: Request, res: Response) =
     }
 
     const fail = recordFailedAttempt('accessCode', ip, 5, 30000);
-    if (fail.locked) {
+    const gFail = recordGlobalFailedAuth('accessCode', 25, 15 * 60 * 1000, 15 * 60 * 1000);
+    await syncRateLimitsNow();
+
+    if (fail.locked || gFail.locked) {
+      const waitSec = Math.max(fail.remainingSeconds, gFail.remainingSeconds);
       appendSecurityAuditEvent({
         event: 'ACCESS_CODE_LOCKOUT',
         severity: 'critical',
         actor: 'vault_gate',
         ip,
-        summary: `تجميد بوابة رمز الوصول لمدة ${fail.remainingSeconds} ثانية بعد محاولات فاشلة متكررة.`,
-        meta: { remainingSeconds: fail.remainingSeconds },
+        summary: `تجميد بوابة رمز الوصول لمدة ${waitSec} ثانية بعد محاولات فاشلة متكررة.`,
+        meta: { remainingSeconds: waitSec, globalLock: gFail.locked },
       });
       emitSecurityAlertRateLimited(`lock_access_${ip}`, {
         severity: 'critical',
         title: '🚨 محاولة اختراق: تجميد بوابة رمز الوصول',
-        body: `تم حظر العنوان ${ip} مؤقتاً بعد 5 محاولات خاطئة لإدخال رمز الوصول السري (${fail.remainingSeconds} ثانية).`,
+        body: `تم حظر المحاولات مؤقتاً من ${ip} بعد تجاوز حد المحاولات (${waitSec} ثانية).`,
         url: '/owner/dashboard',
         meta: { ip, type: 'access_code_lockout' },
       });
       return res.status(429).json({
         success: false,
         lockedOut: true,
-        remainingSeconds: fail.remainingSeconds,
-        error: `تجاوزت عدد المحاولات المسموح به. تم تجميد البوابة لمدة ${fail.remainingSeconds} ثانية.`
+        remainingSeconds: waitSec,
+        error: `تجاوزت عدد المحاولات المسموح به. تم تجميد البوابة لمدة ${waitSec} ثانية.`
       });
     }
 
@@ -1641,10 +1750,19 @@ app.post('/api/security/verifyAccessCode', async (req: Request, res: Response) =
   }
 });
 
-// 2. Verify PIN with Argon2id
+// 2. Verify PIN with Argon2id (Requires cryptographic single-use gateToken from verifyAccessCode or valid reauthToken)
 app.post('/api/security/verifyPin', async (req: Request, res: Response) => {
   try {
     const ip = getClientIp(req);
+    const globalLock = checkGlobalAuthLockout('pin');
+    if (globalLock.locked) {
+      return res.status(429).json({
+        success: false,
+        lockedOut: true,
+        remainingSeconds: globalLock.remainingSeconds,
+        error: `تم تجميد بوابة PIN مؤقتاً لحماية النظام، يرجى الانتظار ${globalLock.remainingSeconds} ثانية.`,
+      });
+    }
     const lockState = checkLockout('pin', ip);
     if (lockState.locked) {
       return res.status(429).json({
@@ -1657,7 +1775,33 @@ app.post('/api/security/verifyPin', async (req: Request, res: Response) => {
 
     await syncCentralSecurityIfStale(true);
 
-    const { pin } = req.body || {};
+    const { pin, gateToken, reauthToken } = req.body || {};
+    const gateCheck = verifyVaultGateToken(gateToken);
+    const reauthCheck = !gateCheck.valid ? verifyReauthSessionToken(reauthToken) : { valid: false };
+
+    if (!gateCheck.valid && !reauthCheck.valid) {
+      const gateRate = checkSlidingWindowLimit('pinGateViolation', ip, 15, 5 * 60 * 1000);
+      appendSecurityAuditEvent({
+        event: 'PIN_VERIFY_MISSING_OR_INVALID_GATE_TOKEN',
+        severity: 'warning',
+        actor: 'vault_gate',
+        ip,
+        summary: 'رفض محاولة التحقق من PIN لغياب أو انتهاء أو إعادة استخدام رمز العبور (gateToken).',
+      });
+      if (!gateRate.allowed) {
+        return res.status(429).json({
+          success: false,
+          lockedOut: true,
+          remainingSeconds: gateRate.retryAfterSeconds,
+          error: `محاولات غير مصرح بها متكررة، يرجى الانتظار ${gateRate.retryAfterSeconds} ثانية.`,
+        });
+      }
+      return res.status(403).json({
+        success: false,
+        error: 'رمز عبور البوابة السرية مفقود أو منتهي الصلاحية أو مُستخدم مسبقاً. يرجى فتح المدخل عبر الشيفرة السرية أولاً.',
+      });
+    }
+
     if (!pin || typeof pin !== 'string') {
       return res.status(400).json({ success: false, error: 'رمز PIN مطلوب.' });
     }
@@ -1672,6 +1816,14 @@ app.post('/api/security/verifyPin', async (req: Request, res: Response) => {
 
     if (isMatch) {
       resetBucket('pin', ip);
+
+      // Single-use enforcement: consume gate nonce or revoke old reauth session immediately upon unlock
+      if (gateCheck.valid && gateCheck.nonce && gateCheck.exp) {
+        await persistUsedGateNonce(gateCheck.nonce, gateCheck.exp);
+      } else if (reauthCheck.valid && reauthCheck.sessionId) {
+        activeSessions.delete(reauthCheck.sessionId);
+        await revokeSessionId(reauthCheck.sessionId, reauthCheck.expiresAt || Date.now() + 3600_000).catch(() => {});
+      }
 
       const rawSessionId = `admin_${crypto.randomBytes(32).toString('hex')}`;
       const issuedAt = Date.now();
@@ -1701,7 +1853,7 @@ app.post('/api/security/verifyPin', async (req: Request, res: Response) => {
         severity: 'info',
         actor: OWNER_EMAIL,
         ip,
-        summary: 'دخول موثق إلى مركز التحكم عبر رمز PIN (Argon2id).',
+        summary: 'دخول موثق إلى مركز التحكم عبر رمز PIN (Argon2id) بعد بوابة GateToken أحادية الاستخدام.',
         meta: { sessionPrefix: rawSessionId.slice(0, 10) },
       });
 
@@ -1715,27 +1867,31 @@ app.post('/api/security/verifyPin', async (req: Request, res: Response) => {
     }
 
     const fail = recordFailedAttempt('pin', ip, 5, 30000);
-    if (fail.locked) {
+    const gFail = recordGlobalFailedAuth('pin', 25, 15 * 60 * 1000, 15 * 60 * 1000);
+    await syncRateLimitsNow();
+
+    if (fail.locked || gFail.locked) {
+      const waitSec = Math.max(fail.remainingSeconds, gFail.remainingSeconds);
       appendSecurityAuditEvent({
         event: 'OWNER_PIN_LOCKOUT',
         severity: 'critical',
         actor: 'vault_gate',
         ip,
-        summary: `قفل بوابة PIN لمدة ${fail.remainingSeconds} ثانية بعد محاولات فاشلة.`,
-        meta: { remainingSeconds: fail.remainingSeconds },
+        summary: `قفل بوابة PIN لمدة ${waitSec} ثانية بعد محاولات فاشلة.`,
+        meta: { remainingSeconds: waitSec, globalLock: gFail.locked },
       });
       emitSecurityAlertRateLimited(`lock_pin_${ip}`, {
         severity: 'critical',
         title: '🚨 تنبيه اختراق: قفل بوابة الـ PIN',
-        body: `تم تجميد بوابة الدخول للعنوان ${ip} لمدة ${fail.remainingSeconds} ثانية بعد 5 محاولات PIN خاطئة!`,
+        body: `تم تجميد بوابة الدخول للعنوان ${ip} لمدة ${waitSec} ثانية بعد تجاوز محاولات PIN الخاطئة!`,
         url: '/owner/dashboard',
         meta: { ip, type: 'pin_lockout' },
       });
       return res.status(429).json({
         success: false,
         lockedOut: true,
-        remainingSeconds: fail.remainingSeconds,
-        error: `تجاوزت عدد محاولات PIN المسموحة. تم قفل البوابة مؤقتاً لمدة ${fail.remainingSeconds} ثانية.`
+        remainingSeconds: waitSec,
+        error: `تجاوزت عدد محاولات PIN المسموحة. تم قفل البوابة مؤقتاً لمدة ${waitSec} ثانية.`
       });
     }
 
@@ -1984,8 +2140,20 @@ app.get('/api/security/sessions', (req: Request, res: Response) => {
   });
 });
 
-// 6. Security System Status
-app.get('/api/security/systemStatus', (_req: Request, res: Response) => {
+// 6. Security System Status (Minimized for public callers; full telemetry reserved for authenticated owner)
+app.get('/api/security/systemStatus', (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const session = resolveSessionRecord(req);
+  const isAdmin = Boolean(session && session.email === OWNER_EMAIL && session.owner && session.codeVerified);
+  if (!isAdmin) {
+    return res.json({
+      argon2idEnabled: true,
+      hashingAlgorithm: 'Argon2id (m=65536, t=3, p=4)',
+      serverSideEnforced: true,
+      accessCodeConfigured: true,
+      pinConfigured: true,
+    });
+  }
   const persistence = getPersistenceStatus();
   return res.json({
     argon2idEnabled: true,
@@ -2470,7 +2638,8 @@ app.get('/api/payments/track/:code', async (req: Request, res: Response) => {
   await syncPaymentDbIfStale(true).catch(() => {});
   const sess = resolveSessionRecord(req);
   const isAdmin = Boolean(sess && sess.codeVerified);
-  const result = trackPublicOrder(req.params.code, isAdmin);
+  const phoneProof = String(req.query.phone || req.headers['x-tracking-phone'] || '').trim();
+  const result = trackPublicOrder(req.params.code, isAdmin, phoneProof);
   if (!result.ok) {
     return res.status(result.statusCode || 404).json({ success: false, error: result.error });
   }
@@ -2514,15 +2683,60 @@ app.patch('/api/admin/orders/:orderId/status', async (req: Request, res: Respons
 });
 
 app.delete('/api/admin/orders/:orderId', async (req: Request, res: Response) => {
-  if (!requireAdminAuth(req, res)) return;
+  const admin = requireAdminAuth(req, res);
+  if (!admin) return;
+  const ip = getClientIp(req);
+  const rate = checkSlidingWindowLimit('adminHardDelete', ip, 40, 60 * 1000);
+  if (!rate.allowed) {
+    return res.status(429).json({
+      success: false,
+      error: `تم تجاوز حد عمليات الحذف، يرجى الانتظار ${rate.retryAfterSeconds} ثانية.`,
+    });
+  }
   const result = await adminDeleteOrder(req.params.orderId);
   if (!result.ok) {
+    appendSecurityAuditEvent({
+      event: result.statusCode === 409 ? 'ORDER_DELETE_BLOCKED_LEGAL_RETENTION' : 'ORDER_DELETE_FAILED',
+      severity: 'warning',
+      actor: admin.email,
+      ip,
+      summary: `رفض أو تعذر حذف الطلب (${req.params.orderId}): ${result.error || 'خطأ غير محدد'}`,
+    });
     return res.status(result.statusCode || 404).json({ success: false, error: result.error });
   }
-  return res.json({ success: true });
+  appendSecurityAuditEvent({
+    event: 'HARD_DELETE_ORDER_CONFIRMED',
+    severity: 'info',
+    actor: admin.email,
+    ip,
+    summary: `حذف نهائي مؤكد للطلب غير المدفوع (${req.params.orderId}) وتنظيف سجلاته المرتبطة.`,
+  });
+  return res.json({
+    success: true,
+    verified: true,
+    deletedId: req.params.orderId,
+    backupRetentionNote:
+      'النسخ الاحتياطية المُنشأة مسبقاً والملفات المصدّرة قبل الحذف تبقى محفوظة وفق سياسة الاحتفاظ ولا تُعدّل بأثر رجعي.',
+  });
 });
 
 // 10. Live Customer Support Chat Routes
+function issueChatSessionToken(sessionId: string): string {
+  const sig = crypto
+    .createHmac('sha256', getHmacSecret())
+    .update(`chat1:${sessionId}`)
+    .digest('hex');
+  return `chat1.${sessionId}.${sig}`;
+}
+
+function verifyChatSessionToken(token: string, expectedSessionId: string): boolean {
+  if (!token || !expectedSessionId) return false;
+  const expected = issueChatSessionToken(expectedSessionId);
+  const a = Buffer.from(token.trim());
+  const b = Buffer.from(expected);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
 app.get('/api/chat/config', async (_req: Request, res: Response) => {
   await syncChatDbIfStale(false).catch(() => {});
   return res.json({ success: true, config: getPublicChatConfig() });
@@ -2531,6 +2745,18 @@ app.get('/api/chat/config', async (_req: Request, res: Response) => {
 app.get('/api/chat/session/:sessionId', async (req: Request, res: Response) => {
   await syncChatDbIfStale(false).catch(() => {});
   const thread = getChatThread(req.params.sessionId);
+  if (!thread) {
+    return res.json({ success: true, thread: null });
+  }
+  const sess = resolveSessionRecord(req);
+  const isAdmin = Boolean(sess && sess.email === OWNER_EMAIL && sess.owner && sess.codeVerified);
+  const chatToken = String(req.headers['x-chat-token'] || '');
+  if (!isAdmin && !verifyChatSessionToken(chatToken, thread.sessionId)) {
+    return res.status(403).json({
+      success: false,
+      error: 'رمز ملكية جلسة المحادثة مطلوب أو غير صالح.',
+    });
+  }
   return res.json({ success: true, thread });
 });
 
@@ -2542,6 +2768,19 @@ app.post('/api/chat/session/:sessionId/message', async (req: Request, res: Respo
       success: false,
       error: `تم تجاوز حد الرسائل، يرجى الانتظار ${rate.retryAfterSeconds} ثانية.`,
     });
+  }
+  await syncChatDbIfStale(false).catch(() => {});
+  const existingThread = getChatThread(req.params.sessionId);
+  if (existingThread) {
+    const sess = resolveSessionRecord(req);
+    const isAdmin = Boolean(sess && sess.email === OWNER_EMAIL && sess.owner && sess.codeVerified);
+    const chatToken = String(req.headers['x-chat-token'] || '');
+    if (!isAdmin && !verifyChatSessionToken(chatToken, existingThread.sessionId)) {
+      return res.status(403).json({
+        success: false,
+        error: 'رمز ملكية جلسة المحادثة مطلوب لإضافة رسائل لهذه المحادثة.',
+      });
+    }
   }
   const { language, customerLabel, customerText, autoReplyText, suggestedProducts, actionView } = req.body || {};
   const result = await recordCustomerChatExchange({
@@ -2563,7 +2802,11 @@ app.post('/api/chat/session/:sessionId/message', async (req: Request, res: Respo
     body: `${customerLabel || 'زبون'}: ${String(customerText || '').slice(0, 120)}`,
     url: '/owner/dashboard',
   });
-  return res.json({ success: true, thread: result.thread });
+  return res.json({
+    success: true,
+    thread: result.thread,
+    chatToken: result.thread ? issueChatSessionToken(result.thread.sessionId) : undefined,
+  });
 });
 
 app.get('/api/admin/chat/threads', async (req: Request, res: Response) => {
@@ -2595,12 +2838,28 @@ app.post('/api/admin/chat/threads/:sessionId/read', async (req: Request, res: Re
 });
 
 app.delete('/api/admin/chat/threads/:sessionId', async (req: Request, res: Response) => {
-  if (!requireAdminAuth(req, res)) return;
+  const admin = requireAdminAuth(req, res);
+  if (!admin) return;
+  const ip = getClientIp(req);
+  const rate = checkSlidingWindowLimit('adminHardDelete', ip, 40, 60 * 1000);
+  if (!rate.allowed) {
+    return res.status(429).json({
+      success: false,
+      error: `تم تجاوز حد عمليات الحذف، يرجى الانتظار ${rate.retryAfterSeconds} ثانية.`,
+    });
+  }
   const result = await deleteChatThread(req.params.sessionId);
   if (!result.ok) {
     return res.status(result.statusCode || 503).json({ success: false, error: result.error });
   }
-  return res.json({ success: true });
+  appendSecurityAuditEvent({
+    event: 'HARD_DELETE_CHAT_THREAD_CONFIRMED',
+    severity: 'info',
+    actor: admin.email,
+    ip,
+    summary: `حذف نهائي مؤكد لمحادثة الدعم (${req.params.sessionId}).`,
+  });
+  return res.json({ success: true, verified: true, deletedId: req.params.sessionId });
 });
 
 app.put('/api/admin/chat/config', async (req: Request, res: Response) => {
@@ -2712,6 +2971,160 @@ app.put('/api/admin/store/state', async (req: Request, res: Response) => {
     ...result.state,
     persistenceStatus: getPersistenceStatus(),
   });
+});
+
+async function respondAdminHardDelete(
+  req: Request,
+  res: Response,
+  admin: { email: string },
+  label: string,
+  result: HardDeleteEntityResult
+) {
+  const ip = getClientIp(req);
+  if (result.partialFailure) {
+    appendSecurityAuditEvent({
+      event: 'HARD_DELETE_PARTIAL_FAILURE',
+      severity: 'warning',
+      actor: admin.email,
+      ip,
+      summary: `حذف جزئي (${label}: ${result.deletedId}): تم المسح من قاعدة البيانات مع تعذر حذف بعض الملفات السحابية (${result.failedMediaFiles.length}).`,
+      meta: {
+        entityType: result.entityType,
+        deletedId: result.deletedId,
+        deletedMediaCount: result.deletedMediaFiles.length,
+        failedMediaCount: result.failedMediaFiles.length,
+      },
+    });
+    return res.status(207).json({
+      success: false,
+      partialFailure: true,
+      error: result.error,
+      entityType: result.entityType,
+      deletedId: result.deletedId,
+      dbDeleted: result.dbDeleted,
+      verifiedRemovedFromDb: result.verifiedRemovedFromDb,
+      deletedMediaFiles: result.deletedMediaFiles,
+      skippedSharedMediaFiles: result.skippedSharedMediaFiles,
+      failedMediaFiles: result.failedMediaFiles,
+      cleanedDependencies: result.cleanedDependencies,
+      retainedLegalRecordsNote: result.retainedLegalRecordsNote,
+      backupRetentionNote: result.backupRetentionNote,
+      ...result.state,
+      persistenceStatus: getPersistenceStatus(),
+    });
+  }
+
+  if (!result.ok) {
+    return res.status(result.statusCode || 400).json({
+      success: false,
+      error: result.error || `تعذر حذف ${label} نهائياً.`,
+      entityType: result.entityType,
+      deletedId: result.deletedId,
+      dbDeleted: result.dbDeleted,
+      verifiedRemovedFromDb: result.verifiedRemovedFromDb,
+    });
+  }
+
+  appendSecurityAuditEvent({
+    event: 'HARD_DELETE_CONFIRMED',
+    severity: 'info',
+    actor: admin.email,
+    ip,
+    summary: `حذف نهائي مؤكد (${label}: ${result.deletedId}) — تم المسح من قاعدة البيانات وتنظيف ${result.deletedMediaFiles.length} ملف وسائط.`,
+    meta: {
+      entityType: result.entityType,
+      deletedId: result.deletedId,
+      deletedMediaCount: result.deletedMediaFiles.length,
+      skippedSharedMediaCount: result.skippedSharedMediaFiles.length,
+      cleanedDependencies: result.cleanedDependencies.join(' | '),
+    },
+  });
+
+  emitAdminNotification({
+    category: 'activity',
+    severity: 'warning',
+    title: `🗑️ حذف نهائي مؤكد (${label})`,
+    body: `تم حذف ${label} (${result.deletedId}) من الخادم والتخزين السحابي نهائياً.`,
+    url: '/owner/dashboard',
+  });
+
+  return res.status(200).json({
+    success: true,
+    verified: result.verifiedRemovedFromDb,
+    partialFailure: false,
+    entityType: result.entityType,
+    deletedId: result.deletedId,
+    dbDeleted: result.dbDeleted,
+    verifiedRemovedFromDb: result.verifiedRemovedFromDb,
+    deletedMediaFiles: result.deletedMediaFiles,
+    skippedSharedMediaFiles: result.skippedSharedMediaFiles,
+    failedMediaFiles: [],
+    cleanedDependencies: result.cleanedDependencies,
+    retainedLegalRecordsNote: result.retainedLegalRecordsNote,
+    backupRetentionNote: result.backupRetentionNote,
+    ...result.state,
+    persistenceStatus: getPersistenceStatus(),
+  });
+}
+
+app.delete('/api/admin/store/products/:productId', async (req: Request, res: Response) => {
+  const admin = requireAdminAuth(req, res);
+  if (!admin) return;
+  const ip = getClientIp(req);
+  const rate = checkSlidingWindowLimit('adminHardDelete', ip, 40, 60 * 1000);
+  if (!rate.allowed) {
+    return res.status(429).json({
+      success: false,
+      error: `تم تجاوز حد عمليات الحذف، يرجى الانتظار ${rate.retryAfterSeconds} ثانية.`,
+    });
+  }
+  const result = await hardDeleteProduct(req.params.productId);
+  return respondAdminHardDelete(req, res, admin, 'المنتج', result);
+});
+
+app.delete('/api/admin/store/categories/:categoryId', async (req: Request, res: Response) => {
+  const admin = requireAdminAuth(req, res);
+  if (!admin) return;
+  const ip = getClientIp(req);
+  const rate = checkSlidingWindowLimit('adminHardDelete', ip, 40, 60 * 1000);
+  if (!rate.allowed) {
+    return res.status(429).json({
+      success: false,
+      error: `تم تجاوز حد عمليات الحذف، يرجى الانتظار ${rate.retryAfterSeconds} ثانية.`,
+    });
+  }
+  const result = await hardDeleteCategory(req.params.categoryId);
+  return respondAdminHardDelete(req, res, admin, 'القسم', result);
+});
+
+app.delete('/api/admin/store/companies/:companyId', async (req: Request, res: Response) => {
+  const admin = requireAdminAuth(req, res);
+  if (!admin) return;
+  const ip = getClientIp(req);
+  const rate = checkSlidingWindowLimit('adminHardDelete', ip, 40, 60 * 1000);
+  if (!rate.allowed) {
+    return res.status(429).json({
+      success: false,
+      error: `تم تجاوز حد عمليات الحذف، يرجى الانتظار ${rate.retryAfterSeconds} ثانية.`,
+    });
+  }
+  const result = await hardDeleteCompany(req.params.companyId);
+  return respondAdminHardDelete(req, res, admin, 'الشريك', result);
+});
+
+app.delete('/api/admin/store/banners/:bannerId', async (req: Request, res: Response) => {
+  const admin = requireAdminAuth(req, res);
+  if (!admin) return;
+  const ip = getClientIp(req);
+  const rate = checkSlidingWindowLimit('adminHardDelete', ip, 40, 60 * 1000);
+  if (!rate.allowed) {
+    return res.status(429).json({
+      success: false,
+      error: `تم تجاوز حد عمليات الحذف، يرجى الانتظار ${rate.retryAfterSeconds} ثانية.`,
+    });
+  }
+  const result = await hardDeleteBanner(req.params.bannerId);
+  return respondAdminHardDelete(req, res, admin, 'البانر', result);
 });
 
 app.post('/api/admin/media/inspect', async (req: Request, res: Response) => {
@@ -2916,15 +3329,19 @@ app.get('/api/notifications/public', async (_req: Request, res: Response) => {
 });
 
 app.post('/api/notifications/public/subscribe', async (req: Request, res: Response) => {
-  const result = await subscribePublicPush(req.body?.subscription);
+  const result = await subscribePublicPush(req.body?.subscription, getHmacSecret());
   if (!result.ok) {
     return res.status(result.statusCode || 400).json({ success: false, error: result.error });
   }
-  return res.json({ success: true });
+  return res.json({ success: true, unsubscribeToken: result.unsubscribeToken });
 });
 
 app.post('/api/notifications/public/unsubscribe', async (req: Request, res: Response) => {
-  const result = await unsubscribePublicPush(String(req.body?.endpoint || ''));
+  const result = await unsubscribePublicPush(
+    String(req.body?.endpoint || ''),
+    String(req.body?.unsubscribeToken || ''),
+    getHmacSecret()
+  );
   if (!result.ok) {
     return res.status(result.statusCode || 503).json({ success: false, error: result.error });
   }
@@ -3342,6 +3759,7 @@ async function ensureServerInitialized(): Promise<void> {
 
       await Promise.all([
         initCentralSecurityConfig().catch((err) => console.error('[Security] Init notice:', err)),
+        hydrateUsedGateNoncesFromCloud().catch((err) => console.error('[Security] Gate nonces hydrate notice:', err)),
         hydrateSecurityEngineFromCloud().catch((err) => console.error('[SecurityEngine] Cloud hydrate notice:', err)),
         hydrateRateLimitsFromCloud().catch((err) => console.error('[Security] Rate limit hydrate notice:', err)),
         hydrateOwnerLockConfigFromCloud().catch((err) => console.error('[LockConfig] Cloud hydrate notice:', err)),
@@ -3352,6 +3770,7 @@ async function ensureServerInitialized(): Promise<void> {
       ]);
 
       ensureInitialBankSealAfterHydrate();
+      await syncCatalogSnapshot(getPublicStoreState().products, { replaceAll: true, allowEphemeral: true }).catch(() => {});
     })();
   }
   return initPromise;
@@ -3359,6 +3778,18 @@ async function ensureServerInitialized(): Promise<void> {
 
 async function startServer() {
   await ensureServerInitialized();
+
+  if (process.env.NODE_ENV === 'production') {
+    if (
+      !process.env.ECHOX_BOOTSTRAP_ACCESS_HASH &&
+      centralSecurityConfig?.access_code_argon2 === DEFAULT_ACCESS_ARGON2
+    ) {
+      console.warn('[Security WARNING] Production server running with built-in bootstrap access hash — set ECHOX_BOOTSTRAP_ACCESS_HASH or rotate immediately.');
+    }
+    if (!process.env.ECHOX_BOOTSTRAP_PIN_HASH && centralSecurityConfig?.pin_argon2 === DEFAULT_PIN_ARGON2) {
+      console.warn('[Security WARNING] Production server running with built-in bootstrap PIN hash — set ECHOX_BOOTSTRAP_PIN_HASH or rotate immediately.');
+    }
+  }
 
   // Synchronize authoritative payment catalog with persisted store products on startup
   await syncCatalogSnapshot(getPublicStoreState().products, { replaceAll: true, allowEphemeral: true });

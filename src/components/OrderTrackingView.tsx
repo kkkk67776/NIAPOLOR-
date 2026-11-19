@@ -46,6 +46,11 @@ export const OrderTrackingView: React.FC = () => {
   const [refundReason, setRefundReason] = useState('');
   const [refundSubmitting, setRefundSubmitting] = useState(false);
 
+  // Phone verification when tracking from a new browser where PII is masked
+  const [verifyPhoneInput, setVerifyPhoneInput] = useState('');
+  const [verifyPhoneLoading, setVerifyPhoneLoading] = useState(false);
+  const [verifyPhoneError, setVerifyPhoneError] = useState('');
+
   const activeOrder = searchedOrder
     ? orders.find((o) => o.id === searchedOrder.id || o.trackingNumber === searchedOrder.trackingNumber) || searchedOrder
     : null;
@@ -63,16 +68,37 @@ export const OrderTrackingView: React.FC = () => {
     setHasSearched(true);
     setActionSuccess('');
     setActionError('');
+    setVerifyPhoneError('');
 
     if (!isOnline) {
       return;
     }
 
-    const srv = await trackOrderServer(clean);
+    const srv = await trackOrderServer(clean, localFound?.customerPhone);
     if (srv.ok && srv.order) {
       setSearchedOrder(srv.order);
       updateOrderInState(srv.order);
     }
+  };
+
+  const handleVerifyTrackingPhone = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeOrder || !verifyPhoneInput.trim() || verifyPhoneLoading) return;
+    setVerifyPhoneLoading(true);
+    setVerifyPhoneError('');
+    const srv = await trackOrderServer(activeOrder.trackingNumber, verifyPhoneInput.trim());
+    setVerifyPhoneLoading(false);
+    if (!srv.ok || !srv.order) {
+      setVerifyPhoneError(srv.error || (language === 'ar' ? 'تعذر التحقق من رقم الهاتف.' : 'Verification failed.'));
+      return;
+    }
+    if (srv.order.piiMasked) {
+      setVerifyPhoneError(language === 'ar' ? 'رقم الهاتف غير مطابق للطلب.' : 'Phone number does not match this order.');
+      return;
+    }
+    setSearchedOrder(srv.order);
+    updateOrderInState(srv.order);
+    setVerifyPhoneInput('');
   };
 
   const handleCopy = (key: string, val: string) => {
@@ -543,6 +569,37 @@ export const OrderTrackingView: React.FC = () => {
                   {activeOrder.shippingAddress.postalCode ? ` (${activeOrder.shippingAddress.postalCode})` : ''}
                 </p>
                 <p><strong>{t.checkout.street}:</strong> {activeOrder.shippingAddress.street}</p>
+                {activeOrder.piiMasked && isOnline && (
+                  <form onSubmit={handleVerifyTrackingPhone} className="pt-2 mt-2 border-t border-slate-200 dark:border-slate-700 space-y-1.5">
+                    <p className="text-[11px] text-amber-700 dark:text-amber-300 font-semibold">
+                      {language === 'ar'
+                        ? 'بيانات المستلم مخفية لحماية الخصوصية. أدخل رقم الهاتف المستخدم في الطلب لعرضها:'
+                        : language === 'fr'
+                        ? 'Coordonnées masquées. Saisissez votre téléphone pour les afficher :'
+                        : 'Recipient details are masked for privacy. Enter order phone to reveal:'}
+                    </p>
+                    <div className="flex gap-1.5">
+                      <input
+                        type="tel"
+                        dir="ltr"
+                        value={verifyPhoneInput}
+                        onChange={(e) => setVerifyPhoneInput(e.target.value)}
+                        placeholder="+216 XX XXX XXX"
+                        className="flex-1 text-xs py-1.5 px-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-[#0F172A] font-mono outline-none focus:border-[#FF6B00]"
+                      />
+                      <button
+                        type="submit"
+                        disabled={verifyPhoneLoading || !verifyPhoneInput.trim()}
+                        className="px-3 py-1.5 rounded-lg bg-[#FF6B00] hover:bg-[#e05e00] disabled:opacity-50 text-white text-[11px] font-bold cursor-pointer"
+                      >
+                        {language === 'ar' ? 'تأكيد' : 'Verify'}
+                      </button>
+                    </div>
+                    {verifyPhoneError && (
+                      <p className="text-[11px] text-red-600 dark:text-red-400 font-semibold">{verifyPhoneError}</p>
+                    )}
+                  </form>
+                )}
               </div>
             </div>
 

@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import {
+  deletePersistentJson,
   getPersistenceStatus,
   isCloudPersistenceEnabled,
   loadCloudJson,
@@ -155,7 +156,7 @@ function hmacSha256(key: Buffer | string, data: string): Buffer {
 }
 
 export function buildS3v4SignedRequest(params: {
-  method: 'PUT' | 'GET';
+  method: 'PUT' | 'GET' | 'DELETE';
   endpoint: string;
   bucket: string;
   objectKey: string;
@@ -663,3 +664,204 @@ export async function readStoredProductImage(rawFileName: string): Promise<Store
 
   return null;
 }
+
+export interface ManagedMediaDescriptor {
+  mediaId: string;
+  fileName: string;
+  objectKey: string;
+  canonicalApiUrl: string;
+}
+
+export interface MediaDeleteOutcome {
+  url: string;
+  managed: boolean;
+  ok: boolean;
+  deletedFrom: string[];
+  error?: string;
+}
+
+export function extractManagedMediaDescriptor(rawUrl: string): ManagedMediaDescriptor | null {
+  const clean = (rawUrl || '').trim().split('?')[0].split('#')[0];
+  if (!clean) return null;
+
+  if (clean.startsWith('/api/media/products/')) {
+    const fileName = clean.slice('/api/media/products/'.length).trim();
+    const match = fileName.match(VALID_PRODUCT_FILENAME_RE);
+    if (!match) return null;
+    return {
+      mediaId: match[1],
+      fileName,
+      objectKey: `products/${fileName}`,
+      canonicalApiUrl: `/api/media/products/${fileName}`,
+    };
+  }
+
+  const r2Cfg = getR2Config();
+  if (r2Cfg.publicUrl && clean.startsWith(`${r2Cfg.publicUrl}/products/`)) {
+    const fileName = clean.slice(`${r2Cfg.publicUrl}/products/`.length).trim();
+    const match = fileName.match(VALID_PRODUCT_FILENAME_RE);
+    if (!match) return null;
+    return {
+      mediaId: match[1],
+      fileName,
+      objectKey: `products/${fileName}`,
+      canonicalApiUrl: `/api/media/products/${fileName}`,
+    };
+  }
+
+  try {
+    if (/^https?:\/\//i.test(clean)) {
+      const parsed = new URL(clean);
+      const segments = parsed.pathname.split('/').filter(Boolean);
+      const last = segments[segments.length - 1] || '';
+      const prev = segments[segments.length - 2] || '';
+      if (prev === 'products') {
+        const match = last.match(VALID_PRODUCT_FILENAME_RE);
+        if (match && /^img_\d+_[a-f0-9]+\.(jpe?g|png|webp)$/i.test(last)) {
+          return {
+            mediaId: match[1],
+            fileName: last,
+            objectKey: `products/${last}`,
+            canonicalApiUrl: `/api/media/products/${last}`,
+          };
+        }
+      }
+    }
+  } catch {
+    // ignore malformed url
+  }
+
+  return null;
+}
+
+async function deleteObjectFromR2(objectKey: string): Promise<{ ok: boolean; error?: string }> {
+  if (!isR2Configured()) return { ok: true };
+  const cfg = getR2Config();
+  const signed = buildS3v4SignedRequest({
+    method: 'DELETE',
+    endpoint: cfg.endpoint,
+    bucket: cfg.bucketName,
+    objectKey,
+    accessKeyId: cfg.accessKeyId,
+    secretAccessKey: cfg.secretAccessKey,
+    region: cfg.region,
+  });
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
+  try {
+    const res = await fetch(signed.url, {
+      method: 'DELETE',
+      headers: signed.headers,
+      signal: controller.signal,
+    });
+    if (res.status === 200 || res.status === 204 || res.status === 404 || res.ok) {
+      return { ok: true };
+    }
+    const errBody = await res.text().catch(() => '');
+    return {
+      ok: false,
+      error: `فشل حذف الملف من Cloudflare R2 (HTTP ${res.status})${errBody ? `: ${errBody.slice(0, 140)}` : '.'}`,
+    };
+  } catch (err: any) {
+    return {
+      ok: false,
+      error:
+        err?.name === 'AbortError'
+          ? 'انتهت مهلة الاتصال بخدمة Cloudflare R2 أثناء حذف الملف.'
+          : `تعذر حذف الملف من Cloudflare R2: ${err?.message || String(err)}`,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function deleteStoredProductImageByUrl(rawUrl: string): Promise<MediaDeleteOutcome> {
+  const desc = extractManagedMediaDescriptor(rawUrl);
+  if (!desc) {
+    return { url: rawUrl, managed: false, ok: true, deletedFrom: [] };
+  }
+
+  const deletedFrom: string[] = [];
+  const errors: string[] = [];
+  const uploadsDir = getMediaUploadsDir();
+  const diskFilePath = path.join(uploadsDir, desc.fileName);
+  const diskMetaPath = path.join(uploadsDir, `${desc.mediaId}.meta.json`);
+
+  let recordedProvider: MediaStorageProvider | undefined;
+  if (fs.existsSync(diskMetaPath)) {
+    try {
+      const parsedMeta = JSON.parse(fs.readFileSync(diskMetaPath, 'utf-8')) as StoredMediaMetadata;
+      recordedProvider = parsedMeta?.provider;
+    } catch {}
+  }
+
+  // 1. Cloudflare R2 object removal (if R2 is configured or asset originated in R2)
+  if (isR2Configured()) {
+    const r2Del = await deleteObjectFromR2(desc.objectKey);
+    if (!r2Del.ok) {
+      errors.push(r2Del.error || 'فشل حذف الملف من Cloudflare R2.');
+    } else {
+      deletedFrom.push('cloudflare-r2');
+    }
+  } else if (recordedProvider === 'cloudflare-r2') {
+    errors.push('الصورة مخزنة على Cloudflare R2 ولكن إعدادات R2 غير مفعّلة على الخادم لتأكيد حذفها.');
+  }
+
+  // 2. Cloud database media record removal (Firestore / Upstash)
+  if (isCloudPersistenceEnabled()) {
+    const cloudDel = await deletePersistentJson(`echox:media:${desc.mediaId}`, diskMetaPath);
+    if (!cloudDel.ok) {
+      errors.push(cloudDel.error || 'فشل حذف سجل الصورة من قاعدة البيانات السحابية.');
+    } else {
+      deletedFrom.push(cloudDel.provider);
+    }
+  }
+
+  // 3. Remove local / persistent disk files & stray temp files
+  try {
+    if (fs.existsSync(diskFilePath)) {
+      fs.unlinkSync(diskFilePath);
+      deletedFrom.push('server-disk-file');
+    }
+    if (fs.existsSync(diskMetaPath)) {
+      fs.unlinkSync(diskMetaPath);
+      deletedFrom.push('server-disk-meta');
+    }
+    if (fs.existsSync(uploadsDir)) {
+      for (const entry of fs.readdirSync(uploadsDir)) {
+        if (
+          entry.startsWith(`${desc.fileName}.`) ||
+          entry.startsWith(`${desc.mediaId}.meta.json.`)
+        ) {
+          try {
+            fs.unlinkSync(path.join(uploadsDir, entry));
+          } catch {}
+        }
+      }
+    }
+    if (fs.existsSync(diskFilePath) || fs.existsSync(diskMetaPath)) {
+      errors.push(`تعذر التحقق من مسح الملف (${desc.fileName}) من قرص الخادم.`);
+    }
+  } catch (err: any) {
+    errors.push(`تعذر مسح الملف من قرص الخادم: ${err?.message || String(err)}`);
+  }
+
+  if (errors.length > 0) {
+    return {
+      url: rawUrl,
+      managed: true,
+      ok: false,
+      deletedFrom: Array.from(new Set(deletedFrom)),
+      error: errors.join(' | '),
+    };
+  }
+
+  return {
+    url: rawUrl,
+    managed: true,
+    ok: true,
+    deletedFrom: Array.from(new Set(deletedFrom)),
+  };
+}
+

@@ -1,21 +1,18 @@
 import { handleEdgeChatRoute } from '../_lib/chatEdge';
 import {
-  checkEdgeSlidingWindowLimit,
   EdgeContext,
   EdgeEnv,
   extractEdgeSessionToken,
   getEdgeClientIp,
   getEdgePersistenceStatus,
-  hmacSha256Hex,
+  isAllowedEdgeOrigin,
   isEdgePersistenceConfigured,
   jsonResponse,
   loadEdgeDocWithMeta,
   mutateEdgeDocWithRetry,
   probeEdgeFirestoreConnection,
   requireEdgeAdminAuth,
-  resolveSharedHmacSecret,
   saveEdgeDoc,
-  timingSafeEqualHex,
   verifyEdgeOwnerSession,
 } from '../_lib/firestoreEdge';
 import { appendEdgeAdminNotification, handleEdgeNotificationsRoute } from '../_lib/notificationsEdge';
@@ -114,7 +111,6 @@ async function handleEdgeSecurityRoute(
 
     return jsonResponse({
       activeLayers: 4,
-      defaultCodeAvailable: true,
       locked,
       remainingSeconds,
       attemptsLeft: Math.max(0, 3 - attempts),
@@ -123,6 +119,18 @@ async function handleEdgeSecurityRoute(
   }
 
   if (method === 'GET' && pathname === '/api/security/systemStatus') {
+    const adminSess = await verifyEdgeOwnerSession(request, env);
+    const isAdmin = Boolean(adminSess && adminSess.codeVerified);
+    if (!isAdmin) {
+      return jsonResponse({
+        argon2idEnabled: true,
+        hashingAlgorithm: 'Argon2id (m=65536, t=3, p=4)',
+        serverSideEnforced: true,
+        accessCodeConfigured: true,
+        pinConfigured: true,
+        edgeMode: true,
+      });
+    }
     const probe = await probeEdgeFirestoreConnection(env);
     const secLoaded = await loadEdgeDocWithMeta<Partial<CentralSecurityDoc>>(env, CLOUD_SECURITY_KEY);
     const persistence = getEdgePersistenceStatus(env, probe.error);
@@ -273,123 +281,23 @@ async function handleEdgeSecurityRoute(
   }
 
   if (method === 'POST' && pathname === '/api/security/verifyLockHash') {
-    const ip = getEdgeClientIp(request);
-    const rate = checkEdgeSlidingWindowLimit('osLockVerify', ip, 5, 30_000);
-    if (!rate.allowed) {
-      return jsonResponse(
-        {
-          success: false,
-          lockedOut: true,
-          remainingSeconds: rate.retryAfterSeconds,
-          error: `المحاولات كثيرة، انتظر ${rate.retryAfterSeconds} ثانية`,
-        },
-        429
-      );
-    }
-
-    const loaded = await loadEdgeDocWithMeta<Partial<OwnerLockConfigData>>(env, CLOUD_OWNER_LOCK_KEY);
-    if (!loaded.ok) return jsonResponse({ error: loaded.error }, 503);
-    const storedHash = loaded.data?.lock_hash || loaded.data?.code_hash;
-    if (!storedHash) {
-      return jsonResponse({ error: 'لم يتم إعداد قفل الهاتف بعد.' }, 400);
-    }
-
-    const body = await parseJson();
-    const { hash, type = 'pattern' } = body || {};
-    if (!hash) {
-      return jsonResponse({ error: 'الرمز المدخل مطلوب.' }, 400);
-    }
-
-    const isMatch = timingSafeEqualHex(String(hash).trim().toLowerCase(), storedHash.trim().toLowerCase());
-    if (!isMatch) {
-      const mut = await mutateEdgeDocWithRetry<OwnerLockConfigData, number>(env, CLOUD_OWNER_LOCK_KEY, async (raw) => {
-        const cur = Array.isArray(raw?.failed_attempts) ? raw!.failed_attempts : [];
-        const nextAttempts = [{ timestamp: new Date().toISOString(), type: String(type) }, ...cur].slice(0, 5);
-        return {
-          nextDoc: {
-            lock_type: raw?.lock_type === 'pin' ? 'pin' : 'pattern',
-            lock_hash: raw?.lock_hash || storedHash,
-            code_hash: raw?.code_hash || storedHash,
-            updated_at: raw?.updated_at || new Date().toISOString(),
-            failed_attempts: nextAttempts,
-          },
-          result: nextAttempts.length,
-        };
-      });
-      void mut;
-      return jsonResponse(
-        {
-          success: false,
-          lockedOut: false,
-          remainingSeconds: 0,
-          error: 'الرمز غير صحيح',
-        },
-        401
-      );
-    }
-
-    const existingSession = await verifyEdgeOwnerSession(request, env);
-    const extraHeaders: Record<string, string> = {};
-    if (existingSession) {
-      const secret = await resolveSharedHmacSecret(env);
-      if (secret) {
-        const issuedAt = Date.now();
-        const payload = `v2.${existingSession.sessionId}.${issuedAt}.${existingSession.expiresAt}.1`;
-        const hmac = await hmacSha256Hex(secret, payload);
-        const signedCookie = `${payload}.${hmac}`;
-        extraHeaders['Set-Cookie'] = buildEdgeSessionCookie(
-          request,
-          signedCookie,
-          Math.max(60, Math.floor((existingSession.expiresAt - issuedAt) / 1000))
-        );
-      }
-    }
-
     return jsonResponse(
       {
-        success: true,
-        message: 'تم فك القفل بنجاح والدخول للوحة المالك.',
+        success: false,
+        error: 'تم تعطيل مسار القفل المحلي القديم؛ المصادقة تمر حصرياً عبر بوابة Vault.',
       },
-      200,
-      extraHeaders
+      403
     );
   }
 
   if (method === 'POST' && pathname === '/api/security/logFailedAttempt') {
-    const ip = getEdgeClientIp(request);
-    const rate = checkEdgeSlidingWindowLimit('osLockLog', ip, 5, 30_000);
-    const body = await parseJson();
-    const { type = 'pattern' } = body || {};
-
-    const mut = await mutateEdgeDocWithRetry<
-      OwnerLockConfigData,
-      Array<{ timestamp: string; type: string }>
-    >(env, CLOUD_OWNER_LOCK_KEY, async (raw) => {
-      if (!raw || (!raw.lock_hash && !raw.code_hash)) {
-        return { skipWrite: true, result: [] };
-      }
-      const nextAttempts = [
-        { timestamp: new Date().toISOString(), type: String(type) },
-        ...(Array.isArray(raw.failed_attempts) ? raw.failed_attempts : []),
-      ].slice(0, 5);
-      return {
-        nextDoc: {
-          lock_type: raw.lock_type === 'pin' ? 'pin' : 'pattern',
-          lock_hash: raw.lock_hash || '',
-          code_hash: raw.code_hash || '',
-          updated_at: new Date().toISOString(),
-          failed_attempts: nextAttempts,
-        },
-        result: nextAttempts,
-      };
-    });
-
-    return jsonResponse({
-      success: true,
-      lockedOut: !rate.allowed,
-      remainingSeconds: rate.retryAfterSeconds,
-      failed_attempts: mut.result || [],
-    });
+    return jsonResponse(
+      {
+        success: false,
+        error: 'تم تعطيل هذا المسار؛ تُسجل محاولات الفشل حصرياً داخل الخادم.',
+      },
+      403
+    );
   }
 
   if (method === 'POST' && pathname === '/api/security/resetLockConfig') {
@@ -432,6 +340,9 @@ async function proxyToUpstreamBackend(
   if (clientIp) {
     headers.set('cf-connecting-ip', clientIp);
     headers.set('x-forwarded-for', clientIp);
+  }
+  if (env.CF_PROXY_SECRET && env.CF_PROXY_SECRET.trim().length >= 16) {
+    headers.set('x-edge-proxy-secret', env.CF_PROXY_SECRET.trim());
   }
   headers.set('x-forwarded-host', incomingUrl.host);
   headers.set('x-forwarded-proto', 'https');
@@ -529,14 +440,20 @@ export async function onRequest(context: EdgeContext): Promise<Response> {
   const { request, env, waitUntil } = context;
 
   if (request.method === 'OPTIONS') {
-    const reqOrigin = request.headers.get('origin') || 'https://echoxstore.pages.dev';
+    const reqOrigin = request.headers.get('origin') || '';
+    if (reqOrigin && !isAllowedEdgeOrigin(reqOrigin, env)) {
+      return jsonResponse({ success: false, error: 'Origin not allowed' }, 403);
+    }
+    const allowedOrigin = reqOrigin || 'https://echoxstore.pages.dev';
     return new Response(null, {
       status: 204,
       headers: {
-        'Access-Control-Allow-Origin': reqOrigin,
+        'Access-Control-Allow-Origin': allowedOrigin,
+        Vary: 'Origin',
         'Access-Control-Allow-Credentials': 'true',
         'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-CSRF-Token, X-File-Name',
+        'Access-Control-Allow-Headers':
+          'Content-Type, Authorization, X-CSRF-Token, X-File-Name, X-Chat-Token, X-Tracking-Phone',
         'Cache-Control': 'no-store',
         'X-Robots-Tag': 'noindex, nofollow',
       },
@@ -559,6 +476,16 @@ export async function onRequest(context: EdgeContext): Promise<Response> {
       : request;
 
     if (request.method === 'GET' && pathname === '/api/health') {
+      const adminSess = await verifyEdgeOwnerSession(edgeReq, env);
+      const isAdmin = Boolean(adminSess && adminSess.codeVerified);
+      if (!isAdmin) {
+        return jsonResponse({
+          status: 'ok',
+          service: 'echox-store-api',
+          edgeMode: true,
+          timestamp: new Date().toISOString(),
+        });
+      }
       const probe = await probeEdgeFirestoreConnection(env);
       const persistence = getEdgePersistenceStatus(env, probe.error);
       return jsonResponse({

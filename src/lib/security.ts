@@ -1,12 +1,4 @@
-// ECHOX OWNER SECURITY & OS PHONE LOCK (PATTERN & PIN)
-import { auth, db } from './firebase';
-import { 
-  RecaptchaVerifier, 
-  signInWithPhoneNumber, 
-  ConfirmationResult, 
-  UserCredential 
-} from 'firebase/auth';
-import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
+// ECHOX OWNER SECURITY & OS PHONE LOCK (SERVER-SIDE ARGON2ID + HMAC SESSION)
 
 export const DEFAULT_OWNER_EMAIL = '';
 export const DEFAULT_OWNER_PHONE = '';
@@ -110,6 +102,7 @@ export function setOwnerUnlocked(unlocked: boolean) {
 }
 
 let activeMemorySessionToken: string | null = null;
+let lastReauthSessionToken: string | null = null;
 let activeCsrfToken: string | null = null;
 let activeVaultGateToken: { token: string; expiresAt: number } | null = null;
 
@@ -130,6 +123,19 @@ export function setPendingVaultGateToken(token: string | null) {
   } else {
     activeVaultGateToken = null;
   }
+}
+
+export function getPendingVaultGateToken(): string | null {
+  if (!activeVaultGateToken) return null;
+  if (Date.now() > activeVaultGateToken.expiresAt) {
+    activeVaultGateToken = null;
+    return null;
+  }
+  return activeVaultGateToken.token;
+}
+
+export function clearPendingVaultGateToken() {
+  activeVaultGateToken = null;
 }
 
 export function consumePendingVaultGateToken(): string | null {
@@ -196,6 +202,7 @@ export function getAdminAuthHeaders(extra: Record<string, string> = {}): Record<
 
 export function clearOwnerSecuritySession() {
   activeMemorySessionToken = null;
+  lastReauthSessionToken = null;
   activeCsrfToken = null;
   activeVaultGateToken = null;
   try {
@@ -215,7 +222,11 @@ export function clearOwnerSecuritySession() {
 }
 
 export function notifySessionExpired() {
+  const prevSession = activeMemorySessionToken;
   clearOwnerSecuritySession();
+  if (prevSession) {
+    lastReauthSessionToken = prevSession;
+  }
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('echox_session_expired'));
   }
@@ -238,8 +249,8 @@ export async function hashSecurityInput(input: string): Promise<string> {
 // ==========================================
 
 /**
- * Reads lock configuration from Firestore (store_settings/owner_security),
- * with graceful fallback to /api/security/ownerLockConfig.
+ * Reads server-side lock status from /api/security/ownerLockConfig.
+ * Direct client Firestore access to store_settings is strictly disabled.
  */
 export async function fetchOwnerLockConfig(): Promise<{
   configured: boolean;
@@ -247,33 +258,8 @@ export async function fetchOwnerLockConfig(): Promise<{
   lockedOut?: boolean;
   remainingSeconds?: number;
 }> {
-  // 1. Try reading from Firestore: store_settings/owner_security
   try {
-    const docRef = doc(db, 'store_settings', 'owner_security');
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
-      const data = docSnap.data() as any;
-      const hash = data.lock_hash || data.code_hash;
-      if (hash && hash.trim().length > 0) {
-        return {
-          configured: true,
-          config: {
-            lock_type: data.lock_type === 'pin' ? 'pin' : 'pattern',
-            lock_hash: hash,
-            code_hash: hash,
-            updated_at: data.updated_at,
-            failed_attempts: data.failed_attempts || []
-          }
-        };
-      }
-    }
-  } catch (err) {
-    console.info('[Security] Firestore direct read notice, using server sync fallback:', err);
-  }
-
-  // 2. Fallback to server API
-  try {
-    const res = await fetch('/api/security/ownerLockConfig');
+    const res = await fetch('/api/security/ownerLockConfig', { credentials: 'same-origin' });
     if (res.ok) {
       const data = await res.json();
       if (data.configured && (data.lock_hash || data.code_hash)) {
@@ -291,7 +277,7 @@ export async function fetchOwnerLockConfig(): Promise<{
         };
       }
       return {
-        configured: false,
+        configured: Boolean(data.configured),
         config: null,
         lockedOut: data.lockedOut,
         remainingSeconds: data.remainingSeconds
@@ -305,8 +291,7 @@ export async function fetchOwnerLockConfig(): Promise<{
 }
 
 /**
- * Saves the lock configuration to Firestore (store_settings/owner_security)
- * and syncs with the server API.
+ * Saves lock configuration strictly via authenticated server API.
  */
 export async function saveOwnerLockConfig(
   lock_type: 'pattern' | 'pin',
@@ -343,18 +328,11 @@ export async function saveOwnerLockConfig(
     return { success: false, hash: '', error: 'تعذر الاتصال بالخادم لحفظ إعدادات القفل.' };
   }
 
-  try {
-    const docRef = doc(db, 'store_settings', 'owner_security');
-    await setDoc(docRef, payload, { merge: true });
-  } catch {
-    // Server DB persistence already succeeded
-  }
-
   return { success: true, hash: finalHash };
 }
 
 /**
- * Verifies the pattern or PIN entry against stored hash and handles lockout.
+ * Client-side hash check permanently disabled; verification runs strictly on server via Argon2id.
  */
 export async function verifyOwnerLockInput(
   _rawInput: string,
@@ -374,22 +352,7 @@ export async function verifyOwnerLockInput(
 }
 
 /**
- * Records a failed attempt in Firestore and the backend log.
- */
-export async function logFailedAttemptCall(type: 'pattern' | 'pin') {
-  try {
-    await fetch('/api/security/logFailedAttempt', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type })
-    });
-  } catch (err) {
-    console.warn('logFailedAttempt notice:', err);
-  }
-}
-
-/**
- * Resets lock configuration in Firestore & backend when user confirms "Forgot Code".
+ * Resets lock configuration strictly via authenticated server API.
  */
 export async function resetOwnerLockConfig(): Promise<boolean> {
   try {
@@ -406,11 +369,6 @@ export async function resetOwnerLockConfig(): Promise<boolean> {
   } catch {
     return false;
   }
-
-  try {
-    const docRef = doc(db, 'store_settings', 'owner_security');
-    await deleteDoc(docRef);
-  } catch {}
 
   clearOwnerSecuritySession();
   return true;
@@ -592,9 +550,13 @@ export async function verifyPinServer(pin: string): Promise<{
   error?: string;
 }> {
   try {
-    const { res, data } = await fetchSecurityPostWithWakeRetry('/api/security/verifyPin', {
-      pin: pin.trim()
-    });
+    const gateToken = getPendingVaultGateToken();
+    const reauthToken = !gateToken ? lastReauthSessionToken : null;
+    const payload: Record<string, unknown> = { pin: pin.trim() };
+    if (gateToken) payload.gateToken = gateToken;
+    if (reauthToken) payload.reauthToken = reauthToken;
+
+    const { res, data } = await fetchSecurityPostWithWakeRetry('/api/security/verifyPin', payload);
     if (res.status === 503) {
       return {
         success: false,
@@ -612,6 +574,8 @@ export async function verifyPinServer(pin: string): Promise<{
       };
     }
     if (data.success) {
+      activeVaultGateToken = null;
+      lastReauthSessionToken = null;
       setOwnerUnlocked(true);
       if (typeof data.sessionToken === 'string' && data.sessionToken) {
         setMemorySessionToken(data.sessionToken);
@@ -619,6 +583,9 @@ export async function verifyPinServer(pin: string): Promise<{
       if (typeof data.csrfToken === 'string' && data.csrfToken) {
         setMemoryCsrfToken(data.csrfToken);
       }
+    } else if (res.status === 403) {
+      activeVaultGateToken = null;
+      lastReauthSessionToken = null;
     }
     return {
       ...data,

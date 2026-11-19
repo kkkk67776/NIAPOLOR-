@@ -76,7 +76,8 @@ async function run(): Promise<void> {
   // 3. Direct unauthenticated vault routes & Ctrl+Shift+E shortcut removed
   assertTrue(!appTsx.includes('/owner/login') || !appTsx.includes('requestOpenVault()'), 'App.tsx does not open vault on /owner/login');
   assertTrue(!securityRoom.includes("e.key === 'E'"), 'OwnerSecurityRoom removes Ctrl+Shift+E direct shortcut');
-  assertTrue(securityRoom.includes('consumePendingVaultGateToken'), 'OwnerSecurityRoom requires server-verified gateToken');
+  assertTrue(securityRoom.includes('hasPendingVaultGateToken'), 'OwnerSecurityRoom requires server-verified gateToken');
+  assertTrue(securityClient.includes('getPendingVaultGateToken'), 'security.ts preserves gateToken across PIN retries until unlock or cancel');
   assertTrue(ownerDash.includes('hadUnlockedSession'), 'OwnerDashboard suppresses session-expired popup for direct unauthenticated visitors');
 
   // 4. Zero Argon2 hashes, HMAC secrets, or hardcoded PINs in client src/
@@ -228,23 +229,44 @@ async function run(): Promise<void> {
       );
     }
 
-    // 5. Wrong PIN rejected (401) + Valid PIN unlocks existing Control Room
+    // 5. Direct PIN check without gateToken blocked (403); Wrong PIN rejected (401); Valid single-use gateToken + PIN unlocks Control Room
+    const noGatePinRes = await fetch(`${baseUrl}/api/security/verifyPin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '203.0.113.88' },
+      body: JSON.stringify({ pin: TEST_PIN }),
+    });
+    assertEq(noGatePinRes.status, 403, 'Direct verifyPin without gateToken returns 403');
+
+    const badGateCodeRes = await fetch(`${baseUrl}/api/security/verifyAccessCode`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '203.0.113.88' },
+      body: JSON.stringify({ code: TEST_ACCESS_CODE }),
+    });
+    const badGateCodeJson = (await badGateCodeRes.json()) as any;
+
     const badPinRes = await fetch(`${baseUrl}/api/security/verifyPin`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '203.0.113.88' },
-      body: JSON.stringify({ pin: '000000' }),
+      body: JSON.stringify({ pin: '000000', gateToken: badGateCodeJson.gateToken }),
     });
-    assertEq(badPinRes.status, 401, 'Wrong PIN returns 401');
+    assertEq(badPinRes.status, 401, 'Wrong PIN with valid gateToken returns 401');
 
     const goodPinRes = await fetch(`${baseUrl}/api/security/verifyPin`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '203.0.113.10' },
-      body: JSON.stringify({ pin: TEST_PIN }),
+      body: JSON.stringify({ pin: TEST_PIN, gateToken: okCodeJson.gateToken }),
     });
-    assertEq(goodPinRes.status, 200, 'Valid existing PIN returns 200');
+    assertEq(goodPinRes.status, 200, 'Valid existing PIN + single-use gateToken returns 200');
     const pinJson = (await goodPinRes.json()) as any;
     assertTrue(typeof pinJson.sessionToken === 'string' && pinJson.sessionToken.startsWith('v2.'), 'Valid PIN returns v2 sessionToken');
     assertTrue(typeof pinJson.csrfToken === 'string' && pinJson.csrfToken.startsWith('csrf1.'), 'Valid PIN returns csrfToken');
+
+    const reuseGatePinRes = await fetch(`${baseUrl}/api/security/verifyPin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '203.0.113.10' },
+      body: JSON.stringify({ pin: TEST_PIN, gateToken: okCodeJson.gateToken }),
+    });
+    assertEq(reuseGatePinRes.status, 403, 'Consumed single-use gateToken cannot be replayed (403)');
 
     const meRes = await fetch(`${baseUrl}/api/owner/me`, {
       headers: { Authorization: `Bearer ${pinJson.sessionToken}` },

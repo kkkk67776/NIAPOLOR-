@@ -341,7 +341,26 @@ export async function unsubscribeAdminPush(endpoint: string): Promise<{ ok: bool
   return { ok: true, subscriptionsCount: db.adminSubscriptions.length };
 }
 
-export async function subscribePublicPush(rawSub: any): Promise<{ ok: boolean; statusCode?: number; error?: string }> {
+export function computePublicUnsubscribeToken(endpoint: string, hmacSecret: string): string {
+  const sig = crypto
+    .createHmac('sha256', hmacSecret || 'ephemeral')
+    .update(`pub_unsub:${endpoint}`)
+    .digest('hex');
+  return `unsub1.${sig}`;
+}
+
+export function verifyPublicUnsubscribeToken(endpoint: string, token: string, hmacSecret: string): boolean {
+  if (!endpoint || !token || typeof token !== 'string') return false;
+  const expected = computePublicUnsubscribeToken(endpoint, hmacSecret);
+  const a = Buffer.from(token.trim());
+  const b = Buffer.from(expected);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+export async function subscribePublicPush(
+  rawSub: any,
+  hmacSecret = ''
+): Promise<{ ok: boolean; statusCode?: number; error?: string; unsubscribeToken?: string }> {
   if (!isValidPushSubscription(rawSub)) {
     return { ok: false, statusCode: 400, error: 'بيانات اشتراك الإشعارات غير صالحة.' };
   }
@@ -369,17 +388,28 @@ export async function subscribePublicPush(rawSub: any): Promise<{ ok: boolean; s
   if (!saved.ok) {
     return { ok: false, statusCode: 503, error: saved.error };
   }
-  return { ok: true };
+  return {
+    ok: true,
+    unsubscribeToken: hmacSecret ? computePublicUnsubscribeToken(rawSub.endpoint, hmacSecret) : undefined,
+  };
 }
 
-export async function unsubscribePublicPush(endpoint: string): Promise<{ ok: boolean; statusCode?: number; error?: string }> {
+export async function unsubscribePublicPush(
+  endpoint: string,
+  token = '',
+  hmacSecret = ''
+): Promise<{ ok: boolean; statusCode?: number; error?: string }> {
   await syncNotificationsIfStale(true);
-  const db = loadDb();
-  if (endpoint) {
-    const nextSubs = db.publicSubscriptions.filter((s) => s.endpoint !== endpoint);
-    const saved = await saveDbStrict({ ...db, publicSubscriptions: nextSubs });
-    if (!saved.ok) return { ok: false, statusCode: 503, error: saved.error };
+  if (!endpoint) {
+    return { ok: false, statusCode: 400, error: 'رابط الاشتراك مطلوب لإلغاء الاشتراك.' };
   }
+  if (hmacSecret && !verifyPublicUnsubscribeToken(endpoint, token, hmacSecret)) {
+    return { ok: false, statusCode: 403, error: 'رمز تأكيد إلغاء الاشتراك غير صالح أو مفقود.' };
+  }
+  const db = loadDb();
+  const nextSubs = db.publicSubscriptions.filter((s) => s.endpoint !== endpoint);
+  const saved = await saveDbStrict({ ...db, publicSubscriptions: nextSubs });
+  if (!saved.ok) return { ok: false, statusCode: 503, error: saved.error };
   return { ok: true };
 }
 
@@ -701,4 +731,23 @@ export async function restoreNotificationSettingsSnapshot(
   const res = await updateNotificationSettings(incoming);
   return { ok: res.ok, statusCode: res.statusCode, error: res.error };
 }
+
+export async function removePublicAnnouncementsForProduct(productId: string): Promise<number> {
+  const cleanId = (productId || '').trim();
+  if (!cleanId) return 0;
+  const db = loadDb();
+  const encodedPath = `/?product=${encodeURIComponent(cleanId)}`;
+  const rawPath = `/?product=${cleanId}`;
+  const filtered = db.publicAnnouncements.filter(
+    (ann) => ann.url !== encodedPath && ann.url !== rawPath
+  );
+  const removed = db.publicAnnouncements.length - filtered.length;
+  if (removed > 0) {
+    await saveDbStrict({ ...db, publicAnnouncements: filtered }).catch(() => {
+      saveDbFireAndForget({ ...db, publicAnnouncements: filtered });
+    });
+  }
+  return removed;
+}
+
 

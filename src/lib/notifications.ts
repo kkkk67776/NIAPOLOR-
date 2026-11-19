@@ -54,6 +54,7 @@ export interface AdminNotificationsOverviewResponse {
 }
 
 const PUBLIC_SUB_KEY = 'echox_public_push_endpoint';
+const PUBLIC_UNSUB_TOKEN_KEY = 'echox_public_push_unsub_token';
 const ADMIN_SUB_KEY = 'echox_admin_push_endpoint';
 
 let swRegistrationPromise: Promise<ServiceWorkerRegistration | null> | null = null;
@@ -340,6 +341,9 @@ export async function subscribePublicPushClient(): Promise<{
       if (subRes.subscription.endpoint) {
         localStorage.setItem(PUBLIC_SUB_KEY, subRes.subscription.endpoint);
       }
+      if (typeof data.unsubscribeToken === 'string' && data.unsubscribeToken) {
+        localStorage.setItem(PUBLIC_UNSUB_TOKEN_KEY, data.unsubscribeToken);
+      }
     } catch {}
     return { ok: true };
   } catch {
@@ -350,17 +354,22 @@ export async function subscribePublicPushClient(): Promise<{
 export async function unsubscribePublicPushClient(): Promise<{ ok: boolean }> {
   const existing = await getExistingPushSubscription();
   const endpoint = existing?.endpoint || getSavedPublicEndpoint() || '';
+  let unsubscribeToken = '';
+  try {
+    unsubscribeToken = localStorage.getItem(PUBLIC_UNSUB_TOKEN_KEY) || '';
+  } catch {}
   if (endpoint) {
     try {
       await fetch('/api/notifications/public/unsubscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ endpoint }),
+        body: JSON.stringify({ endpoint, unsubscribeToken }),
       });
     } catch {}
   }
   try {
     localStorage.removeItem(PUBLIC_SUB_KEY);
+    localStorage.removeItem(PUBLIC_UNSUB_TOKEN_KEY);
   } catch {}
   // Unsubscribe browser push only if admin push isn't also enabled on this browser
   if (existing && !getSavedAdminEndpoint()) {

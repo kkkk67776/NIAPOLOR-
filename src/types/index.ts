@@ -155,6 +155,7 @@ export interface Order {
   createdAt: string;
   updatedAt: string;
   notes?: string;
+  piiMasked?: boolean;
   statusHistory: {
     status: OrderStatus;
     timestamp: string;
