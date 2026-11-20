@@ -176,6 +176,17 @@ async function run(): Promise<void> {
 
     const payCfgRes = await fetch(`${baseUrl}/api/payments/config`);
     assertEq(payCfgRes.status, 200, 'GET /api/payments/config returns 200');
+    const payCfgJson = (await payCfgRes.json()) as any;
+    const payCfgText = JSON.stringify(payCfgJson);
+    assertEq(payCfgJson?.methods?.bank_transfer?.enabled, false, 'Public bank_transfer is disabled by default');
+    assertEq(payCfgJson?.methods?.bank_transfer?.ibanOrRib, '', 'Public config never exposes bank RIB/IBAN');
+    assertEq(payCfgJson?.methods?.bank_transfer?.accountHolder, '', 'Public config never exposes accountHolder');
+    assertEq(payCfgJson?.methods?.bank_transfer?.bankName, '', 'Public config never exposes bankName');
+    assertEq(payCfgJson?.methods?.bank_transfer?.swiftCode, '', 'Public config never exposes swiftCode');
+    assertEq(payCfgJson?.methods?.online_payment?.apiKeyMasked, undefined, 'Public config omits apiKeyMasked');
+    assertEq(payCfgJson?.methods?.online_payment?.walletIdMasked, undefined, 'Public config omits walletIdMasked');
+    assertEq(payCfgJson?.methods?.online_payment?.webhookPath, undefined, 'Public config omits webhookPath');
+    assertTrue(!payCfgText.includes('TN59') && !payCfgText.includes('BIAT'), 'Public /api/payments/config contains zero RIB/BIAT strings');
 
     // =========================================================
     // 2. Legacy Session Bypass Blocked & Vendor Financials Protected
@@ -268,6 +279,21 @@ async function run(): Promise<void> {
       headers: { Authorization: `Bearer ${adminToken}` },
     });
     assertEq(authVendorRes.status, 200, 'Authenticated owner can read vendor financials (200)');
+
+    // Authenticated admin still sees sealed internal RIB for merchant settlement
+    const adminPayCfgRes = await fetch(`${baseUrl}/api/admin/payments/config`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    assertEq(adminPayCfgRes.status, 200, 'Authenticated owner can read admin payment config (200)');
+    const adminPayCfgJson = (await adminPayCfgRes.json()) as any;
+    assertTrue(
+      String(adminPayCfgJson?.methods?.bank_transfer?.ibanOrRib || '').includes('TN59'),
+      'Admin payment config retains sealed internal RIB/IBAN'
+    );
+    assertTrue(
+      Boolean(adminPayCfgJson?.methods?.bank_transfer?.ibanFingerprint),
+      'Admin payment config includes IBAN integrity fingerprint'
+    );
 
     // =========================================================
     // 4. Checkout Price Integrity, Order Tracking PII Stripping & Magic Bytes + Quarantine
@@ -428,6 +454,18 @@ async function run(): Promise<void> {
     });
     assertEq(phoneMismatchRes.status, 403, 'Proof submission with mismatched customerPhone blocked (403)');
 
+    // Temporarily enable legacy bank_transfer endpoint solely to exercise receipt Quarantine Vault magic-byte checks, then immediately re-disable
+    const enableBankRes = await fetch(`${baseUrl}/api/admin/payments/config`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+        'X-CSRF-Token': csrfToken,
+      },
+      body: JSON.stringify({ bankTransfer: { enabled: true } }),
+    });
+    assertEq(enableBankRes.status, 200, 'Admin can temporarily enable bank_transfer for receipt validation test (200)');
+
     // Create a bank_transfer order to test real receipt uploads
     const bankCheckoutRes = await fetch(`${baseUrl}/api/payments/checkout`, {
       method: 'POST',
@@ -491,6 +529,22 @@ async function run(): Promise<void> {
       }),
     });
     assertEq(validProofRes.status, 200, 'Valid PNG passes Magic Bytes validator (200)');
+
+    // Re-disable public bank_transfer immediately and verify public config remains scrubbed
+    const disableBankRes = await fetch(`${baseUrl}/api/admin/payments/config`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+        'X-CSRF-Token': csrfToken,
+      },
+      body: JSON.stringify({ bankTransfer: { enabled: false } }),
+    });
+    assertEq(disableBankRes.status, 200, 'Admin re-disables bank_transfer (200)');
+
+    const publicAfterRes = await fetch(`${baseUrl}/api/payments/config`);
+    const publicAfterText = await publicAfterRes.text();
+    assertTrue(!publicAfterText.includes('TN59') && !publicAfterText.includes('BIAT'), 'Public config never leaks RIB after admin config updates');
 
     // Check Quarantine Vault contains both blocked artifacts and supports inspect + purge
     const quarRes = await fetch(`${baseUrl}/api/admin/security/quarantine`, {
@@ -813,7 +867,10 @@ async function run(): Promise<void> {
       body: JSON.stringify({
         subscription: {
           endpoint: 'https://fcm.googleapis.com/fcm/send/test-sub-endpoint-12345',
-          keys: { p256dh: 'dGVzdA', auth: 'dGVzdA' },
+          keys: {
+            p256dh: 'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U',
+            auth: 'tBHItJI5svbpez7KI4CCXg',
+          },
         },
       }),
     });

@@ -9,6 +9,8 @@ import fs from 'fs';
 import argon2 from 'argon2';
 import {
   getPublicPaymentConfig,
+  getAdminPaymentConfig,
+  getPosteCcpTransferDetails,
   syncCatalogSnapshot,
   updateAdminPaymentConfig,
   testOnlineGatewayConnection,
@@ -2228,10 +2230,26 @@ function requireAdminAuth(req: Request, res: Response): { email: string; rawSess
   return { email: session.email, rawSessionId: session.rawSessionId };
 }
 
-// 1. Public Payment Config (never exposes server secrets)
+// 1. Public Payment Config (never exposes server secrets or RIB/IBAN)
 app.get('/api/payments/config', async (_req: Request, res: Response) => {
   await syncPaymentDbIfStale(false).catch(() => {});
   return res.json(getPublicPaymentConfig());
+});
+
+// 1.1 On-demand Poste Tunisienne / CCP Transfer Details (served ONLY when customer selects this method and bank seal is valid)
+app.get('/api/payments/poste-ccp/details', async (req: Request, res: Response) => {
+  const ip = getClientIp(req);
+  const rate = checkSlidingWindowLimit('posteCcpDetails', ip, 30, 60 * 1000);
+  if (!rate.allowed) {
+    return res.status(429).json({ success: false, error: `تم تجاوز الحد المسموح، يرجى الانتظار ${rate.retryAfterSeconds} ثانية.` });
+  }
+  res.setHeader('Cache-Control', 'no-store');
+  await syncPaymentDbIfStale(false).catch(() => {});
+  const detailsRes = getPosteCcpTransferDetails();
+  if (!detailsRes.ok || !detailsRes.details) {
+    return res.status(detailsRes.statusCode || 403).json({ success: false, error: detailsRes.error });
+  }
+  return res.json({ success: true, details: detailsRes.details });
 });
 
 // 2. Catalog Price Sync (Admin only can overwrite catalog prices)
@@ -2287,6 +2305,7 @@ app.post('/api/payments/checkout', async (req: Request, res: Response) => {
       order: result.order,
       transaction: result.transaction,
       paymentUrl: result.paymentUrl,
+      ...(result.transferDetails ? { transferDetails: result.transferDetails } : {}),
     });
   } catch (err: any) {
     console.error('[Payments] Checkout error:', err);
@@ -2294,8 +2313,8 @@ app.post('/api/payments/checkout', async (req: Request, res: Response) => {
   }
 });
 
-// 4. Customer Submit Bank Transfer Proof (Rate limited per IP)
-app.post('/api/payments/bank-transfer/proof', async (req: Request, res: Response) => {
+// 4. Customer Submit Poste Tunisienne / CCP or Bank Transfer Proof (Rate limited per IP)
+const handleTransferProofSubmit = async (req: Request, res: Response) => {
   const ip = getClientIp(req);
   const rate = checkSlidingWindowLimit('bankProof', ip, 20, 60 * 1000);
   if (!rate.allowed) {
@@ -2320,15 +2339,21 @@ app.post('/api/payments/bank-transfer/proof', async (req: Request, res: Response
     }
     return res.status(result.statusCode || 400).json({ success: false, error: result.error });
   }
+  const isCcp = result.order?.paymentMethod === 'poste_ccp';
   emitAdminNotification({
     category: 'payment',
     severity: 'info',
-    title: `🏦 إثبات تحويل بنكي جديد #${result.order?.trackingNumber || ''}`,
-    body: `المرسل: ${result.order?.customerName || 'زبون'} — بانتظار المراجعة والاعتماد.`,
+    title: isCcp
+      ? `📮 وصل تحويل البريد التونسي / CCP #${result.order?.trackingNumber || ''}`
+      : `🏦 إثبات تحويل بنكي جديد #${result.order?.trackingNumber || ''}`,
+    body: `المرسل: ${result.order?.customerName || 'زبون'} — بانتظار المراجعة اليدوية والتحقق من وصول الأموال.`,
     url: '/owner/dashboard',
   });
   return res.json({ success: true, order: result.order });
-});
+};
+
+app.post('/api/payments/poste-ccp/proof', handleTransferProofSubmit);
+app.post('/api/payments/bank-transfer/proof', handleTransferProofSubmit);
 
 // 5. Customer Request Cancellation / Refund
 app.post('/api/payments/request-refund', async (req: Request, res: Response) => {
@@ -2351,9 +2376,10 @@ app.post('/api/payments/request-refund', async (req: Request, res: Response) => 
   return res.json({ success: true, refundRequest: result.refundRequest });
 });
 
-// 6. Server-Side Payment Webhook (Supports both GET silentWebhook & POST signed Webhook)
+// 6. Server-Side Payment Webhook (Supports both GET silentWebhook & POST signed Webhook with per-order token)
 const handleWebhookRoute = async (req: Request, res: Response) => {
   const provider = req.params.provider || 'konnect';
+  const webhookToken = req.params.webhookToken || undefined;
   const sigHeader =
     (req.headers['x-konnect-signature'] as string) ||
     (req.headers['x-signature'] as string) ||
@@ -2361,6 +2387,7 @@ const handleWebhookRoute = async (req: Request, res: Response) => {
 
   const result = await handlePaymentWebhook({
     provider,
+    webhookToken,
     method: req.method === 'GET' ? 'GET' : 'POST',
     signatureHeader: sigHeader,
     rawBody: req.body,
@@ -2371,7 +2398,7 @@ const handleWebhookRoute = async (req: Request, res: Response) => {
     emitSecurityAlertRateLimited(`webhook_sig_${provider}`, {
       severity: 'critical',
       title: `🚨 محاولة تزوير توقيع Webhook (${provider})`,
-      body: `تم رفض إشعار دفع بتوقيع غير صالح من ${getClientIp(req)}.`,
+      body: `تم رفض إشعار دفع بتوقيع أو رمز غير صالح من ${getClientIp(req)}.`,
       url: '/owner/dashboard',
     });
   } else if (result.ok && !result.idempotentDuplicate && /Paid/i.test(result.message || '')) {
@@ -2386,8 +2413,8 @@ const handleWebhookRoute = async (req: Request, res: Response) => {
   return res.status(result.statusCode).json(result);
 };
 
-app.get('/api/payments/webhook/:provider', handleWebhookRoute);
-app.post('/api/payments/webhook/:provider', handleWebhookRoute);
+app.get('/api/payments/webhook/:provider/:webhookToken?', handleWebhookRoute);
+app.post('/api/payments/webhook/:provider/:webhookToken?', handleWebhookRoute);
 
 // 6.1 Authoritative Return Verification after Gateway Redirect (Konnect / Flouci)
 app.get('/api/payments/verify-return', async (req: Request, res: Response) => {
@@ -2468,7 +2495,7 @@ app.post('/api/support/contribute', async (req: Request, res: Response) => {
 app.get('/api/admin/payments/config', async (req: Request, res: Response) => {
   if (!requireAdminAuth(req, res)) return;
   await syncPaymentDbIfStale(true).catch(() => {});
-  return res.json(getPublicPaymentConfig());
+  return res.json(getAdminPaymentConfig());
 });
 
 app.put('/api/admin/payments/config', async (req: Request, res: Response) => {
@@ -2549,7 +2576,7 @@ app.put('/api/admin/payments/config', async (req: Request, res: Response) => {
     category: 'activity',
     severity: 'info',
     title: '💳 تحديث إعدادات الدفع في غرفة التحكم',
-    body: 'تم حفظ إعدادات بوابات الدفع والتحويل البنكي والعمولات.',
+    body: 'تم حفظ إعدادات بوابات الدفع والتسوية والعمولات.',
     url: '/owner/dashboard',
   });
   return res.json({ success: true, config: result.config });
@@ -3492,7 +3519,7 @@ app.get('/api/admin/security/integrity', async (req: Request, res: Response) => 
     centralSecurityConfig,
     hmacSecretLength: getHmacSecret().length,
     storeState: getStoreRecoverySnapshot(),
-    paymentPublicConfig: getPublicPaymentConfig(),
+    paymentPublicConfig: getAdminPaymentConfig(),
     paymentOrders: paymentOverview.orders,
   });
   return res.json({

@@ -76,7 +76,7 @@ export interface CartItem {
   quantity: number;
 }
 
-export type PaymentMethodType = 'cod' | 'bank_transfer' | 'online_payment' | 'konnect' | 'flouci';
+export type PaymentMethodType = 'cod' | 'bank_transfer' | 'poste_ccp' | 'online_payment' | 'konnect' | 'flouci';
 
 export type PaymentStatus =
   | 'Pending Payment'
@@ -98,6 +98,16 @@ export interface TransferProof {
   receiptImageDataUrl?: string; // base64/data URL or URL
   notes?: string;
   submittedAt: string;
+}
+
+export interface PosteCcpTransferDetails {
+  enabled: boolean;
+  accountHolder: string;
+  bankName: string;
+  ibanOrRib: string;
+  swiftCode?: string;
+  instructions: MultilingualText;
+  manualVerificationNotice: string;
 }
 
 export interface OrderItem {
@@ -146,8 +156,9 @@ export interface Order {
   status: OrderStatus;
   paymentMethod: PaymentMethodType;
   paymentStatus: PaymentStatus;
-  paymentReference?: string; // Unique reference per order e.g. ECH-REF-XXXXXX
+  paymentReference?: string; // Unique reference per order e.g. ECH-CCP-XXXXXX / ECH-REF-XXXXXX
   transferProof?: TransferProof;
+  transferDetails?: PosteCcpTransferDetails;
   subOrders?: VendorSubOrder[];
   transactionId?: string;
   refundReason?: string;
@@ -174,6 +185,13 @@ export interface BankTransferPublicConfig {
   lockedByEnv?: boolean;
   tamperDetected?: boolean;
   ibanFingerprint?: string;
+}
+
+export interface PosteCcpPublicConfig {
+  enabled: boolean;
+  instructions: MultilingualText;
+  integrityVerified?: boolean;
+  tamperDetected?: boolean;
 }
 
 export interface OnlineGatewayPublicConfig {
@@ -203,6 +221,7 @@ export interface PaymentSystemPublicConfig {
   methods: {
     cod: { enabled: boolean };
     bank_transfer: BankTransferPublicConfig;
+    poste_ccp: PosteCcpPublicConfig;
     online_payment: OnlineGatewayPublicConfig;
   };
   updatedAt: string;
@@ -215,7 +234,7 @@ export interface PaymentTransaction {
   paymentReference: string;
   customerName: string;
   customerPhone: string;
-  method: 'cod' | 'bank_transfer' | 'online_payment';
+  method: 'cod' | 'bank_transfer' | 'poste_ccp' | 'online_payment';
   provider?: string;
   externalPaymentId?: string;
   amount: number;
@@ -229,6 +248,7 @@ export interface PaymentTransaction {
   refundReason?: string;
   verifiedByAdmin?: string;
   verifiedAt?: string;
+  fundsVerifiedNote?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -275,7 +295,7 @@ export interface SupportTransaction {
   note?: string;
   amount: number;
   currency: string;
-  method: 'cod' | 'bank_transfer' | 'online_payment';
+  method: 'cod' | 'bank_transfer' | 'poste_ccp' | 'online_payment';
   provider?: string;
   externalPaymentId?: string;
   status: PaymentStatus;

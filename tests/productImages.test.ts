@@ -108,74 +108,72 @@ async function runTests() {
 
   // 3. Server Media Inspector against HTTPS JPEG/PNG/WebP, HTML Webpage (og:image), 403/404, and HTTP->HTTPS Upgrade
   {
-    const realFetch = globalThis.fetch;
-    try {
-      globalThis.fetch = (async (input: string | URL | Request) => {
-        const urlStr = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
-        if (urlStr === 'https://93.184.216.34/pic.jpg') {
-          return new Response(VALID_JPEG_BUF, { status: 200, headers: { 'Content-Type': 'image/jpeg' } });
-        }
-        if (urlStr === 'https://93.184.216.34/pic.png') {
-          return new Response(VALID_PNG_BUF, { status: 200, headers: { 'Content-Type': 'image/png' } });
-        }
-        if (urlStr === 'https://93.184.216.34/pic.webp') {
-          return new Response(VALID_WEBP_BUF, { status: 200, headers: { 'Content-Type': 'image/webp' } });
-        }
-        if (urlStr === 'https://93.184.216.34/cdn-no-ext') {
-          return new Response(VALID_WEBP_BUF, { status: 200, headers: { 'Content-Type': 'application/octet-stream' } });
-        }
-        if (urlStr === 'https://93.184.216.34/product-page') {
-          return new Response(
+    const testFetcher = async (urlStr: string) => {
+      if (urlStr === 'https://93.184.216.34/pic.jpg') {
+        return { status: 200, headers: { 'content-type': 'image/jpeg' }, bodyPrefix: VALID_JPEG_BUF };
+      }
+      if (urlStr === 'https://93.184.216.34/pic.png') {
+        return { status: 200, headers: { 'content-type': 'image/png' }, bodyPrefix: VALID_PNG_BUF };
+      }
+      if (urlStr === 'https://93.184.216.34/pic.webp') {
+        return { status: 200, headers: { 'content-type': 'image/webp' }, bodyPrefix: VALID_WEBP_BUF };
+      }
+      if (urlStr === 'https://93.184.216.34/cdn-no-ext') {
+        return { status: 200, headers: { 'content-type': 'application/octet-stream' }, bodyPrefix: VALID_WEBP_BUF };
+      }
+      if (urlStr === 'https://93.184.216.34/product-page') {
+        return {
+          status: 200,
+          headers: { 'content-type': 'text/html; charset=utf-8' },
+          bodyPrefix: Buffer.from(
             `<!doctype html><html><head><meta property="og:image" content="https://93.184.216.34/pic.webp" /></head><body>Product HTML</body></html>`,
-            { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
-          );
-        }
-        if (urlStr === 'https://93.184.216.34/forbidden.jpg') {
-          return new Response('Forbidden', { status: 403, headers: { 'Content-Type': 'text/html' } });
-        }
-        if (urlStr === 'https://93.184.216.34/missing.jpg') {
-          return new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain' } });
-        }
-        return new Response('Unexpected', { status: 500 });
-      }) as typeof fetch;
+            'utf8'
+          ),
+        };
+      }
+      if (urlStr === 'https://93.184.216.34/forbidden.jpg') {
+        return { status: 403, headers: { 'content-type': 'text/html' }, bodyPrefix: Buffer.from('Forbidden', 'utf8') };
+      }
+      if (urlStr === 'https://93.184.216.34/missing.jpg') {
+        return { status: 404, headers: { 'content-type': 'text/plain' }, bodyPrefix: Buffer.from('Not Found', 'utf8') };
+      }
+      return { status: 500, headers: { 'content-type': 'text/plain' }, bodyPrefix: Buffer.from('Unexpected', 'utf8') };
+    };
 
-      const jpgRes = await inspectImageUrlOnServer('https://93.184.216.34/pic.jpg');
-      assert.equal(jpgRes.ok, true);
-      assert.equal(jpgRes.format, 'JPEG');
+    const jpgRes = await inspectImageUrlOnServer('https://93.184.216.34/pic.jpg', { testFetcher });
+    assert.equal(jpgRes.ok, true);
+    assert.equal(jpgRes.format, 'JPEG');
 
-      const pngRes = await inspectImageUrlOnServer('https://93.184.216.34/pic.png');
-      assert.equal(pngRes.ok, true);
-      assert.equal(pngRes.format, 'PNG');
+    const pngRes = await inspectImageUrlOnServer('https://93.184.216.34/pic.png', { testFetcher });
+    assert.equal(pngRes.ok, true);
+    assert.equal(pngRes.format, 'PNG');
 
-      const webpRes = await inspectImageUrlOnServer('https://93.184.216.34/pic.webp');
-      assert.equal(webpRes.ok, true);
-      assert.equal(webpRes.format, 'WebP');
+    const webpRes = await inspectImageUrlOnServer('https://93.184.216.34/pic.webp', { testFetcher });
+    assert.equal(webpRes.ok, true);
+    assert.equal(webpRes.format, 'WebP');
 
-      const octetRes = await inspectImageUrlOnServer('https://93.184.216.34/cdn-no-ext');
-      assert.equal(octetRes.ok, true);
-      assert.equal(octetRes.format, 'WebP');
+    const octetRes = await inspectImageUrlOnServer('https://93.184.216.34/cdn-no-ext', { testFetcher });
+    assert.equal(octetRes.ok, true);
+    assert.equal(octetRes.format, 'WebP');
 
-      const htmlRes = await inspectImageUrlOnServer('https://93.184.216.34/product-page');
-      assert.equal(htmlRes.ok, false);
-      assert.equal(htmlRes.kind, 'webpage');
-      assert.equal(htmlRes.suggestedImageUrl, 'https://93.184.216.34/pic.webp');
+    const htmlRes = await inspectImageUrlOnServer('https://93.184.216.34/product-page', { testFetcher });
+    assert.equal(htmlRes.ok, false);
+    assert.equal(htmlRes.kind, 'webpage');
+    assert.equal(htmlRes.suggestedImageUrl, 'https://93.184.216.34/pic.webp');
 
-      const httpUpgradeRes = await inspectImageUrlOnServer('http://93.184.216.34/pic.jpg');
-      assert.equal(httpUpgradeRes.ok, false);
-      assert.equal(httpUpgradeRes.kind, 'http_insecure');
-      assert.equal(httpUpgradeRes.httpsUpgradeUrl, 'https://93.184.216.34/pic.jpg');
+    const httpUpgradeRes = await inspectImageUrlOnServer('http://93.184.216.34/pic.jpg', { testFetcher });
+    assert.equal(httpUpgradeRes.ok, false);
+    assert.equal(httpUpgradeRes.kind, 'http_insecure');
+    assert.equal(httpUpgradeRes.httpsUpgradeUrl, 'https://93.184.216.34/pic.jpg');
 
-      const err403 = await inspectImageUrlOnServer('https://93.184.216.34/forbidden.jpg');
-      assert.equal(err403.ok, false);
-      assert.equal(err403.statusCode, 403);
+    const err403 = await inspectImageUrlOnServer('https://93.184.216.34/forbidden.jpg', { testFetcher });
+    assert.equal(err403.ok, false);
+    assert.equal(err403.statusCode, 403);
 
-      const err404 = await inspectImageUrlOnServer('https://93.184.216.34/missing.jpg');
-      assert.equal(err404.ok, false);
-      assert.equal(err404.statusCode, 404);
-      console.log('✓ 3. Remote JPEG/PNG/WebP inspection, webpage og:image extraction & HTTP->HTTPS upgrade passed');
-    } finally {
-      globalThis.fetch = realFetch;
-    }
+    const err404 = await inspectImageUrlOnServer('https://93.184.216.34/missing.jpg', { testFetcher });
+    assert.equal(err404.ok, false);
+    assert.equal(err404.statusCode, 404);
+    console.log('✓ 3. Remote JPEG/PNG/WebP inspection, webpage og:image extraction & HTTP->HTTPS upgrade passed');
   }
 
   // 4. End-to-End Store Product Add & Retrieval (Preserving existing products & image URLs)

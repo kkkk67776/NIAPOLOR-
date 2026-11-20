@@ -5,11 +5,9 @@ import {
   CheckCircle2,
   CreditCard,
   Banknote,
-  Landmark,
   MapPin,
   Copy,
   Check,
-  Upload,
   AlertCircle,
   ExternalLink,
   ShieldCheck,
@@ -19,6 +17,10 @@ import {
   User,
   WifiOff,
   RefreshCw,
+  Building2,
+  Upload,
+  Loader2,
+  FileImage,
 } from 'lucide-react';
 import { handleStoreImageError } from '../lib/imageFallback';
 import {
@@ -29,8 +31,13 @@ import {
   isValidGovernorate,
   normalizeTunisianPhone,
 } from '../data/governorates';
-import { Order, PaymentMethodType } from '../types';
-import { getPaymentStatusTone, submitBankTransferProofClient } from '../lib/payments';
+import { Order, PaymentMethodType, PosteCcpTransferDetails } from '../types';
+import {
+  fetchPosteCcpTransferDetails,
+  getPaymentStatusTone,
+  readReceiptFileAsDataUrl,
+  submitPosteCcpProofClient,
+} from '../lib/payments';
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -73,15 +80,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
   const [fieldErrors, setFieldErrors] = useState<FieldErrorMap>({});
 
   const codEnabled = paymentConfig?.methods?.cod?.enabled ?? true;
-  const bankEnabled = paymentConfig?.methods?.bank_transfer?.enabled ?? true;
+  const posteCcpEnabled = Boolean(paymentConfig?.methods?.poste_ccp?.enabled);
   const onlineEnabled = Boolean(
     paymentConfig?.methods?.online_payment?.enabled && paymentConfig?.methods?.online_payment?.readyForLive
   );
 
   const getFirstAvailableMethod = (): PaymentMethodType => {
-    if (codEnabled) return 'cod';
-    if (bankEnabled) return 'bank_transfer';
     if (onlineEnabled) return 'online_payment';
+    if (codEnabled) return 'cod';
+    if (posteCcpEnabled) return 'poste_ccp';
     return 'cod';
   };
 
@@ -92,17 +99,25 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [completedOrder, setCompletedOrder] = useState<Order | null>(null);
+  const [completedCcpDetails, setCompletedCcpDetails] = useState<PosteCcpTransferDetails | null>(null);
   const [gatewayPayUrl, setGatewayPayUrl] = useState<string | undefined>(undefined);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
-  // Proof of transfer fields (used on Bank Transfer confirmation)
-  const [proofRef, setProofRef] = useState('');
-  const [proofSender, setProofSender] = useState('');
+  // On-demand Poste / CCP transfer details (fetched ONLY when customer selects poste_ccp)
+  const [ccpDetails, setCcpDetails] = useState<PosteCcpTransferDetails | null>(null);
+  const [ccpLoading, setCcpLoading] = useState(false);
+  const [ccpError, setCcpError] = useState('');
+
+  // Optional receipt proof state (during or right after checkout)
+  const [showCheckoutProof, setShowCheckoutProof] = useState(false);
+  const [proofRefNumber, setProofRefNumber] = useState('');
+  const [proofSenderName, setProofSenderName] = useState('');
   const [proofDate, setProofDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [proofNotes, setProofNotes] = useState('');
-  const [proofImageData, setProofImageData] = useState<string | undefined>(undefined);
-  const [proofSubmitting, setProofSubmitting] = useState(false);
-  const [proofSuccessMsg, setProofSuccessMsg] = useState('');
+  const [proofImageDataUrl, setProofImageDataUrl] = useState('');
+  const [postProofSubmitting, setPostProofSubmitting] = useState(false);
+  const [postProofError, setPostProofError] = useState('');
+  const [postProofSuccess, setPostProofSuccess] = useState('');
 
   useEffect(() => {
     if (isOpen) {
@@ -128,9 +143,36 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
 
   useEffect(() => {
     if (paymentMethod === 'cod' && !codEnabled) setPaymentMethod(getFirstAvailableMethod());
-    if (paymentMethod === 'bank_transfer' && !bankEnabled) setPaymentMethod(getFirstAvailableMethod());
+    if (paymentMethod === 'poste_ccp' && !posteCcpEnabled) setPaymentMethod(getFirstAvailableMethod());
     if (paymentMethod === 'online_payment' && !onlineEnabled) setPaymentMethod(getFirstAvailableMethod());
-  }, [codEnabled, bankEnabled, onlineEnabled]);
+    if (paymentMethod === 'bank_transfer') setPaymentMethod(getFirstAvailableMethod());
+  }, [codEnabled, posteCcpEnabled, onlineEnabled]);
+
+  useEffect(() => {
+    if (!isOpen || completedOrder || paymentMethod !== 'poste_ccp') {
+      if (paymentMethod !== 'poste_ccp') {
+        setCcpDetails(null);
+        setCcpError('');
+      }
+      return;
+    }
+    let cancelled = false;
+    setCcpLoading(true);
+    setCcpError('');
+    fetchPosteCcpTransferDetails().then((res) => {
+      if (cancelled) return;
+      setCcpLoading(false);
+      if (res.ok && res.details) {
+        setCcpDetails(res.details);
+      } else {
+        setCcpDetails(null);
+        setCcpError(res.error || 'تعذر تحميل بيانات التحويل البريدي.');
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, completedOrder, paymentMethod]);
 
   const availableDelegations = useMemo(
     () => (governorate ? getDelegationsForGovernorate(governorate) : []),
@@ -145,8 +187,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
   if (!isOpen) return null;
 
   const currencyLabel = paymentConfig?.currency || t.cart.currency || 'TND';
-  const bankInfo = paymentConfig.methods.bank_transfer;
-  const hasAnyMethod = codEnabled || bankEnabled || onlineEnabled;
+  const hasAnyMethod = codEnabled || posteCcpEnabled || onlineEnabled;
   const totalItemCount = cart.reduce((s, i) => s + i.quantity, 0);
 
   const handleGovernorateChange = (nextGovId: string) => {
@@ -185,34 +226,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
     navigator.clipboard.writeText(value);
     setCopiedKey(key);
     setTimeout(() => setCopiedKey(null), 2000);
-  };
-
-  const handleProofFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/') || file.type.includes('svg')) {
-      setErrorMsg(
-        language === 'ar'
-          ? 'يرجى رفع صورة وصل صالحة (PNG / JPG / WEBP فقط).'
-          : 'Please upload a valid receipt image (PNG / JPG / WEBP only).'
-      );
-      return;
-    }
-    if (file.size > 3 * 1024 * 1024) {
-      setErrorMsg(
-        language === 'ar'
-          ? 'حجم صورة الإثبات يجب أن لا يتجاوز 3 ميغابايت.'
-          : 'Receipt image size must be less than 3 MB.'
-      );
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setProofImageData(reader.result);
-      }
-    };
-    reader.readAsDataURL(file);
   };
 
   const validateFields = (): { valid: boolean; normalizedPhone: string } => {
@@ -291,6 +304,17 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
       paymentMethod,
       carrierName: 'Aramex Tunisie Logistics',
       notes: cleanNotes || undefined,
+      ...(paymentMethod === 'poste_ccp' && (proofRefNumber.trim() || proofImageDataUrl)
+        ? {
+            transferProof: {
+              referenceNumber: proofRefNumber.trim() || undefined,
+              senderName: proofSenderName.trim() || cleanName,
+              transferDate: proofDate,
+              receiptImageDataUrl: proofImageDataUrl || undefined,
+              notes: proofNotes.trim() || undefined,
+            },
+          }
+        : {}),
       clientRequestId,
     });
     setIsSubmitting(false);
@@ -301,54 +325,83 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
     }
 
     setCompletedOrder(result.order);
+    setCompletedCcpDetails(result.transferDetails || ccpDetails || null);
     setGatewayPayUrl(result.paymentUrl);
-    setProofSender(cleanName);
+
+    if (
+      result.order.paymentMethod === 'online_payment' &&
+      result.paymentUrl &&
+      result.paymentUrl.startsWith('https://') &&
+      typeof window !== 'undefined' &&
+      window.self === window.top
+    ) {
+      window.location.assign(result.paymentUrl);
+    }
   };
 
-  const handlePostOrderProofSubmit = async (e: React.FormEvent) => {
+  const handleReceiptSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const res = await readReceiptFileAsDataUrl(file);
+    if (!res.ok) {
+      setPostProofError(res.error || 'صيغة الصورة غير مدعومة.');
+      setErrorMsg(res.error || 'صيغة الصورة غير مدعومة.');
+      return;
+    }
+    setPostProofError('');
+    setErrorMsg('');
+    setProofImageDataUrl(res.dataUrl || '');
+  };
+
+  const handlePostCheckoutProofSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!completedOrder) return;
-    if (!proofRef.trim() || !proofSender.trim()) {
-      setErrorMsg(
-        language === 'ar'
-          ? 'يرجى إدخال رقم العملية البنكية واسم المحوّل.'
-          : 'Please enter transaction reference and sender name.'
-      );
+    setPostProofError('');
+    setPostProofSuccess('');
+
+    if (!proofRefNumber.trim() || !(proofSenderName.trim() || completedOrder.customerName)) {
+      setPostProofError('يرجى إدخال رقم العملية بالوصل واسم المحوّل.');
       return;
     }
 
-    setErrorMsg('');
-    setProofSubmitting(true);
-    const res = await submitBankTransferProofClient({
+    setPostProofSubmitting(true);
+    const res = await submitPosteCcpProofClient({
       trackingNumber: completedOrder.trackingNumber,
       customerPhone: completedOrder.customerPhone,
-      referenceNumber: proofRef.trim(),
-      senderName: proofSender.trim(),
+      referenceNumber: proofRefNumber.trim(),
+      senderName: (proofSenderName.trim() || completedOrder.customerName).trim(),
       transferDate: proofDate,
-      receiptImageDataUrl: proofImageData,
+      receiptImageDataUrl: proofImageDataUrl || undefined,
       notes: proofNotes.trim() || undefined,
     });
-    setProofSubmitting(false);
+    setPostProofSubmitting(false);
 
     if (!res.ok || !res.order) {
-      setErrorMsg(res.error || 'فشل إرسال إثبات التحويل.');
+      setPostProofError(res.error || 'تعذر رفع وصل التحويل.');
       return;
     }
-
     setCompletedOrder(res.order);
     updateOrderInState(res.order);
-    setProofSuccessMsg(t.payments.proofSubmittedNotice);
+    setPostProofSuccess(t.payments.proofSubmittedNotice);
   };
 
   const handleTrackOrderNow = () => {
     setCompletedOrder(null);
+    setCompletedCcpDetails(null);
     onClose();
     setCurrentView('my_orders');
   };
 
   const handleCloseModal = () => {
     setCompletedOrder(null);
-    setProofSuccessMsg('');
+    setCompletedCcpDetails(null);
+    setShowCheckoutProof(false);
+    setProofRefNumber('');
+    setProofSenderName('');
+    setProofImageDataUrl('');
+    setProofNotes('');
+    setPostProofError('');
+    setPostProofSuccess('');
     setErrorMsg('');
     setFieldErrors({});
     onClose();
@@ -503,6 +556,129 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
                 )}
               </div>
 
+              {/* Poste Tunisienne / CCP Transfer Details & Post-Checkout Receipt Upload */}
+              {completedOrder.paymentMethod === 'poste_ccp' && (
+                <div className="max-w-xl mx-auto p-4 sm:p-5 rounded-2xl bg-[#FFF8F3] dark:bg-[#1E293B] border border-[#FF6B00]/35 space-y-3.5 text-xs">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2 font-black text-slate-900 dark:text-white">
+                      <Building2 className="w-4 h-4 text-[#FF6B00]" />
+                      <span>{t.payments.posteCcpDetailsTitle}</span>
+                    </div>
+                    <span className="text-[11px] font-mono font-bold text-[#FF6B00]">
+                      {completedOrder.totalAmount.toFixed(3)} {completedOrder.currency || currencyLabel}
+                    </span>
+                  </div>
+
+                  {(completedCcpDetails || completedOrder.transferDetails || ccpDetails) && (
+                    <div className="p-3 rounded-xl bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 space-y-1.5">
+                      {(() => {
+                        const det = (completedCcpDetails || completedOrder.transferDetails || ccpDetails)!;
+                        return (
+                          <>
+                            <p>
+                              <span className="text-slate-500">{t.payments.beneficiary}: </span>
+                              <strong>{det.accountHolder}</strong>
+                            </p>
+                            <p>
+                              <span className="text-slate-500">{t.payments.bankName}: </span>
+                              <strong>{det.bankName}</strong>
+                            </p>
+                            <div className="flex items-center justify-between gap-2 pt-1">
+                              <span className="font-mono font-black text-slate-900 dark:text-white break-all" dir="ltr">
+                                {det.ibanOrRib}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleCopy('post_rib', det.ibanOrRib)}
+                                className="px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-600 text-[11px] font-bold shrink-0 cursor-pointer"
+                              >
+                                {copiedKey === 'post_rib' ? t.payments.copied : t.payments.copy}
+                              </button>
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  )}
+
+                  <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-800 dark:text-amber-300 font-semibold">
+                    {t.payments.ccpManualVerifyNotice}
+                  </div>
+
+                  {postProofSuccess || completedOrder.transferProof ? (
+                    <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 shrink-0" />
+                      <span>
+                        {postProofSuccess || t.payments.proofSubmittedNotice}{' '}
+                        {completedOrder.transferProof?.referenceNumber && (
+                          <span className="font-mono">({completedOrder.transferProof.referenceNumber})</span>
+                        )}
+                      </span>
+                    </div>
+                  ) : (
+                    <form onSubmit={handlePostCheckoutProofSubmit} className="space-y-2.5 pt-2 border-t border-slate-200 dark:border-slate-700">
+                      <p className="font-black text-slate-900 dark:text-white">
+                        {t.payments.uploadProofTitle}
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <input
+                          type="text"
+                          required
+                          value={proofRefNumber}
+                          onChange={(e) => setProofRefNumber(e.target.value)}
+                          placeholder={t.payments.proofRefPlaceholder}
+                          className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-[#0F172A]"
+                        />
+                        <input
+                          type="text"
+                          required
+                          value={proofSenderName}
+                          onChange={(e) => setProofSenderName(e.target.value)}
+                          placeholder={t.payments.proofSenderPlaceholder}
+                          className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-[#0F172A]"
+                        />
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 items-center">
+                        <input
+                          type="date"
+                          value={proofDate}
+                          onChange={(e) => setProofDate(e.target.value)}
+                          className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-[#0F172A] font-mono"
+                        />
+                        <label className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-dashed border-[#FF6B00]/60 hover:bg-[#FF6B00]/5 text-xs font-bold cursor-pointer">
+                          <Upload className="w-3.5 h-3.5 text-[#FF6B00]" />
+                          <span>{proofImageDataUrl ? 'تم إرفاق صورة الوصل ✓' : 'رفع صورة الوصل (JPEG/PNG/WebP)'}</span>
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            onChange={handleReceiptSelect}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+                      {proofImageDataUrl && (
+                        <div className="flex items-center gap-3 p-2 rounded-xl bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700">
+                          <img src={proofImageDataUrl} alt="Receipt preview" className="w-14 h-14 object-cover rounded-lg" />
+                          <span className="text-[11px] font-bold text-emerald-600 flex items-center gap-1">
+                            <FileImage className="w-3.5 h-3.5" /> معاينة صورة الوصل جاهزة
+                          </span>
+                        </div>
+                      )}
+                      {postProofError && (
+                        <p className="text-[11px] font-bold text-red-600 dark:text-red-400">{postProofError}</p>
+                      )}
+                      <button
+                        type="submit"
+                        disabled={postProofSubmitting}
+                        className="w-full py-2.5 rounded-xl bg-[#FF6B00] hover:bg-[#e05e00] text-white font-bold text-xs cursor-pointer disabled:opacity-50"
+                      >
+                        {postProofSubmitting ? 'جاري إرسال الوصل...' : t.payments.submitProofBtn}
+                      </button>
+                    </form>
+                  )}
+                </div>
+              )}
+
               {/* Online Gateway Redirect Box */}
               {completedOrder.paymentMethod === 'online_payment' && gatewayPayUrl && gatewayPayUrl.startsWith('https://') && (
                 <div className="max-w-xl mx-auto p-4 rounded-2xl bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/30 space-y-3 text-center">
@@ -528,138 +704,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
                     </span>
                     <ExternalLink className="w-3.5 h-3.5" />
                   </a>
-                </div>
-              )}
-
-              {/* Bank Transfer Instructions & Proof Upload on Confirmation */}
-              {completedOrder.paymentMethod === 'bank_transfer' && (
-                <div className="max-w-xl mx-auto space-y-4">
-                  <div className="p-5 rounded-2xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-700 space-y-3">
-                    <div className="flex items-center gap-2 text-xs font-black text-slate-900 dark:text-white">
-                      <Landmark className="w-4 h-4 text-[#FF6B00]" />
-                      <span>{t.payments.bankDetailsTitle}</span>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
-                      <div className="p-2.5 rounded-xl bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700">
-                        <span className="text-[10px] text-slate-400 block">{t.payments.beneficiary}</span>
-                        <span className="font-bold text-slate-900 dark:text-white">{bankInfo.accountHolder}</span>
-                      </div>
-                      <div className="p-2.5 rounded-xl bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700">
-                        <span className="text-[10px] text-slate-400 block">{t.payments.bankName}</span>
-                        <span className="font-bold text-slate-900 dark:text-white">{bankInfo.bankName}</span>
-                      </div>
-                    </div>
-
-                    <div className="p-2.5 rounded-xl bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2 text-xs">
-                      <div className="min-w-0">
-                        <span className="text-[10px] text-slate-400 block">{t.payments.accountOrIban}</span>
-                        <span className="font-mono font-bold text-slate-900 dark:text-white break-all" dir="ltr">
-                          {bankInfo.ibanOrRib}
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleCopy('iban', bankInfo.ibanOrRib)}
-                        className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[11px] font-bold hover:border-[#FF6B00] shrink-0 cursor-pointer"
-                      >
-                        {copiedKey === 'iban' ? t.payments.copied : t.payments.copy}
-                      </button>
-                    </div>
-
-                    <div className="p-2.5 rounded-xl bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2 text-xs">
-                      <div>
-                        <span className="text-[10px] text-slate-400 block">{t.payments.totalAmount}</span>
-                        <span className="font-mono font-black text-[#FF6B00] tabular-nums">
-                          {completedOrder.totalAmount.toFixed(3)} {currencyLabel}
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleCopy('amt', completedOrder.totalAmount.toFixed(3))}
-                        className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[11px] font-bold hover:border-[#FF6B00] shrink-0 cursor-pointer"
-                      >
-                        {copiedKey === 'amt' ? t.payments.copied : t.payments.copy}
-                      </button>
-                    </div>
-
-                    <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed bg-amber-500/5 border border-amber-500/20 rounded-xl p-2.5">
-                      {bankInfo.instructions?.[language] || bankInfo.instructions?.ar}
-                    </p>
-                  </div>
-
-                  {/* Submit Transfer Proof Form */}
-                  {proofSuccessMsg ? (
-                    <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-400 text-xs font-bold flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 shrink-0" />
-                      <span>{proofSuccessMsg}</span>
-                    </div>
-                  ) : (
-                    <form
-                      onSubmit={handlePostOrderProofSubmit}
-                      className="p-5 rounded-2xl bg-white dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-700 space-y-3"
-                    >
-                      <h4 className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-2">
-                        <Upload className="w-4 h-4 text-[#FF6B00]" />
-                        <span>{t.payments.uploadProofTitle}</span>
-                      </h4>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <input
-                          type="text"
-                          required
-                          value={proofRef}
-                          onChange={(e) => setProofRef(e.target.value)}
-                          placeholder={t.payments.proofRefPlaceholder}
-                          className="w-full text-xs py-2.5 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-transparent font-mono outline-hidden focus:border-[#FF6B00]"
-                        />
-                        <input
-                          type="text"
-                          required
-                          value={proofSender}
-                          onChange={(e) => setProofSender(e.target.value)}
-                          placeholder={t.payments.proofSenderPlaceholder}
-                          className="w-full text-xs py-2.5 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-transparent outline-hidden focus:border-[#FF6B00]"
-                        />
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
-                        <div>
-                          <label className="block text-[10px] text-slate-500 mb-1">{t.payments.proofDateLabel}</label>
-                          <input
-                            type="date"
-                            value={proofDate}
-                            onChange={(e) => setProofDate(e.target.value)}
-                            className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-transparent outline-hidden focus:border-[#FF6B00]"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] text-slate-500 mb-1">{t.payments.proofImageLabel}</label>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={handleProofFileChange}
-                            className="w-full text-[11px] text-slate-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border file:border-slate-300 file:text-xs file:font-bold"
-                          />
-                        </div>
-                      </div>
-                      <input
-                        type="text"
-                        value={proofNotes}
-                        onChange={(e) => setProofNotes(e.target.value)}
-                        placeholder={t.checkout.notes}
-                        className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-transparent outline-hidden focus:border-[#FF6B00]"
-                      />
-                      {!isOnline && (
-                        <p className="text-[11px] font-bold text-[#FF6B00]">{t.offline.serverActionDisabled}</p>
-                      )}
-                      <button
-                        type="submit"
-                        disabled={proofSubmitting || !isOnline}
-                        className="w-full py-2.5 rounded-xl bg-[#FF6B00] hover:bg-[#e05e00] text-white text-xs font-bold transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {proofSubmitting ? t.checkout.submitting : t.payments.submitProofBtn}
-                      </button>
-                    </form>
-                  )}
                 </div>
               )}
 
@@ -939,28 +983,28 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
                         </label>
                       )}
 
-                      {bankEnabled && (
+                      {posteCcpEnabled && (
                         <label
                           className={`p-3.5 rounded-2xl border cursor-pointer flex flex-col justify-between transition-all ${
-                            paymentMethod === 'bank_transfer'
+                            paymentMethod === 'poste_ccp'
                               ? 'border-[#FF6B00] bg-[#FF6B00]/5 ring-2 ring-[#FF6B00]/15'
                               : 'border-[#E2E8F0] dark:border-slate-700 hover:border-slate-400'
                           }`}
                         >
                           <div className="flex items-center justify-between mb-1.5">
-                            <Landmark className="w-5 h-5 text-amber-600" />
+                            <Building2 className="w-5 h-5 text-[#FF6B00]" />
                             <input
                               type="radio"
                               name="paymentMethod"
-                              checked={paymentMethod === 'bank_transfer'}
-                              onChange={() => setPaymentMethod('bank_transfer')}
+                              checked={paymentMethod === 'poste_ccp'}
+                              onChange={() => setPaymentMethod('poste_ccp')}
                               className="accent-[#FF6B00]"
                             />
                           </div>
                           <div>
-                            <p className="text-xs font-bold text-slate-900 dark:text-white">{t.payments.bankTransferLabel}</p>
+                            <p className="text-xs font-bold text-slate-900 dark:text-white">{t.payments.posteCcpLabel}</p>
                             <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                              {t.payments.bankTransferDesc}
+                              {t.payments.posteCcpDesc}
                             </p>
                           </div>
                         </label>
@@ -995,38 +1039,132 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
                     </div>
                   )}
 
-                  {/* Bank Transfer Info Preview when Bank Transfer is Selected */}
-                  {paymentMethod === 'bank_transfer' && bankEnabled && (
-                    <div className="p-3.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-700 space-y-2 text-xs">
-                      <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-white">
-                        <Landmark className="w-4 h-4 text-[#FF6B00]" />
-                        <span>{t.payments.bankDetailsTitle}</span>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
-                        <div>
-                          <span className="text-slate-400">{t.payments.beneficiary}: </span>
-                          <strong className="text-slate-800 dark:text-slate-200">{bankInfo.accountHolder}</strong>
+                  {/* Transfer / RIB details shown ONLY when Poste Tunisienne / CCP is selected */}
+                  {paymentMethod === 'poste_ccp' && (
+                    <div className="p-4 rounded-2xl bg-[#FFF8F3] dark:bg-[#1E293B] border border-[#FF6B00]/35 space-y-3 text-xs animate-fadeIn">
+                      {ccpLoading ? (
+                        <div className="flex items-center gap-2 text-slate-500">
+                          <Loader2 className="w-4 h-4 animate-spin text-[#FF6B00]" />
+                          <span>جاري تحميل بيانات التحويل المعتمدة...</span>
                         </div>
-                        <div>
-                          <span className="text-slate-400">{t.payments.bankName}: </span>
-                          <strong className="text-slate-800 dark:text-slate-200">{bankInfo.bankName}</strong>
+                      ) : ccpError ? (
+                        <div className="text-red-600 dark:text-red-400 font-bold flex items-center gap-2">
+                          <AlertCircle className="w-4 h-4 shrink-0" />
+                          <span>{ccpError}</span>
                         </div>
-                      </div>
-                      <div className="flex items-center justify-between gap-2 bg-white dark:bg-[#0F172A] px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700">
-                        <span className="font-mono font-bold text-slate-800 dark:text-slate-200 text-[11px]" dir="ltr">
-                          {bankInfo.ibanOrRib}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleCopy('pre_iban', bankInfo.ibanOrRib)}
-                          className="text-[11px] font-bold text-[#FF6B00] hover:underline cursor-pointer shrink-0"
-                        >
-                          {copiedKey === 'pre_iban' ? t.payments.copied : t.payments.copy}
-                        </button>
-                      </div>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                        {bankInfo.instructions?.[language] || bankInfo.instructions?.ar}
-                      </p>
+                      ) : ccpDetails ? (
+                        <>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-black text-slate-900 dark:text-white flex items-center gap-1.5">
+                              <Building2 className="w-4 h-4 text-[#FF6B00]" />
+                              <span>{t.payments.posteCcpDetailsTitle}</span>
+                            </span>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#FF6B00]/15 text-[#FF6B00]">
+                              Poste / CCP
+                            </span>
+                          </div>
+
+                          <div className="p-3 rounded-xl bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 space-y-1.5">
+                            <p>
+                              <span className="text-slate-500">{t.payments.beneficiary}: </span>
+                              <strong>{ccpDetails.accountHolder}</strong>
+                            </p>
+                            <p>
+                              <span className="text-slate-500">{t.payments.bankName}: </span>
+                              <strong>{ccpDetails.bankName}</strong>
+                            </p>
+                            <div className="flex items-center justify-between gap-2 pt-1">
+                              <div>
+                                <span className="text-[10px] text-slate-500 block">{t.payments.accountOrIban}</span>
+                                <span className="font-mono font-black text-slate-900 dark:text-white break-all" dir="ltr">
+                                  {ccpDetails.ibanOrRib}
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleCopy('chk_rib', ccpDetails.ibanOrRib)}
+                                className="px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 hover:border-[#FF6B00] text-[11px] font-bold shrink-0 flex items-center gap-1 cursor-pointer"
+                              >
+                                {copiedKey === 'chk_rib' ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                                <span>{copiedKey === 'chk_rib' ? t.payments.copied : t.payments.copy}</span>
+                              </button>
+                            </div>
+                            {ccpDetails.swiftCode && (
+                              <p className="text-[11px] text-slate-500 font-mono" dir="ltr">
+                                {t.payments.swiftCode}: {ccpDetails.swiftCode}
+                              </p>
+                            )}
+                          </div>
+
+                          {(ccpDetails.instructions?.[language] || ccpDetails.instructions?.ar) && (
+                            <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                              {ccpDetails.instructions[language] || ccpDetails.instructions.ar}
+                            </p>
+                          )}
+
+                          <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-800 dark:text-amber-300 font-semibold">
+                            {t.payments.ccpManualVerifyNotice}
+                          </div>
+
+                          <div>
+                            <button
+                              type="button"
+                              onClick={() => setShowCheckoutProof((v) => !v)}
+                              className="text-[11px] font-black text-[#FF6B00] hover:underline flex items-center gap-1 cursor-pointer"
+                            >
+                              <Upload className="w-3.5 h-3.5" />
+                              <span>
+                                {showCheckoutProof
+                                  ? 'إخفاء نموذج وصل التحويل (يمكنك رفعه بعد إنشاء الطلب)'
+                                  : 'لديك وصل التحويل جاهز؟ أرفقه الآن مع الطلب (اختياري)'}
+                              </span>
+                            </button>
+
+                            {showCheckoutProof && (
+                              <div className="mt-2.5 space-y-2 p-3 rounded-xl bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  <input
+                                    type="text"
+                                    value={proofRefNumber}
+                                    onChange={(e) => setProofRefNumber(e.target.value)}
+                                    placeholder={t.payments.proofRefPlaceholder}
+                                    className="w-full text-[11px] py-2 px-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-transparent"
+                                  />
+                                  <input
+                                    type="text"
+                                    value={proofSenderName}
+                                    onChange={(e) => setProofSenderName(e.target.value)}
+                                    placeholder={t.payments.proofSenderPlaceholder}
+                                    className="w-full text-[11px] py-2 px-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-transparent"
+                                  />
+                                </div>
+                                <label className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg border border-dashed border-slate-300 dark:border-slate-600 hover:border-[#FF6B00] text-[11px] font-bold cursor-pointer">
+                                  <Upload className="w-3.5 h-3.5 text-[#FF6B00]" />
+                                  <span>{proofImageDataUrl ? 'تم إرفاق صورة الوصل ✓' : 'اختر صورة الوصل (JPEG / PNG / WebP)'}</span>
+                                  <input
+                                    type="file"
+                                    accept="image/jpeg,image/png,image/webp"
+                                    onChange={handleReceiptSelect}
+                                    className="hidden"
+                                  />
+                                </label>
+                                {proofImageDataUrl && (
+                                  <div className="flex items-center gap-2">
+                                    <img src={proofImageDataUrl} alt="Receipt preview" className="w-12 h-12 object-cover rounded-lg border border-slate-200" />
+                                    <button
+                                      type="button"
+                                      onClick={() => setProofImageDataUrl('')}
+                                      className="text-[11px] text-red-600 font-bold cursor-pointer"
+                                    >
+                                      حذف الصورة
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      ) : null}
                     </div>
                   )}
 

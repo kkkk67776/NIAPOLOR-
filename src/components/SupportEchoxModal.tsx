@@ -1,22 +1,27 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   X,
   HeartHandshake,
   Banknote,
-  Building2,
   CreditCard,
-  Copy,
-  Check,
+  Building2,
   CheckCircle2,
   AlertTriangle,
   ShieldCheck,
   Loader2,
-  Upload,
   ExternalLink,
+  Copy,
+  Check,
+  Upload,
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
-import { contributeToEchox, getPaymentStatusTone } from '../lib/payments';
-import { PaymentMethodType, SupportTransaction } from '../types';
+import {
+  contributeToEchox,
+  fetchPosteCcpTransferDetails,
+  getPaymentStatusTone,
+  readReceiptFileAsDataUrl,
+} from '../lib/payments';
+import { PaymentMethodType, PosteCcpTransferDetails, SupportTransaction } from '../types';
 
 const QUICK_AMOUNTS = [10, 25, 50, 100];
 
@@ -36,51 +41,78 @@ export const SupportEchoxModal: React.FC = () => {
   const [note, setNote] = useState('');
 
   const codEnabled = paymentConfig?.methods?.cod?.enabled !== false;
-  const bankEnabled = paymentConfig?.methods?.bank_transfer?.enabled === true;
+  const posteCcpEnabled = Boolean(paymentConfig?.methods?.poste_ccp?.enabled);
   const onlineReady =
     paymentConfig?.methods?.online_payment?.enabled === true &&
     paymentConfig?.methods?.online_payment?.readyForLive === true;
 
-  const initialMethod: PaymentMethodType = bankEnabled
-    ? 'bank_transfer'
-    : codEnabled
-    ? 'cod'
-    : 'online_payment';
+  const initialMethod: PaymentMethodType = onlineReady
+    ? 'online_payment'
+    : posteCcpEnabled
+    ? 'poste_ccp'
+    : 'cod';
 
   const [method, setMethod] = useState<PaymentMethodType>(initialMethod);
+  const [ccpDetails, setCcpDetails] = useState<PosteCcpTransferDetails | null>(null);
+  const [ccpLoading, setCcpLoading] = useState(false);
+  const [ccpError, setCcpError] = useState('');
   const [proofRef, setProofRef] = useState('');
-  const [proofSender, setProofSender] = useState('');
+  const [proofImage, setProofImage] = useState('');
+  const [copiedRib, setCopiedRib] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [receipt, setReceipt] = useState<SupportTransaction | null>(null);
   const [gatewayPayUrl, setGatewayPayUrl] = useState<string | undefined>(undefined);
-  const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isSupportModalOpen || receipt || method !== 'poste_ccp') {
+      if (method !== 'poste_ccp') {
+        setCcpDetails(null);
+        setCcpError('');
+      }
+      return;
+    }
+    let cancelled = false;
+    setCcpLoading(true);
+    setCcpError('');
+    fetchPosteCcpTransferDetails().then((res) => {
+      if (cancelled) return;
+      setCcpLoading(false);
+      if (res.ok && res.details) {
+        setCcpDetails(res.details);
+      } else {
+        setCcpError(res.error || 'تعذر تحميل بيانات التحويل البريدي.');
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isSupportModalOpen, method, receipt]);
 
   if (!isSupportModalOpen) return null;
 
-  const bankInfo = paymentConfig.methods.bank_transfer;
   const currency = paymentConfig.currency || t.cart.currency;
-  const bankInstructions =
-    bankInfo.instructions?.[language] ||
-    bankInfo.instructions?.ar ||
-    bankInfo.instructions?.fr ||
-    bankInfo.instructions?.en ||
-    '';
-
-  const handleCopy = (key: string, val: string) => {
-    navigator.clipboard?.writeText(val).catch(() => {});
-    setCopiedField(key);
-    setTimeout(() => setCopiedField(null), 2000);
-  };
 
   const resetAndClose = () => {
     setReceipt(null);
     setGatewayPayUrl(undefined);
     setErrorMsg('');
-    setProofRef('');
-    setProofSender('');
     setNote('');
+    setProofRef('');
+    setProofImage('');
     setIsSupportModalOpen(false);
+  };
+
+  const handleReceiptFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const res = await readReceiptFileAsDataUrl(file);
+    if (!res.ok) {
+      setErrorMsg(res.error || 'صيغة الصورة غير صالحة.');
+      return;
+    }
+    setErrorMsg('');
+    setProofImage(res.dataUrl || '');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -116,14 +148,15 @@ export const SupportEchoxModal: React.FC = () => {
       supporterName: supporterName.trim() || undefined,
       supporterPhone: supporterPhone.trim() || undefined,
       note: note.trim() || undefined,
-      transferProof:
-        method === 'bank_transfer' && proofRef.trim()
-          ? {
-              referenceNumber: proofRef.trim(),
-              senderName: proofSender.trim() || supporterName.trim() || 'Supporter',
-              transferDate: new Date().toISOString().split('T')[0],
-            }
-          : undefined,
+      ...(method === 'poste_ccp' && (proofRef.trim() || proofImage)
+        ? {
+            transferProof: {
+              referenceNumber: proofRef.trim() || 'CCP-SUPPORT',
+              senderName: supporterName.trim() || 'داعم ECHOX',
+              receiptImageDataUrl: proofImage || undefined,
+            },
+          }
+        : {}),
     });
     setSubmitting(false);
 
@@ -208,6 +241,24 @@ export const SupportEchoxModal: React.FC = () => {
                 </div>
               </div>
 
+              {receipt.method === 'poste_ccp' && ccpDetails && (
+                <div className="p-3.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-700 text-xs space-y-1.5">
+                  <p className="font-black text-slate-900 dark:text-white">{t.payments.posteCcpDetailsTitle}</p>
+                  <p className="text-[11px]">
+                    {t.payments.beneficiary}: <strong>{ccpDetails.accountHolder}</strong>
+                  </p>
+                  <p className="text-[11px]">
+                    {t.payments.bankName}: <strong>{ccpDetails.bankName}</strong>
+                  </p>
+                  <p className="text-[11px] font-mono break-all" dir="ltr">
+                    RIB/CCP: <strong>{ccpDetails.ibanOrRib}</strong>
+                  </p>
+                  <p className="text-[10px] text-amber-700 dark:text-amber-300 font-semibold pt-1">
+                    {t.payments.ccpManualVerifyNotice}
+                  </p>
+                </div>
+              )}
+
               {receipt.method === 'online_payment' && gatewayPayUrl && gatewayPayUrl.startsWith('https://') && (
                 <div className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/30 text-center space-y-2.5">
                   <p className="text-xs font-bold text-blue-900 dark:text-blue-200">
@@ -226,51 +277,6 @@ export const SupportEchoxModal: React.FC = () => {
                     <span>{language === 'ar' ? 'إتمام الدفع الإلكتروني الآمن الآن' : language === 'fr' ? 'Finaliser le paiement' : 'Complete Online Payment'}</span>
                     <ExternalLink className="w-3.5 h-3.5" />
                   </a>
-                </div>
-              )}
-
-              {receipt.method === 'bank_transfer' && bankEnabled && (
-                <div className="p-3.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-700 space-y-2 text-xs">
-                  <div className="font-black flex items-center gap-1.5 text-[#0F172A] dark:text-white">
-                    <Building2 className="w-4 h-4 text-[#FF6B00]" />
-                    <span>{t.payments.bankDetailsTitle}</span>
-                  </div>
-                  <div className="space-y-1 text-[11px]">
-                    <div className="flex justify-between gap-2">
-                      <span className="text-slate-500">{t.payments.beneficiary}:</span>
-                      <span className="font-bold">{bankInfo.accountHolder}</span>
-                    </div>
-                    <div className="flex justify-between gap-2">
-                      <span className="text-slate-500">{t.payments.bankName}:</span>
-                      <span className="font-bold">{bankInfo.bankName}</span>
-                    </div>
-                    <div className="flex items-center justify-between gap-2 pt-1">
-                      <span className="font-mono font-bold text-[#0F172A] dark:text-white truncate" dir="ltr">
-                        {bankInfo.ibanOrRib}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleCopy('iban', bankInfo.ibanOrRib)}
-                        className="px-2 py-1 rounded-lg bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 text-[10px] font-bold flex items-center gap-1 cursor-pointer shrink-0"
-                      >
-                        {copiedField === 'iban' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
-                        <span>{copiedField === 'iban' ? t.payments.copied : t.payments.copy}</span>
-                      </button>
-                    </div>
-                    <div className="flex items-center justify-between gap-2 pt-1">
-                      <span className="font-mono font-bold text-[#FF6B00]" dir="ltr">
-                        {receipt.supportReference}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleCopy('ref', receipt.supportReference)}
-                        className="px-2 py-1 rounded-lg bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 text-[10px] font-bold flex items-center gap-1 cursor-pointer shrink-0"
-                      >
-                        {copiedField === 'ref' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
-                        <span>{copiedField === 'ref' ? t.payments.copied : t.payments.copy}</span>
-                      </button>
-                    </div>
-                  </div>
                 </div>
               )}
 
@@ -371,28 +377,6 @@ export const SupportEchoxModal: React.FC = () => {
               <div className="space-y-2">
                 <label className="text-xs font-bold block">{t.supportEchox.chooseMethod}</label>
                 <div className="space-y-2">
-                  {bankEnabled && (
-                    <label
-                      className={`flex items-center gap-3 p-3 rounded-2xl border cursor-pointer transition-all ${
-                        method === 'bank_transfer'
-                          ? 'border-[#FF6B00] bg-[#FF6B00]/5'
-                          : 'border-[#E2E8F0] dark:border-slate-700'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="supportMethod"
-                        checked={method === 'bank_transfer'}
-                        onChange={() => setMethod('bank_transfer')}
-                        className="accent-[#FF6B00]"
-                      />
-                      <Building2 className="w-4 h-4 text-[#FF6B00] shrink-0" />
-                      <div className="text-xs">
-                        <span className="font-bold block">{t.payments.bankTransferLabel}</span>
-                        <span className="text-[11px] text-slate-500">{bankInfo.bankName}</span>
-                      </div>
-                    </label>
-                  )}
 
                   {codEnabled && (
                     <label
@@ -412,6 +396,28 @@ export const SupportEchoxModal: React.FC = () => {
                       <Banknote className="w-4 h-4 text-emerald-600 shrink-0" />
                       <div className="text-xs">
                         <span className="font-bold block">{t.payments.codLabel}</span>
+                      </div>
+                    </label>
+                  )}
+
+                  {posteCcpEnabled && (
+                    <label
+                      className={`flex items-center gap-3 p-3 rounded-2xl border cursor-pointer transition-all ${
+                        method === 'poste_ccp'
+                          ? 'border-[#FF6B00] bg-[#FF6B00]/5'
+                          : 'border-[#E2E8F0] dark:border-slate-700'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="supportMethod"
+                        checked={method === 'poste_ccp'}
+                        onChange={() => setMethod('poste_ccp')}
+                        className="accent-[#FF6B00]"
+                      />
+                      <Building2 className="w-4 h-4 text-[#FF6B00] shrink-0" />
+                      <div className="text-xs">
+                        <span className="font-bold block">{t.payments.posteCcpLabel}</span>
                       </div>
                     </label>
                   )}
@@ -441,56 +447,76 @@ export const SupportEchoxModal: React.FC = () => {
                     </div>
                   )}
                 </div>
+
+                {/* On-demand Poste / CCP transfer details rendered ONLY when selected */}
+                {method === 'poste_ccp' && (
+                  <div className="p-3.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#FF6B00]/30 space-y-2.5 text-xs">
+                    {ccpLoading ? (
+                      <div className="flex items-center gap-2 text-slate-500">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>جاري تحميل بيانات التحويل...</span>
+                      </div>
+                    ) : ccpError ? (
+                      <p className="text-red-600 dark:text-red-400 font-bold">{ccpError}</p>
+                    ) : ccpDetails ? (
+                      <>
+                        <p className="font-black text-slate-900 dark:text-white">
+                          {t.payments.posteCcpDetailsTitle}
+                        </p>
+                        <div className="space-y-1 text-[11px]">
+                          <p>
+                            {t.payments.beneficiary}: <strong>{ccpDetails.accountHolder}</strong>
+                          </p>
+                          <p>
+                            {t.payments.bankName}: <strong>{ccpDetails.bankName}</strong>
+                          </p>
+                          <div className="flex items-center justify-between gap-2 bg-white dark:bg-[#0F172A] p-2 rounded-xl border border-slate-200 dark:border-slate-700">
+                            <span className="font-mono font-bold break-all" dir="ltr">
+                              {ccpDetails.ibanOrRib}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard?.writeText(ccpDetails.ibanOrRib).catch(() => {});
+                                setCopiedRib(true);
+                                setTimeout(() => setCopiedRib(false), 1800);
+                              }}
+                              className="px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-600 text-[10px] font-bold flex items-center gap-1 shrink-0 cursor-pointer"
+                            >
+                              {copiedRib ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                              <span>{copiedRib ? t.payments.copied : t.payments.copy}</span>
+                            </button>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                          <input
+                            type="text"
+                            value={proofRef}
+                            onChange={(e) => setProofRef(e.target.value)}
+                            placeholder="رقم وصل التحويل (اختياري)"
+                            className="w-full text-[11px] py-1.5 px-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-[#0F172A]"
+                          />
+                          <label className="flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-xl border border-dashed border-slate-300 dark:border-slate-600 hover:border-[#FF6B00] text-[11px] font-bold cursor-pointer">
+                            <Upload className="w-3.5 h-3.5 text-[#FF6B00]" />
+                            <span>{proofImage ? 'تم إرفاق صورة الوصل ✓' : 'إرفاق صورة الوصل (اختياري)'}</span>
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp"
+                              onChange={handleReceiptFileChange}
+                              className="hidden"
+                            />
+                          </label>
+                        </div>
+                        <p className="text-[10px] text-amber-700 dark:text-amber-300 font-semibold">
+                          {t.payments.ccpManualVerifyNotice}
+                        </p>
+                      </>
+                    ) : null}
+                  </div>
+                )}
               </div>
 
-              {/* Bank transfer details + optional proof */}
-              {method === 'bank_transfer' && bankEnabled && (
-                <div className="p-3.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-700 space-y-2.5 text-xs">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-bold text-slate-600 dark:text-slate-300">
-                      {t.payments.beneficiary}: {bankInfo.accountHolder}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleCopy('iban_pre', bankInfo.ibanOrRib)}
-                      className="px-2 py-1 rounded-lg bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 text-[10px] font-bold flex items-center gap-1 cursor-pointer"
-                    >
-                      {copiedField === 'iban_pre' ? (
-                        <Check className="w-3 h-3 text-emerald-500" />
-                      ) : (
-                        <Copy className="w-3 h-3" />
-                      )}
-                      <span>{copiedField === 'iban_pre' ? t.payments.copied : t.payments.copy} RIB/IBAN</span>
-                    </button>
-                  </div>
-                  <p className="font-mono text-[11px] font-bold text-[#0F172A] dark:text-white" dir="ltr">
-                    {bankInfo.ibanOrRib}
-                  </p>
-                  {bankInstructions && (
-                    <p className="text-[11px] text-slate-500 leading-relaxed">{bankInstructions}</p>
-                  )}
-
-                  <div className="pt-2 border-t border-slate-200 dark:border-slate-700 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <input
-                      type="text"
-                      value={proofRef}
-                      onChange={(e) => setProofRef(e.target.value)}
-                      placeholder={t.payments.proofRefPlaceholder}
-                      className="w-full text-[11px] py-1.5 px-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-[#0F172A]"
-                    />
-                    <input
-                      type="text"
-                      value={proofSender}
-                      onChange={(e) => setProofSender(e.target.value)}
-                      placeholder={t.payments.proofSenderPlaceholder}
-                      className="w-full text-[11px] py-1.5 px-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-[#0F172A]"
-                    />
-                  </div>
-                </div>
-              )}
-
               <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-700 dark:text-amber-300 flex items-start gap-2">
-                <Upload className="w-3.5 h-3.5 shrink-0 mt-0.5 hidden" />
                 <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5" />
                 <span>{t.supportEchox.independentNotice}</span>
               </div>
@@ -511,7 +537,7 @@ export const SupportEchoxModal: React.FC = () => {
 
               <button
                 type="submit"
-                disabled={submitting || !isOnline || (!codEnabled && !bankEnabled && !onlineReady)}
+                disabled={submitting || !isOnline || (!codEnabled && !posteCcpEnabled && !onlineReady)}
                 className="w-full py-3 rounded-xl bg-[#FF6B00] hover:bg-[#e05e00] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <HeartHandshake className="w-4 h-4" />}

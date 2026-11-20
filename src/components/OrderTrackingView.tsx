@@ -8,17 +8,27 @@ import {
   XCircle,
   MapPin,
   MessageCircle,
-  Landmark,
   Copy,
   Check,
-  Upload,
   CheckCircle2,
   AlertCircle,
   RotateCcw,
+  CreditCard,
+  Building2,
+  Upload,
+  FileImage,
 } from 'lucide-react';
 import { getGovernorateName } from '../data/governorates';
-import { Order, OrderStatus } from '../types';
-import { getPaymentStatusTone, submitBankTransferProofClient, submitRefundOrCancelRequest, trackOrderServer } from '../lib/payments';
+import { Order, OrderStatus, PosteCcpTransferDetails } from '../types';
+import {
+  fetchPosteCcpTransferDetails,
+  getPaymentStatusTone,
+  readReceiptFileAsDataUrl,
+  submitBankTransferProofClient,
+  submitPosteCcpProofClient,
+  submitRefundOrCancelRequest,
+  trackOrderServer,
+} from '../lib/payments';
 import { handleStoreImageError } from '../lib/imageFallback';
 
 export const OrderTrackingView: React.FC = () => {
@@ -30,14 +40,6 @@ export const OrderTrackingView: React.FC = () => {
   });
   const [hasSearched, setHasSearched] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
-
-  // Proof upload for bank transfer orders tracked here
-  const [proofRef, setProofRef] = useState('');
-  const [proofSender, setProofSender] = useState('');
-  const [proofDate, setProofDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [proofNotes, setProofNotes] = useState('');
-  const [proofImageData, setProofImageData] = useState<string | undefined>(undefined);
-  const [proofSubmitting, setProofSubmitting] = useState(false);
   const [actionSuccess, setActionSuccess] = useState('');
   const [actionError, setActionError] = useState('');
 
@@ -51,9 +53,45 @@ export const OrderTrackingView: React.FC = () => {
   const [verifyPhoneLoading, setVerifyPhoneLoading] = useState(false);
   const [verifyPhoneError, setVerifyPhoneError] = useState('');
 
+  // Poste Tunisienne / CCP transfer details + proof upload state
+  const [ccpFallbackDetails, setCcpFallbackDetails] = useState<PosteCcpTransferDetails | null>(null);
+  const [proofRefNumber, setProofRefNumber] = useState('');
+  const [proofSenderName, setProofSenderName] = useState('');
+  const [proofDate, setProofDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [proofNotes, setProofNotes] = useState('');
+  const [proofImageDataUrl, setProofImageDataUrl] = useState('');
+  const [proofSubmitting, setProofSubmitting] = useState(false);
+
   const activeOrder = searchedOrder
     ? orders.find((o) => o.id === searchedOrder.id || o.trackingNumber === searchedOrder.trackingNumber) || searchedOrder
     : null;
+
+  React.useEffect(() => {
+    if (
+      !activeOrder ||
+      activeOrder.paymentMethod !== 'poste_ccp' ||
+      activeOrder.piiMasked ||
+      activeOrder.transferDetails ||
+      activeOrder.paymentStatus === 'Paid' ||
+      activeOrder.paymentStatus === 'Cancelled' ||
+      activeOrder.paymentStatus === 'Refunded' ||
+      !isOnline
+    ) {
+      if (!activeOrder || activeOrder.paymentMethod !== 'poste_ccp' || activeOrder.piiMasked) {
+        setCcpFallbackDetails(null);
+      }
+      return;
+    }
+    let cancelled = false;
+    fetchPosteCcpTransferDetails().then((res) => {
+      if (!cancelled && res.ok && res.details) {
+        setCcpFallbackDetails(res.details);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeOrder?.id, activeOrder?.paymentMethod, activeOrder?.piiMasked, activeOrder?.paymentStatus, activeOrder?.transferDetails, isOnline]);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -107,53 +145,6 @@ export const OrderTrackingView: React.FC = () => {
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
-  const handleProofFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 3 * 1024 * 1024) {
-      setActionError('Receipt image must be under 3 MB.');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') setProofImageData(reader.result);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleSubmitProof = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!activeOrder) return;
-    if (!isOnline) {
-      setActionError(t.offline.serverActionDisabled);
-      return;
-    }
-    setActionError('');
-    setActionSuccess('');
-    setProofSubmitting(true);
-    const res = await submitBankTransferProofClient({
-      trackingNumber: activeOrder.trackingNumber,
-      customerPhone: activeOrder.customerPhone,
-      referenceNumber: proofRef.trim(),
-      senderName: proofSender.trim() || activeOrder.customerName,
-      transferDate: proofDate,
-      receiptImageDataUrl: proofImageData,
-      notes: proofNotes.trim() || undefined,
-    });
-    setProofSubmitting(false);
-
-    if (!res.ok || !res.order) {
-      setActionError(res.error || 'تعذر إرسال إثبات التحويل.');
-      return;
-    }
-
-    setSearchedOrder(res.order);
-    updateOrderInState(res.order);
-    setProofRef('');
-    setProofNotes('');
-    setActionSuccess(t.payments.proofSubmittedNotice);
-  };
-
   const handleRefundRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeOrder || !refundReason.trim()) return;
@@ -183,6 +174,62 @@ export const OrderTrackingView: React.FC = () => {
     );
   };
 
+  const handleReceiptFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const res = await readReceiptFileAsDataUrl(file);
+    if (!res.ok) {
+      setActionError(res.error || 'صيغة الصورة غير مدعومة.');
+      return;
+    }
+    setActionError('');
+    setProofImageDataUrl(res.dataUrl || '');
+  };
+
+  const handleSubmitTransferProof = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeOrder) return;
+    if (!isOnline) {
+      setActionError(t.offline.serverActionDisabled);
+      return;
+    }
+    if (!proofRefNumber.trim() || !proofSenderName.trim()) {
+      setActionError('يرجى إدخال رقم العملية بالوصل واسم المحوّل.');
+      return;
+    }
+    setActionError('');
+    setActionSuccess('');
+    setProofSubmitting(true);
+
+    const payload = {
+      trackingNumber: activeOrder.trackingNumber,
+      customerPhone: verifyPhoneInput.trim() || activeOrder.customerPhone,
+      referenceNumber: proofRefNumber.trim(),
+      senderName: proofSenderName.trim(),
+      transferDate: proofDate,
+      receiptImageDataUrl: proofImageDataUrl || undefined,
+      notes: proofNotes.trim() || undefined,
+    };
+
+    const res =
+      activeOrder.paymentMethod === 'poste_ccp'
+        ? await submitPosteCcpProofClient(payload)
+        : await submitBankTransferProofClient(payload);
+
+    setProofSubmitting(false);
+    if (!res.ok || !res.order) {
+      setActionError(res.error || 'تعذر إرسال وصل التحويل.');
+      return;
+    }
+    setSearchedOrder(res.order);
+    updateOrderInState(res.order);
+    setProofRefNumber('');
+    setProofSenderName('');
+    setProofNotes('');
+    setProofImageDataUrl('');
+    setActionSuccess(t.payments.proofSubmittedNotice);
+  };
+
   const statusSteps: { key: OrderStatus; label: string }[] = [
     { key: 'new', label: t.orderStatus.new },
     { key: 'under_confirmation', label: t.orderStatus.under_confirmation },
@@ -197,11 +244,11 @@ export const OrderTrackingView: React.FC = () => {
   };
 
   const currentStepIndex = activeOrder ? getStatusIndex(activeOrder.status) : 0;
-  const bankInfo = paymentConfig.methods.bank_transfer;
   const currencyLabel = activeOrder?.currency || paymentConfig.currency || t.cart.currency;
 
   const formatPaymentMethodLabel = (method: string) => {
     if (method === 'cod') return t.payments.codLabel;
+    if (method === 'poste_ccp') return t.payments.posteCcpLabel;
     if (method === 'bank_transfer') return t.payments.bankTransferLabel;
     if (method === 'online_payment') return t.payments.onlinePaymentLabel;
     return method;
@@ -375,16 +422,176 @@ export const OrderTrackingView: React.FC = () => {
             </form>
           )}
 
-          {/* Bank Transfer Action Box if Bank Transfer */}
-          {activeOrder.paymentMethod === 'bank_transfer' &&
+          {/* Poste Tunisienne / CCP Transfer Card & Receipt Upload (for matching poste_ccp / bank_transfer orders) */}
+          {(activeOrder.paymentMethod === 'poste_ccp' || activeOrder.paymentMethod === 'bank_transfer') &&
             activeOrder.paymentStatus !== 'Paid' &&
             activeOrder.paymentStatus !== 'Cancelled' &&
             activeOrder.paymentStatus !== 'Refunded' && (
-              <div className="p-5 rounded-2xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-700 space-y-4">
+              <div className="p-4 sm:p-5 rounded-2xl bg-[#FFF8F3] dark:bg-[#1E293B] border border-[#FF6B00]/35 space-y-3.5 text-xs">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2 font-black text-slate-900 dark:text-white">
+                    <Building2 className="w-4 h-4 text-[#FF6B00]" />
+                    <span>{t.payments.posteCcpDetailsTitle}</span>
+                  </div>
+                  {activeOrder.paymentReference && (
+                    <button
+                      type="button"
+                      onClick={() => handleCopy('trk_ccp_ref', activeOrder.paymentReference!)}
+                      className="text-[11px] font-mono font-bold text-[#FF6B00] hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>{activeOrder.paymentReference}</span>
+                      {copiedKey === 'trk_ccp_ref' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                    </button>
+                  )}
+                </div>
+
+                {activeOrder.piiMasked ? (
+                  <p className="text-[11px] font-bold text-amber-700 dark:text-amber-300">
+                    لأمان حساباتنا وخصوصيتك، يرجى تأكيد رقم الهاتف في قسم "عنوان التوصيل" أدناه لعرض بيانات الـ RIB ورفع وصل التحويل.
+                  </p>
+                ) : (
+                  <>
+                    {(activeOrder.transferDetails || ccpFallbackDetails) && (
+                      <div className="p-3 rounded-xl bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 space-y-1.5">
+                        {(() => {
+                          const det = (activeOrder.transferDetails || ccpFallbackDetails)!;
+                          return (
+                            <>
+                              <p>
+                                <span className="text-slate-500">{t.payments.beneficiary}: </span>
+                                <strong>{det.accountHolder}</strong>
+                              </p>
+                              <p>
+                                <span className="text-slate-500">{t.payments.bankName}: </span>
+                                <strong>{det.bankName}</strong>
+                              </p>
+                              <div className="flex items-center justify-between gap-2 pt-1">
+                                <span className="font-mono font-black text-slate-900 dark:text-white break-all" dir="ltr">
+                                  {det.ibanOrRib}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopy('trk_rib', det.ibanOrRib)}
+                                  className="px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-600 text-[11px] font-bold shrink-0 cursor-pointer"
+                                >
+                                  {copiedKey === 'trk_rib' ? t.payments.copied : t.payments.copy}
+                                </button>
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </div>
+                    )}
+
+                    <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-800 dark:text-amber-300 font-semibold">
+                      {t.payments.ccpManualVerifyNotice}
+                    </div>
+
+                    {activeOrder.transferProof && activeOrder.paymentStatus !== 'Payment Failed' ? (
+                      <div className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="space-y-0.5 text-indigo-800 dark:text-indigo-200">
+                          <p className="font-black">{t.payments.proofSubmittedNotice}</p>
+                          <p className="text-[11px]">
+                            مرجع الوصل: <strong className="font-mono">{activeOrder.transferProof.referenceNumber}</strong> · المحوّل:{' '}
+                            <strong>{activeOrder.transferProof.senderName}</strong>
+                          </p>
+                        </div>
+                        {activeOrder.transferProof.receiptImageDataUrl && (
+                          <img
+                            src={activeOrder.transferProof.receiptImageDataUrl}
+                            alt="Uploaded receipt"
+                            className="w-16 h-16 object-cover rounded-xl border border-indigo-300 shrink-0"
+                          />
+                        )}
+                      </div>
+                    ) : (
+                      <form onSubmit={handleSubmitTransferProof} className="space-y-2.5 pt-2 border-t border-slate-200 dark:border-slate-700">
+                        <p className="font-black text-slate-900 dark:text-white">
+                          {activeOrder.paymentStatus === 'Payment Failed'
+                            ? 'تم رفض الوصل السابق — يمكنك إعادة رفع وصل التحويل الصحيح:'
+                            : t.payments.uploadProofTitle}
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          <input
+                            type="text"
+                            required
+                            value={proofRefNumber}
+                            onChange={(e) => setProofRefNumber(e.target.value)}
+                            placeholder={t.payments.proofRefPlaceholder}
+                            className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-[#0F172A]"
+                          />
+                          <input
+                            type="text"
+                            required
+                            value={proofSenderName}
+                            onChange={(e) => setProofSenderName(e.target.value)}
+                            placeholder={t.payments.proofSenderPlaceholder}
+                            className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-[#0F172A]"
+                          />
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 items-center">
+                          <input
+                            type="date"
+                            value={proofDate}
+                            onChange={(e) => setProofDate(e.target.value)}
+                            className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-[#0F172A] font-mono"
+                          />
+                          <label className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-dashed border-[#FF6B00]/60 hover:bg-[#FF6B00]/5 text-xs font-bold cursor-pointer">
+                            <Upload className="w-3.5 h-3.5 text-[#FF6B00]" />
+                            <span>{proofImageDataUrl ? 'تم إرفاق صورة الوصل ✓' : 'رفع صورة الوصل (JPEG/PNG/WebP)'}</span>
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp"
+                              onChange={handleReceiptFileChange}
+                              className="hidden"
+                            />
+                          </label>
+                        </div>
+                        <input
+                          type="text"
+                          value={proofNotes}
+                          onChange={(e) => setProofNotes(e.target.value)}
+                          placeholder="ملاحظات إضافية حول التحويل (اختياري)..."
+                          className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-[#0F172A]"
+                        />
+                        {proofImageDataUrl && (
+                          <div className="flex items-center gap-3 p-2 rounded-xl bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700">
+                            <img src={proofImageDataUrl} alt="Receipt preview" className="w-14 h-14 object-cover rounded-lg" />
+                            <span className="text-[11px] font-bold text-emerald-600 flex items-center gap-1">
+                              <FileImage className="w-3.5 h-3.5" /> معاينة صورة الوصل جاهزة
+                            </span>
+                          </div>
+                        )}
+                        <button
+                          type="submit"
+                          disabled={proofSubmitting || !isOnline}
+                          className="w-full py-2.5 rounded-xl bg-[#FF6B00] hover:bg-[#e05e00] text-white font-bold text-xs cursor-pointer disabled:opacity-50"
+                        >
+                          {proofSubmitting ? 'جاري الإرسال...' : t.payments.submitProofBtn}
+                        </button>
+                      </form>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+          {/* Online Gateway Payment Status Guidance */}
+          {activeOrder.paymentMethod === 'online_payment' &&
+            activeOrder.paymentStatus !== 'Paid' &&
+            activeOrder.paymentStatus !== 'Cancelled' &&
+            activeOrder.paymentStatus !== 'Refunded' && (
+              <div className="p-4 sm:p-5 rounded-2xl bg-blue-50/70 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/30 space-y-2 text-xs">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 text-xs font-black">
-                    <Landmark className="w-4 h-4 text-[#FF6B00]" />
-                    <span>{t.payments.bankDetailsTitle}</span>
+                  <div className="flex items-center gap-2 font-black text-blue-900 dark:text-blue-200">
+                    <CreditCard className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    <span>
+                      {language === 'ar'
+                        ? 'حالة الدفع الإلكتروني عبر البوابة'
+                        : language === 'fr'
+                        ? 'Statut du paiement en ligne'
+                        : 'Online Gateway Payment Status'}
+                    </span>
                   </div>
                   {activeOrder.paymentReference && (
                     <button
@@ -397,95 +604,19 @@ export const OrderTrackingView: React.FC = () => {
                     </button>
                   )}
                 </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-                  <div className="p-2.5 rounded-xl bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700">
-                    <span className="text-[10px] text-slate-400 block">{t.payments.beneficiary}</span>
-                    <strong className="text-slate-900 dark:text-white">{bankInfo.accountHolder}</strong>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700">
-                    <span className="text-[10px] text-slate-400 block">{t.payments.bankName}</span>
-                    <strong className="text-slate-900 dark:text-white">{bankInfo.bankName}</strong>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <span className="text-[10px] text-slate-400 block">{t.payments.accountOrIban}</span>
-                      <span className="font-mono font-bold text-[11px] break-all" dir="ltr">
-                        {bankInfo.ibanOrRib}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleCopy('trk_iban', bankInfo.ibanOrRib)}
-                      className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer shrink-0"
-                    >
-                      {copiedKey === 'trk_iban' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                    </button>
-                  </div>
-                </div>
-
-                {activeOrder.transferProof ? (
-                  <div className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-xs text-indigo-700 dark:text-indigo-300 space-y-1">
-                    <p className="font-bold">
-                      {t.payments.proofSubmittedNotice} ({activeOrder.transferProof.referenceNumber})
-                    </p>
-                    <p className="text-[11px] opacity-85">
-                      {activeOrder.transferProof.senderName} · {activeOrder.transferProof.transferDate}
-                    </p>
-                  </div>
-                ) : (
-                  <form onSubmit={handleSubmitProof} className="space-y-3 pt-2 border-t border-slate-200 dark:border-slate-700">
-                    <h4 className="text-xs font-bold flex items-center gap-1.5">
-                      <Upload className="w-3.5 h-3.5 text-[#FF6B00]" />
-                      <span>{t.payments.uploadProofTitle}</span>
-                    </h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                      <input
-                        type="text"
-                        required
-                        value={proofRef}
-                        onChange={(e) => setProofRef(e.target.value)}
-                        placeholder={t.payments.proofRefPlaceholder}
-                        className="text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-[#0F172A] font-mono outline-none focus:border-[#FF6B00]"
-                      />
-                      <input
-                        type="text"
-                        required
-                        value={proofSender}
-                        onChange={(e) => setProofSender(e.target.value)}
-                        placeholder={t.payments.proofSenderPlaceholder}
-                        className="text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-[#0F172A] outline-none focus:border-[#FF6B00]"
-                      />
-                      <input
-                        type="date"
-                        value={proofDate}
-                        onChange={(e) => setProofDate(e.target.value)}
-                        className="text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-[#0F172A] outline-none focus:border-[#FF6B00]"
-                      />
-                    </div>
-                    {!isOnline && (
-                      <p className="text-[11px] font-bold text-amber-700 dark:text-amber-300">
-                        {t.offline.serverActionDisabled}
-                      </p>
-                    )}
-                    <div className="flex flex-col sm:flex-row gap-2 items-center">
-                      <input
-                        type="file"
-                        accept="image/*"
-                        disabled={!isOnline}
-                        onChange={handleProofFile}
-                        className="text-[11px] text-slate-500 flex-1 disabled:opacity-50"
-                      />
-                      <button
-                        type="submit"
-                        disabled={proofSubmitting || !isOnline}
-                        className="px-4 py-2 rounded-xl bg-[#FF6B00] hover:bg-[#e05e00] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold cursor-pointer shrink-0"
-                      >
-                        {proofSubmitting ? t.checkout.submitting : t.payments.submitProofBtn}
-                      </button>
-                    </div>
-                  </form>
-                )}
+                <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                  {activeOrder.paymentStatus === 'Payment Failed'
+                    ? language === 'ar'
+                      ? 'لم يكتمل السداد الإلكتروني لهذا الطلب. يمكنك التواصل مع خدمة العملاء عبر الهاتف أو واتساب لإعادة إتمام الطلب أو تحويله للدفع عند الاستلام.'
+                      : language === 'fr'
+                      ? 'Le paiement en ligne n’a pas abouti. Contactez notre support pour finaliser ou passer en paiement à la livraison.'
+                      : 'The online payment was not completed. Please contact support to retry or switch to Cash on Delivery.'
+                    : language === 'ar'
+                    ? 'جاري تأكيد عملية الدفع إلكترونياً من خادم البوابة. سيتم تحديث حالة الطلب إلى "مدفوع" تلقائياً فور تأكيد العملية.'
+                    : language === 'fr'
+                    ? 'Confirmation du paiement en cours auprès de la passerelle. Le statut sera mis à jour automatiquement.'
+                    : 'Awaiting server-side confirmation from the payment gateway. Order status updates automatically once confirmed.'}
+                </p>
               </div>
             )}
 

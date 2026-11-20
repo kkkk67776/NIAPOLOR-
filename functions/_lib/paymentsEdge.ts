@@ -7,6 +7,7 @@ import type {
   PaymentStatus,
   PaymentSystemPublicConfig,
   PaymentTransaction,
+  PosteCcpTransferDetails,
   Product,
   RefundRequest,
   SupportTransaction,
@@ -116,7 +117,7 @@ function createInitialDb(env?: EdgeEnv): PaymentSystemDatabase {
       methods: {
         cod: { enabled: true },
         bank_transfer: {
-          enabled: true,
+          enabled: false,
           accountHolder: 'ECHOX STORE TUNISIE SUARL',
           bankName: 'BIAT — Banque Internationale Arabe de Tunisie',
           ibanOrRib: 'TN59 0800 0000 1234 5678 9012',
@@ -125,6 +126,14 @@ function createInitialDb(env?: EdgeEnv): PaymentSystemDatabase {
             ar: 'يرجى إجراء التحويل بالمبلغ الدقيق مع إدراج الرقم المرجعي للطلب في خانة البيان (Motif)، ثم إرسال إثبات التحويل للمراجعة والاعتماد.',
             fr: 'Veuillez effectuer le virement du montant exact en mentionnant la référence unique dans le motif, puis soumettre votre justificatif pour validation.',
             en: 'Please transfer the exact total amount including the unique order reference in the transfer note, then submit your transfer proof for admin verification.',
+          },
+        },
+        poste_ccp: {
+          enabled: true,
+          instructions: {
+            ar: 'يرجى إجراء التحويل عبر البريد التونسي (CCP) أو التحويل البريدي/البنكي بالمبلغ الدقيق إلى حساب الـ RIB المحفوظ، مع إدراج المرجع الفريد للطلب (ECH-CCP-...) ثم رفع صورة وصل التحويل للمراجعة والاعتماد اليدوي.',
+            fr: 'Veuillez effectuer le virement via la Poste Tunisienne (CCP) du montant exact vers le RIB affiché en mentionnant la référence unique (ECH-CCP-...), puis téléverser le reçu pour vérification manuelle.',
+            en: 'Please send the exact amount via Poste Tunisienne (CCP) to the displayed RIB using your unique reference (ECH-CCP-...), then upload your transfer receipt for manual funds verification.',
           },
         },
         online_payment: {
@@ -187,6 +196,14 @@ function mergePaymentDb(raw: Partial<PaymentSystemDatabase> | null, env?: EdgeEn
             ...(raw.config?.methods?.bank_transfer?.instructions || {}),
           },
         },
+        poste_ccp: {
+          ...def.config.methods.poste_ccp,
+          ...(raw.config?.methods?.poste_ccp || {}),
+          instructions: {
+            ...(def.config.methods.poste_ccp?.instructions || { ar: '', fr: '', en: '' }),
+            ...(raw.config?.methods?.poste_ccp?.instructions || {}),
+          },
+        },
         online_payment: {
           ...def.config.methods.online_payment,
           ...(raw.config?.methods?.online_payment || {}),
@@ -228,7 +245,8 @@ function toMinorUnits(amount: number, currency: string): number {
   return currency === 'TND' ? Math.round(amount * 1000) : Math.round(amount * 100);
 }
 
-function normalizePaymentMethod(method: PaymentMethodType): 'cod' | 'bank_transfer' | 'online_payment' {
+function normalizePaymentMethod(method: PaymentMethodType): 'cod' | 'bank_transfer' | 'poste_ccp' | 'online_payment' {
+  if (method === 'poste_ccp') return 'poste_ccp';
   if (method === 'bank_transfer') return 'bank_transfer';
   if (method === 'online_payment' || method === 'konnect' || method === 'flouci') return 'online_payment';
   return 'cod';
@@ -444,6 +462,50 @@ async function getVerifiedBankTransferPublicEdge(
   };
 }
 
+const CCP_MANUAL_VERIFICATION_NOTICE =
+  'لا يوجد تحقق آلي من CCP عبر API رسمي — يتم التحقق من وصول المبلغ الفعلي يدوياً في كشف الحساب البريدي/البنكي من طرف المالك قبل اعتماد الطلب وشحنه.';
+
+async function getPosteCcpTransferDetailsEdge(
+  env: EdgeEnv,
+  cfg: InternalPaymentConfig,
+  docExists: boolean
+): Promise<{ ok: boolean; statusCode?: number; error?: string; details?: PosteCcpTransferDetails }> {
+  if (!cfg.methods.poste_ccp?.enabled) {
+    return {
+      ok: false,
+      statusCode: 403,
+      error: 'وسيلة الدفع عبر Poste Tunisienne / CCP غير مفعّلة حالياً من مركز التحكم.',
+    };
+  }
+  const verifiedBank = await getVerifiedBankTransferPublicEdge(env, cfg, docExists);
+  if (verifiedBank.tamperDetected || verifiedBank.integrityVerified === false) {
+    return {
+      ok: false,
+      statusCode: 403,
+      error: 'تم تعليق عرض بيانات التحويل مؤقتاً لاكتشاف خلل في ختم الأمان الخاص بالحساب.',
+    };
+  }
+  if (!verifiedBank.ibanOrRib || !verifiedBank.ibanOrRib.trim()) {
+    return {
+      ok: false,
+      statusCode: 503,
+      error: 'بيانات الـ RIB / CCP غير مضبوطة بعد في إعدادات المالك.',
+    };
+  }
+  return {
+    ok: true,
+    details: {
+      enabled: true,
+      accountHolder: verifiedBank.accountHolder,
+      bankName: verifiedBank.bankName,
+      ibanOrRib: verifiedBank.ibanOrRib,
+      swiftCode: verifiedBank.swiftCode,
+      instructions: cfg.methods.poste_ccp?.instructions || cfg.methods.bank_transfer.instructions,
+      manualVerificationNotice: CCP_MANUAL_VERIFICATION_NOTICE,
+    },
+  };
+}
+
 function isOnlineGatewayReady(cfg: InternalPaymentConfig): boolean {
   const s = cfg.secrets;
   const provider = cfg.methods.online_payment.provider || 'konnect';
@@ -457,6 +519,17 @@ function isOnlineGatewayReady(cfg: InternalPaymentConfig): boolean {
   return true;
 }
 
+function getHiddenBankTransferPublicEdge(): PaymentSystemPublicConfig['methods']['bank_transfer'] {
+  return {
+    enabled: false,
+    accountHolder: '',
+    bankName: '',
+    ibanOrRib: '',
+    swiftCode: '',
+    instructions: { ar: '', fr: '', en: '' },
+  };
+}
+
 async function getPublicPaymentConfigEdge(
   env: EdgeEnv,
   db: PaymentSystemDatabase,
@@ -465,6 +538,12 @@ async function getPublicPaymentConfigEdge(
   const cfg = db.config;
   const ready = isOnlineGatewayReady(cfg);
   const provider = cfg.methods.online_payment.provider || 'konnect';
+  const verifiedBank = await getVerifiedBankTransferPublicEdge(env, cfg, docExists);
+  const posteCcpReady =
+    Boolean(cfg.methods.poste_ccp?.enabled) &&
+    verifiedBank.integrityVerified !== false &&
+    !verifiedBank.tamperDetected &&
+    Boolean(verifiedBank.ibanOrRib && verifiedBank.ibanOrRib.trim().length > 0);
   return {
     currency: cfg.currency,
     commissionRatePercent: cfg.commissionRatePercent,
@@ -473,7 +552,52 @@ async function getPublicPaymentConfigEdge(
     freeShippingThreshold: cfg.shipping.freeShippingThreshold,
     methods: {
       cod: { enabled: !!cfg.methods.cod.enabled },
-      bank_transfer: await getVerifiedBankTransferPublicEdge(env, cfg, docExists),
+      bank_transfer: getHiddenBankTransferPublicEdge(),
+      poste_ccp: {
+        enabled: posteCcpReady,
+        instructions: cfg.methods.poste_ccp?.instructions || { ar: '', fr: '', en: '' },
+        integrityVerified: verifiedBank.integrityVerified,
+        tamperDetected: verifiedBank.tamperDetected,
+      },
+      online_payment: {
+        enabled: !!cfg.methods.online_payment.enabled && ready,
+        provider,
+        mode: cfg.methods.online_payment.mode || 'sandbox',
+        hasApiKey: Boolean(cfg.secrets.apiKey && cfg.secrets.apiKey.trim().length > 0),
+        hasWalletId: Boolean(cfg.secrets.walletId && cfg.secrets.walletId.trim().length > 0),
+        hasWebhookSecret: Boolean(cfg.secrets.webhookSecret && cfg.secrets.webhookSecret.trim().length > 0),
+        readyForLive: ready,
+        lastConnectionCheck: cfg.methods.online_payment.lastConnectionCheck,
+      },
+    },
+    updatedAt: cfg.updatedAt,
+  };
+}
+
+async function getAdminPaymentConfigEdge(
+  env: EdgeEnv,
+  db: PaymentSystemDatabase,
+  docExists: boolean
+): Promise<PaymentSystemPublicConfig> {
+  const cfg = db.config;
+  const ready = isOnlineGatewayReady(cfg);
+  const provider = cfg.methods.online_payment.provider || 'konnect';
+  const verifiedBank = await getVerifiedBankTransferPublicEdge(env, cfg, docExists);
+  return {
+    currency: cfg.currency,
+    commissionRatePercent: cfg.commissionRatePercent,
+    taxRatePercent: cfg.taxRatePercent,
+    standardShippingFee: cfg.shipping.standardShippingFee,
+    freeShippingThreshold: cfg.shipping.freeShippingThreshold,
+    methods: {
+      cod: { enabled: !!cfg.methods.cod.enabled },
+      bank_transfer: verifiedBank,
+      poste_ccp: {
+        enabled: Boolean(cfg.methods.poste_ccp?.enabled),
+        instructions: cfg.methods.poste_ccp?.instructions || { ar: '', fr: '', en: '' },
+        integrityVerified: verifiedBank.integrityVerified,
+        tamperDetected: verifiedBank.tamperDetected,
+      },
       online_payment: {
         enabled: !!cfg.methods.online_payment.enabled && ready,
         provider,
@@ -548,6 +672,14 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 10_0
   }
 }
 
+async function computeOrderWebhookTokenEdge(
+  hmacSecret: string | null,
+  trackingRef: string
+): Promise<string> {
+  if (!hmacSecret) return '';
+  return (await hmacSha256Hex(hmacSecret, `wh1:${trackingRef}`)).slice(0, 32);
+}
+
 async function initiateGatewaySessionEdge(
   cfg: InternalPaymentConfig,
   params: {
@@ -559,6 +691,7 @@ async function initiateGatewaySessionEdge(
     customerPhone: string;
     customerEmail?: string;
     origin: string;
+    hmacSecret?: string | null;
   }
 ): Promise<{
   ok: boolean;
@@ -580,6 +713,10 @@ async function initiateGatewaySessionEdge(
       mode === 'live'
         ? 'https://api.konnect.network/api/v2/payments/init-payment'
         : 'https://api.sandbox.konnect.network/api/v2/payments/init-payment';
+    const whToken = await computeOrderWebhookTokenEdge(params.hmacSecret || null, params.trackingRef);
+    const webhookUrl = whToken
+      ? `${origin}/api/payments/webhook/konnect/${whToken}`
+      : `${origin}/api/payments/webhook/konnect`;
     try {
       const initRes = await fetchWithTimeout(endpoint, {
         method: 'POST',
@@ -601,7 +738,7 @@ async function initiateGatewaySessionEdge(
           firstName: params.customerName.trim(),
           phoneNumber: params.customerPhone.trim(),
           email: params.customerEmail?.trim() || undefined,
-          webhook: `${origin}/api/payments/webhook/konnect`,
+          webhook: webhookUrl,
           successUrl,
           failUrl,
           silentWebhook: true,
@@ -614,7 +751,7 @@ async function initiateGatewaySessionEdge(
           statusCode: 502,
           error:
             initJson?.message ||
-            'فشل إنشاء جلسة الدفع الإلكتروني مع بوابة Konnect. يرجى التحقق من المفاتيح أو اختيار وسيلة أخرى.',
+            'فشل إنشاء جلسة الدفع الإلكتروني مع بوابة Konnect. يرجى التحقق من المفاتيح أو اختيار الدفع عند الاستلام.',
         };
       }
       return {
@@ -627,7 +764,7 @@ async function initiateGatewaySessionEdge(
       return {
         ok: false,
         statusCode: 502,
-        error: 'تعذر الاتصال ببوابة Konnect حالياً. يرجى استخدام التحويل البنكي أو الدفع عند الاستلام.',
+        error: 'تعذر الاتصال ببوابة Konnect حالياً. يرجى المحاولة لاحقاً أو اختيار الدفع عند الاستلام.',
       };
     }
   }
@@ -675,7 +812,7 @@ async function initiateGatewaySessionEdge(
       return {
         ok: false,
         statusCode: 502,
-        error: 'تعذر الاتصال ببوابة Flouci حالياً. يرجى استخدام التحويل البنكي أو الدفع عند الاستلام.',
+        error: 'تعذر الاتصال ببوابة Flouci حالياً. يرجى المحاولة لاحقاً أو اختيار الدفع عند الاستلام.',
       };
     }
   }
@@ -694,6 +831,7 @@ async function verifyGatewayPaymentRefEdge(
     payRef: string;
     expectedAmount: number;
     expectedCurrency: string;
+    expectedOrderId?: string;
   }
 ): Promise<{ ok: boolean; status: 'completed' | 'pending' | 'failed'; reason?: string; statusCode?: number }> {
   const secrets = cfg.secrets;
@@ -718,7 +856,20 @@ async function verifyGatewayPaymentRefEdge(
       const pStatus = String(checkJson.payment.status || '').toLowerCase();
       const paidAmount = Number(checkJson.payment.amount);
       const paidToken = String(checkJson.payment.token || params.expectedCurrency).toUpperCase();
+      const gatewayOrderId = String(checkJson.payment.orderId || '').trim();
 
+      if (
+        params.expectedOrderId &&
+        gatewayOrderId &&
+        gatewayOrderId.toUpperCase() !== params.expectedOrderId.trim().toUpperCase()
+      ) {
+        return {
+          ok: false,
+          status: 'failed',
+          reason: `Konnect orderId mismatch (${gatewayOrderId} != ${params.expectedOrderId})`,
+          statusCode: 403,
+        };
+      }
       if (paidToken !== String(params.expectedCurrency).toUpperCase()) {
         return {
           ok: false,
@@ -762,6 +913,19 @@ async function verifyGatewayPaymentRefEdge(
       const result = checkJson?.result;
       if (!checkRes.ok || !result) {
         return { ok: false, status: 'failed', reason: `Flouci returned HTTP ${checkRes.status}`, statusCode: 502 };
+      }
+      const gatewayTrackId = String(result.developer_tracking_id || '').trim();
+      if (
+        params.expectedOrderId &&
+        gatewayTrackId &&
+        gatewayTrackId.toUpperCase() !== params.expectedOrderId.trim().toUpperCase()
+      ) {
+        return {
+          ok: false,
+          status: 'failed',
+          reason: `Flouci order tracking mismatch (${gatewayTrackId} != ${params.expectedOrderId})`,
+          statusCode: 403,
+        };
       }
       const fStatus = String(result.status || '').toUpperCase();
       if (fStatus === 'SUCCESS') {
@@ -961,6 +1125,28 @@ export async function handleEdgePaymentsRoute(
     return jsonResponse(await getPublicPaymentConfigEdge(env, db, loaded.exists));
   }
 
+  // 1.1 On-demand Poste Tunisienne / CCP Transfer Details (revealed ONLY when selected)
+  if (method === 'GET' && pathname === '/api/payments/poste-ccp/details') {
+    const ip = getEdgeClientIp(request);
+    const rate = checkEdgeSlidingWindowLimit('posteCcpDetails', ip, 40, 60_000);
+    if (!rate.allowed) {
+      return jsonResponse(
+        { success: false, error: `تم تجاوز الحد المسموح، يرجى الانتظار ${rate.retryAfterSeconds} ثانية.` },
+        429
+      );
+    }
+    const loaded = await loadEdgeDocWithMeta<Partial<PaymentSystemDatabase>>(env, CLOUD_PAYMENT_KEY);
+    if (!loaded.ok) return jsonResponse({ success: false, error: loaded.error }, 503);
+    const db = mergePaymentDb(loaded.data, env);
+    const result = await getPosteCcpTransferDetailsEdge(env, db.config, loaded.exists);
+    if (!result.ok || !result.details) {
+      return jsonResponse({ success: false, error: result.error || 'تعذر تحميل بيانات التحويل.' }, result.statusCode || 403);
+    }
+    const res = jsonResponse({ success: true, ...result.details });
+    res.headers.set('Cache-Control', 'no-store');
+    return res;
+  }
+
   // 2. Catalog Price Sync (Admin)
   if (method === 'POST' && pathname === '/api/admin/payments/catalog-sync') {
     const auth = await requireEdgeAdminAuth(request, env);
@@ -1034,6 +1220,7 @@ export async function handleEdgePaymentsRoute(
       order?: Order;
       transaction?: PaymentTransaction;
       paymentUrl?: string;
+      transferDetails?: PosteCcpTransferDetails;
     };
 
     let createdGatewaySession: { externalPaymentId?: string; paymentUrl?: string } | null = null;
@@ -1055,17 +1242,40 @@ export async function handleEdgePaymentsRoute(
             const existingOrder = db.orders.find((o) => o.id === existingReq.orderId);
             const existingTxn = db.transactions.find((t) => t.orderId === existingReq.orderId);
             if (existingOrder && existingTxn) {
+              const cachedCcp =
+                existingOrder.paymentMethod === 'poste_ccp'
+                  ? await getPosteCcpTransferDetailsEdge(env, db.config, docExists)
+                  : undefined;
               return {
                 skipWrite: true,
-                result: { order: existingOrder, transaction: existingTxn, paymentUrl: existingReq.paymentUrl },
+                result: {
+                  order: existingOrder,
+                  transaction: existingTxn,
+                  paymentUrl: existingReq.paymentUrl,
+                  transferDetails: cachedCcp?.ok ? cachedCcp.details : undefined,
+                },
               };
             }
           }
         }
 
         const cfg = db.config;
+        let resolvedPosteCcpDetails: PosteCcpTransferDetails | undefined;
         if (normalizedMethod === 'cod' && !cfg.methods.cod.enabled) {
           return { skipWrite: true, result: { errStatus: 400, errMsg: 'وسيلة الدفع عند الاستلام معطلة حالياً من مركز التحكم.' } };
+        }
+        if (normalizedMethod === 'poste_ccp') {
+          const ccpRes = await getPosteCcpTransferDetailsEdge(env, cfg, docExists);
+          if (!ccpRes.ok || !ccpRes.details) {
+            return {
+              skipWrite: true,
+              result: {
+                errStatus: ccpRes.statusCode || 400,
+                errMsg: ccpRes.error || 'وسيلة الدفع عبر Poste Tunisienne / CCP غير متاحة حالياً.',
+              },
+            };
+          }
+          resolvedPosteCcpDetails = ccpRes.details;
         }
         if (normalizedMethod === 'bank_transfer') {
           const bankPublic = await getVerifiedBankTransferPublicEdge(env, cfg, docExists);
@@ -1088,7 +1298,7 @@ export async function handleEdgePaymentsRoute(
               skipWrite: true,
               result: {
                 errStatus: 400,
-                errMsg: 'الدفع الإلكتروني غير مفعّل بعد: يرجى إعداد مفاتيح البوابة المعتمدة في مركز التحكم أو اختيار الدفع عند الاستلام / التحويل البنكي.',
+                errMsg: 'الدفع الإلكتروني غير مفعّل بعد: يرجى إعداد مفاتيح البوابة المعتمدة في مركز التحكم أو اختيار الدفع عند الاستلام.',
               },
             };
           }
@@ -1190,7 +1400,14 @@ export async function handleEdgePaymentsRoute(
         const now = new Date().toISOString();
         const orderId = `ord_${Date.now()}_${randomHex(2)}`;
         const trackingNumber = `ECH-TN-${randomHex(4).toUpperCase()}`;
-        const paymentReference = `ECH-REF-${randomHex(4).toUpperCase()}`;
+        const refPrefix = normalizedMethod === 'poste_ccp' ? 'ECH-CCP' : 'ECH-REF';
+        let paymentReference = `${refPrefix}-${randomHex(4).toUpperCase()}`;
+        while (
+          db.orders.some((o) => o.paymentReference === paymentReference) ||
+          db.transactions.some((t) => t.paymentReference === paymentReference)
+        ) {
+          paymentReference = `${refPrefix}-${randomHex(5).toUpperCase()}`;
+        }
         const transactionId = `txn_${Date.now()}_${randomHex(3)}`;
 
         const groupedByVendor = new Map<string, { vendorName: string; items: OrderItem[] }>();
@@ -1235,8 +1452,11 @@ export async function handleEdgePaymentsRoute(
         let initialPaymentStatus: PaymentStatus = 'Cash on Delivery';
         let submittedProof: TransferProof | undefined;
 
-        if (normalizedMethod === 'bank_transfer') {
-          if (input.transferProof && input.transferProof.referenceNumber?.trim()) {
+        if (normalizedMethod === 'bank_transfer' || normalizedMethod === 'poste_ccp') {
+          if (
+            input.transferProof &&
+            (input.transferProof.referenceNumber?.trim() || input.transferProof.receiptImageDataUrl?.trim())
+          ) {
             const cleanImg = sanitizeReceiptImageDataUrl(input.transferProof.receiptImageDataUrl);
             if (!cleanImg.ok) {
               return {
@@ -1250,7 +1470,7 @@ export async function handleEdgePaymentsRoute(
             }
             initialPaymentStatus = 'Payment Verification';
             submittedProof = {
-              referenceNumber: String(input.transferProof.referenceNumber).trim(),
+              referenceNumber: String(input.transferProof.referenceNumber || paymentReference).trim(),
               senderName: String(input.transferProof.senderName || input.customerName).trim(),
               transferDate: input.transferProof.transferDate || now.split('T')[0],
               receiptImageDataUrl: cleanImg.value,
@@ -1278,6 +1498,7 @@ export async function handleEdgePaymentsRoute(
               customerPhone: input.customerPhone,
               customerEmail: input.customerEmail,
               origin,
+              hmacSecret,
             });
             if (!gatewayInit.ok) {
               return {
@@ -1338,8 +1559,10 @@ export async function handleEdgePaymentsRoute(
             {
               status: 'new',
               timestamp: now,
-              note:
-                normalizedMethod === 'bank_transfer'
+            note:
+                normalizedMethod === 'poste_ccp'
+                  ? `تم تسجيل الطلب (${trackingNumber}) — مرجع تحويل البريد التونسي / CCP: ${paymentReference}`
+                  : normalizedMethod === 'bank_transfer'
                   ? `تم تسجيل الطلب (${trackingNumber}) — مرجع التحويل: ${paymentReference}`
                   : normalizedMethod === 'online_payment'
                   ? `تم تسجيل الطلب (${trackingNumber}) — بانتظار تأكيد الدفع عبر بوابة ${cfg.methods.online_payment.provider}`
@@ -1356,7 +1579,12 @@ export async function handleEdgePaymentsRoute(
           customerName: order.customerName,
           customerPhone: order.customerPhone,
           method: normalizedMethod,
-          provider: normalizedMethod === 'online_payment' ? cfg.methods.online_payment.provider : undefined,
+          provider:
+            normalizedMethod === 'online_payment'
+              ? cfg.methods.online_payment.provider
+              : normalizedMethod === 'poste_ccp'
+              ? 'poste_ccp'
+              : undefined,
           externalPaymentId,
           amount: totalAmount,
           currency: cfg.currency,
@@ -1418,7 +1646,7 @@ export async function handleEdgePaymentsRoute(
           ),
         };
 
-        return { nextDoc, result: { order, transaction, paymentUrl } };
+        return { nextDoc, result: { order, transaction, paymentUrl, transferDetails: resolvedPosteCcpDetails } };
       }
     );
 
@@ -1460,11 +1688,12 @@ export async function handleEdgePaymentsRoute(
       order: out.order,
       transaction: out.transaction,
       paymentUrl: out.paymentUrl,
+      ...(out.transferDetails ? { transferDetails: out.transferDetails } : {}),
     });
   }
 
-  // 4. Customer Submit Bank Transfer Proof
-  if (method === 'POST' && pathname === '/api/payments/bank-transfer/proof') {
+  // 4. Customer Submit Poste / Bank Transfer Proof
+  if (method === 'POST' && (pathname === '/api/payments/bank-transfer/proof' || pathname === '/api/payments/poste-ccp/proof')) {
     const ip = getEdgeClientIp(request);
     const rate = checkEdgeSlidingWindowLimit('bankProof', ip, 20, 60_000);
     if (!rate.allowed) {
@@ -1492,7 +1721,7 @@ export async function handleEdgePaymentsRoute(
     }
 
     if (!body?.referenceNumber?.trim() || !body?.senderName?.trim()) {
-      return jsonResponse({ success: false, error: 'يرجى إدخال رقم العملية البنكية واسم المحوّل.' }, 400);
+      return jsonResponse({ success: false, error: 'يرجى إدخال رقم العملية بالوصل واسم المحوّل.' }, 400);
     }
 
     const cleanTrack = String(body?.trackingNumber || '').trim().toUpperCase();
@@ -1513,8 +1742,8 @@ export async function handleEdgePaymentsRoute(
           return { skipWrite: true, result: { errStatus: 403, errMsg: 'رقم الهاتف لا يطابق رقم الطلب المسجل.' } };
         }
       }
-      if (order.paymentMethod !== 'bank_transfer') {
-        return { skipWrite: true, result: { errStatus: 400, errMsg: 'هذا الطلب ليس من نوع التحويل البنكي.' } };
+      if (order.paymentMethod !== 'bank_transfer' && order.paymentMethod !== 'poste_ccp') {
+        return { skipWrite: true, result: { errStatus: 400, errMsg: 'هذا الطلب ليس من نوع التحويل البريدي / البنكي.' } };
       }
       if (order.paymentStatus === 'Paid' || order.paymentStatus === 'Refunded' || order.paymentStatus === 'Cancelled') {
         return {
@@ -1555,9 +1784,9 @@ export async function handleEdgePaymentsRoute(
           vendorLedgers: nextLedgers,
           activityLogs: prependActivity(
             db,
-            'BANK_TRANSFER_PROOF_SUBMITTED',
+            order.paymentMethod === 'poste_ccp' ? 'POSTE_CCP_PROOF_SUBMITTED' : 'BANK_TRANSFER_PROOF_SUBMITTED',
             isAdmin ? 'admin' : 'customer',
-            `Submitted bank transfer proof (${proof.referenceNumber}) for ${order.trackingNumber}. Awaiting Admin verification.`,
+            `Submitted ${order.paymentMethod === 'poste_ccp' ? 'Poste/CCP' : 'bank'} transfer proof (${proof.referenceNumber}) for ${order.trackingNumber}. Awaiting owner manual funds verification.`,
             order.id,
             order.totalAmount
           ),
@@ -1569,11 +1798,14 @@ export async function handleEdgePaymentsRoute(
     if (!mut.ok) return jsonResponse({ success: false, error: mut.error }, mut.statusCode || 503);
     if (mut.result?.errMsg) return jsonResponse({ success: false, error: mut.result.errMsg }, mut.result.errStatus || 400);
 
+    const isPoste = mut.result?.order?.paymentMethod === 'poste_ccp';
     const notifTask = appendEdgeAdminNotification(env, {
       category: 'payment',
       severity: 'info',
-      title: `🏦 إثبات تحويل بنكي جديد #${mut.result?.order?.trackingNumber || ''}`,
-      body: `المرسل: ${mut.result?.order?.customerName || 'زبون'} — بانتظار المراجعة والاعتماد.`,
+      title: isPoste
+        ? `📮 وصل تحويل البريد التونسي / CCP #${mut.result?.order?.trackingNumber || ''}`
+        : `🏦 إثبات تحويل بنكي جديد #${mut.result?.order?.trackingNumber || ''}`,
+      body: `المرسل: ${mut.result?.order?.customerName || 'زبون'} — بانتظار التحقق اليدوي من وصول الأموال.`,
       url: '/owner/dashboard',
     });
     if (waitUntil) waitUntil(notifTask);
@@ -1655,10 +1887,11 @@ export async function handleEdgePaymentsRoute(
     return jsonResponse({ success: true, refundRequest: mut.result?.refundRequest });
   }
 
-  // 6. Payment Webhook (GET & POST)
-  const webhookMatch = pathname.match(/^\/api\/payments\/webhook\/([^/]+)$/);
+  // 6. Payment Webhook (GET & POST with optional per-order HMAC token)
+  const webhookMatch = pathname.match(/^\/api\/payments\/webhook\/([^/]+)(?:\/([^/]+))?$/);
   if ((method === 'GET' || method === 'POST') && webhookMatch) {
     const provider = decodeURIComponent(webhookMatch[1] || 'konnect');
+    const webhookToken = webhookMatch[2] ? decodeURIComponent(webhookMatch[2]).trim() : '';
     const urlObj = new URL(request.url);
     const queryObj: Record<string, string> = {};
     urlObj.searchParams.forEach((v, k) => {
@@ -1670,6 +1903,7 @@ export async function handleEdgePaymentsRoute(
       request.headers.get('x-signature') ||
       request.headers.get('x-webhook-signature') ||
       '';
+    const hmacSecret = webhookToken ? await resolveOrCreateEdgeHmacSecret(env) : null;
 
     const mut = await mutateEdgeDocWithRetry<
       PaymentSystemDatabase,
@@ -1783,6 +2017,26 @@ export async function handleEdgePaymentsRoute(
         return { skipWrite: true, result: { ok: false, statusCode: 404, message: 'Transaction not found.' } };
       }
 
+      const targetRefLabel = txn ? txn.trackingNumber : supTxn!.supportReference;
+
+      if (webhookToken) {
+        const expectedWhToken = await computeOrderWebhookTokenEdge(hmacSecret, targetRefLabel);
+        if (!expectedWhToken || !timingSafeEqualHex(webhookToken, expectedWhToken)) {
+          return {
+            nextDoc: {
+              ...db,
+              activityLogs: prependActivity(
+                db,
+                'WEBHOOK_TOKEN_INVALID',
+                'webhook',
+                `Rejected ${provider} webhook with invalid per-order webhook token on ${targetRefLabel}.`
+              ),
+            },
+            result: { ok: false, statusCode: 403, message: 'Invalid webhook token.', sigFraud: true },
+          };
+        }
+      }
+
       const targetAmount = txn ? txn.amount : supTxn!.amount;
       const targetCurrency = txn ? txn.currency : supTxn!.currency;
       const targetExternalRef = (
@@ -1818,8 +2072,28 @@ export async function handleEdgePaymentsRoute(
           payRef: targetExternalRef,
           expectedAmount: targetAmount,
           expectedCurrency: targetCurrency,
+          expectedOrderId: targetRefLabel,
         });
         if (!check.ok) {
+          if (check.statusCode === 403) {
+            return {
+              nextDoc: {
+                ...db,
+                activityLogs: prependActivity(
+                  db,
+                  'TAMPER_WEBHOOK_AMOUNT_MISMATCH',
+                  'webhook',
+                  `${provider} security violation on ${trackingOrRef}: ${check.reason}`
+                ),
+              },
+              result: {
+                ok: false,
+                statusCode: 403,
+                message: check.reason || 'Payment integrity verification failed.',
+                sigFraud: true,
+              },
+            };
+          }
           return {
             skipWrite: true,
             result: {
@@ -1830,7 +2104,7 @@ export async function handleEdgePaymentsRoute(
           };
         }
         verifiedStatus = check.status;
-      } else if (secrets.webhookSecret) {
+      } else if (secrets.webhookSecret && secrets.webhookSecret.trim().length > 0) {
         const incomingStatus = String(mergedInput?.status || '').toLowerCase();
         verifiedStatus =
           incomingStatus === 'completed' ||
@@ -1841,6 +2115,23 @@ export async function handleEdgePaymentsRoute(
             : incomingStatus === 'pending'
             ? 'pending'
             : 'failed';
+      } else {
+        return {
+          nextDoc: {
+            ...db,
+            activityLogs: prependActivity(
+              db,
+              'WEBHOOK_UNAUTHORIZED',
+              'webhook',
+              `Rejected unauthenticated ${provider} webhook without HMAC secret or gateway S2S reference.`
+            ),
+          },
+          result: {
+            ok: false,
+            statusCode: 401,
+            message: 'Webhook HMAC secret required for unsigned POST webhooks.',
+          },
+        };
       }
 
       if (verifiedStatus === 'pending') {
@@ -1851,7 +2142,6 @@ export async function handleEdgePaymentsRoute(
       }
 
       const nextStatus: PaymentStatus = verifiedStatus === 'completed' ? 'Paid' : 'Payment Failed';
-      const targetRefLabel = txn ? txn.trackingNumber : supTxn!.supportReference;
 
       if (txn) {
         applyGatewayStatusToOrder(db, txn, nextStatus, `${provider} webhook`);
@@ -1993,6 +2283,7 @@ export async function handleEdgePaymentsRoute(
           payRef: extRef,
           expectedAmount: txn ? txn.amount : supTxn!.amount,
           expectedCurrency: txn ? txn.currency : supTxn!.currency,
+          expectedOrderId: txn ? txn.trackingNumber : supTxn!.supportReference,
         });
         if (check.ok && (check.status === 'completed' || check.status === 'failed')) {
           const nextStatus: PaymentStatus = check.status === 'completed' ? 'Paid' : 'Payment Failed';
@@ -2133,6 +2424,12 @@ export async function handleEdgePaymentsRoute(
       if (payMethod === 'cod' && !cfg.methods.cod.enabled) {
         return { skipWrite: true, result: { errStatus: 400, errMsg: 'الدفع النقدي غير مفعّل حالياً.' } };
       }
+      if (payMethod === 'poste_ccp') {
+        const ccpRes = await getPosteCcpTransferDetailsEdge(env, cfg, raw !== null);
+        if (!ccpRes.ok) {
+          return { skipWrite: true, result: { errStatus: ccpRes.statusCode || 400, errMsg: ccpRes.error || 'التحويل عبر Poste / CCP غير متاح حالياً.' } };
+        }
+      }
       if (payMethod === 'bank_transfer') {
         const bankPublic = await getVerifiedBankTransferPublicEdge(env, cfg, raw !== null);
         if (bankPublic.tamperDetected || !bankPublic.enabled) {
@@ -2148,7 +2445,7 @@ export async function handleEdgePaymentsRoute(
       let initialStatus: PaymentStatus = 'Cash on Delivery';
       let proof: TransferProof | undefined;
 
-      if (payMethod === 'bank_transfer') {
+      if (payMethod === 'bank_transfer' || payMethod === 'poste_ccp') {
         if (payload?.transferProof?.referenceNumber?.trim()) {
           const cleanImg = sanitizeReceiptImageDataUrl(payload.transferProof.receiptImageDataUrl);
           if (!cleanImg.ok) {
@@ -2171,6 +2468,7 @@ export async function handleEdgePaymentsRoute(
       }
 
       if (payMethod === 'online_payment' && !createdSupportGateway) {
+        const hmacSecret = await resolveOrCreateEdgeHmacSecret(env);
         const gw = await initiateGatewaySessionEdge(cfg, {
           amount: amt,
           currency: cfg.currency,
@@ -2180,6 +2478,7 @@ export async function handleEdgePaymentsRoute(
           customerPhone: payload.supporterPhone?.trim() || '00000000',
           customerEmail: payload.supporterEmail,
           origin,
+          hmacSecret,
         });
         if (!gw.ok) {
           return { skipWrite: true, result: { errStatus: gw.statusCode || 502, errMsg: gw.error } };
@@ -2293,12 +2592,20 @@ export async function handleEdgePaymentsRoute(
       })();
 
     if (phoneMatched) {
+      const ccpDetails =
+        found.paymentMethod === 'poste_ccp' &&
+        found.paymentStatus !== 'Paid' &&
+        found.paymentStatus !== 'Refunded' &&
+        found.paymentStatus !== 'Cancelled'
+          ? await getPosteCcpTransferDetailsEdge(env, db.config, loaded.exists)
+          : undefined;
       return jsonResponse({
         success: true,
         order: {
           ...found,
           customerEmail: '',
           notes: '',
+          ...(ccpDetails?.ok && ccpDetails.details ? { transferDetails: ccpDetails.details } : {}),
           piiMasked: false,
         },
       });
@@ -2327,6 +2634,7 @@ export async function handleEdgePaymentsRoute(
         notes: undefined,
       },
       transferProof: undefined,
+      transferDetails: undefined,
       piiMasked: true,
     };
     return jsonResponse({ success: true, order: maskedOrder });
@@ -2349,7 +2657,7 @@ export async function handleEdgePaymentsRoute(
       const loaded = await loadEdgeDocWithMeta<Partial<PaymentSystemDatabase>>(env, CLOUD_PAYMENT_KEY);
       if (!loaded.ok) return jsonResponse({ success: false, error: loaded.error }, 503);
       const db = mergePaymentDb(loaded.data, env);
-      return jsonResponse(await getPublicPaymentConfigEdge(env, db, loaded.exists));
+      return jsonResponse(await getAdminPaymentConfigEdge(env, db, loaded.exists));
     }
 
     if (method === 'PUT' && pathname === '/api/admin/payments/config') {
@@ -2390,6 +2698,12 @@ export async function handleEdgePaymentsRoute(
               ...db.config.methods.bank_transfer,
               instructions: { ...db.config.methods.bank_transfer.instructions },
             },
+            poste_ccp: {
+              enabled: Boolean(db.config.methods.poste_ccp?.enabled),
+              instructions: {
+                ...(db.config.methods.poste_ccp?.instructions || { ar: '', fr: '', en: '' }),
+              },
+            },
             online_payment: { ...db.config.methods.online_payment },
           },
           secrets: { ...db.config.secrets },
@@ -2429,6 +2743,22 @@ export async function handleEdgePaymentsRoute(
         }
         if (typeof body?.codEnabled === 'boolean') {
           cfg.methods.cod.enabled = body.codEnabled;
+        }
+        if (typeof body?.posteCcpEnabled === 'boolean') {
+          cfg.methods.poste_ccp = {
+            ...(cfg.methods.poste_ccp || { enabled: true, instructions: { ar: '', fr: '', en: '' } }),
+            enabled: body.posteCcpEnabled,
+          };
+        }
+        if (body?.posteCcp) {
+          cfg.methods.poste_ccp = {
+            ...(cfg.methods.poste_ccp || { enabled: true, instructions: { ar: '', fr: '', en: '' } }),
+            ...body.posteCcp,
+            instructions: {
+              ...(cfg.methods.poste_ccp?.instructions || { ar: '', fr: '', en: '' }),
+              ...(body.posteCcp.instructions || {}),
+            },
+          };
         }
         if (body?.bankTransfer) {
           cfg.methods.bank_transfer = {
@@ -2487,7 +2817,7 @@ export async function handleEdgePaymentsRoute(
         };
         return {
           nextDoc: nextDb,
-          result: { config: await getPublicPaymentConfigEdge(env, nextDb, true) },
+          result: { config: await getAdminPaymentConfigEdge(env, nextDb, true) },
         };
       });
 
@@ -2500,7 +2830,7 @@ export async function handleEdgePaymentsRoute(
         category: 'activity',
         severity: 'info',
         title: '💳 تحديث إعدادات الدفع في غرفة التحكم',
-        body: 'تم حفظ إعدادات بوابات الدفع والتحويل البنكي والعمولات.',
+        body: 'تم حفظ إعدادات بوابات الدفع والتسوية والعمولات.',
         url: '/owner/dashboard',
       });
       if (waitUntil) waitUntil(notifTask);
@@ -2619,7 +2949,7 @@ export async function handleEdgePaymentsRoute(
         db.supportTransactions.filter((s) => s.status === 'Paid').reduce((sum, s) => sum + s.amount, 0)
       );
       return jsonResponse({
-        config: await getPublicPaymentConfigEdge(env, db, loaded.exists),
+        config: await getAdminPaymentConfigEdge(env, db, loaded.exists),
         orders: db.orders,
         transactions: db.transactions,
         vendorLedgers: db.vendorLedgers,
@@ -2667,12 +2997,40 @@ export async function handleEdgePaymentsRoute(
           return { skipWrite: true, result: { errStatus: 400, errMsg: 'لا يمكن تعديل معاملة ملغاة أو مسترجعة.' } };
         }
 
+        if (
+          payload.action === 'approve' &&
+          (order?.paymentMethod === 'poste_ccp' || txn?.method === 'poste_ccp') &&
+          payload.confirmFundsReceived !== true
+        ) {
+          return {
+            skipWrite: true,
+            result: {
+              errStatus: 400,
+              errMsg: 'يجب تأكيد التحقق الفعلي من وصول الأموال في حساب CCP / البنك قبل اعتماد طلب Poste Tunisienne كمدفوع.',
+            },
+          };
+        }
+
         const now = new Date().toISOString();
         const nextStatus: PaymentStatus = payload.action === 'approve' ? 'Paid' : 'Payment Failed';
+        const cleanVerifyNote = typeof payload.verificationNote === 'string' ? payload.verificationNote.trim() : '';
         const nextOrders = [...db.orders];
         if (order && orderIdx >= 0) {
           order.paymentStatus = nextStatus;
           order.updatedAt = now;
+          if (order.paymentMethod === 'poste_ccp') {
+            order.statusHistory = [
+              ...order.statusHistory,
+              {
+                status: order.status,
+                timestamp: now,
+                note:
+                  payload.action === 'approve'
+                    ? `تم التحقق يدوياً من وصول الأموال (${order.totalAmount.toFixed(3)} ${order.currency || 'TND'}) واعتماد الدفع عبر Poste Tunisienne / CCP${cleanVerifyNote ? ` — ${cleanVerifyNote}` : ''}`
+                    : `تم رفض وصل التحويل البريدي / CCP${payload.reason ? `: ${payload.reason}` : ''}`,
+              },
+            ];
+          }
           if (order.subOrders) {
             order.subOrders = order.subOrders.map((sub) => ({
               ...sub,
@@ -2687,6 +3045,7 @@ export async function handleEdgePaymentsRoute(
           txn.status = nextStatus;
           txn.failureReason =
             payload.action === 'reject' ? payload.reason || 'Rejected by Admin' : undefined;
+          txn.fundsVerifiedNote = payload.action === 'approve' && cleanVerifyNote ? cleanVerifyNote : txn.fundsVerifiedNote;
           txn.verifiedByAdmin = auth.session.email || 'Admin Panel';
           txn.verifiedAt = now;
           txn.updatedAt = now;
@@ -2712,11 +3071,15 @@ export async function handleEdgePaymentsRoute(
             vendorLedgers: nextLedgers,
             activityLogs: prependActivity(
               db,
-              payload.action === 'approve' ? 'PAYMENT_APPROVED_PAID' : 'PAYMENT_REJECTED_FAILED',
+              payload.action === 'approve'
+                ? order?.paymentMethod === 'poste_ccp' || txn?.method === 'poste_ccp'
+                  ? 'POSTE_CCP_FUNDS_CONFIRMED_PAID'
+                  : 'PAYMENT_APPROVED_PAID'
+                : 'PAYMENT_REJECTED_FAILED',
               'admin',
-              `${payload.action === 'approve' ? 'Marked Paid' : 'Rejected payment'} for ${
+              `${payload.action === 'approve' ? 'Confirmed funds arrived & marked Paid' : 'Rejected payment'} for ${
                 order?.trackingNumber || txn?.trackingNumber
-              }${payload.reason ? ` (${payload.reason})` : ''}.`,
+              }${cleanVerifyNote ? ` [ref: ${cleanVerifyNote}]` : ''}${payload.reason ? ` (${payload.reason})` : ''}.`,
               targetOrderId,
               txn?.amount || order?.totalAmount
             ),

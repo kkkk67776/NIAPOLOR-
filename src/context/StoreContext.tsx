@@ -18,6 +18,7 @@ import {
   PromoBanner,
   PaymentMethodType,
   PaymentSystemPublicConfig,
+  PosteCcpTransferDetails,
   TransferProof,
   SupportChatConfig,
   ChatSuggestedProduct
@@ -182,7 +183,13 @@ interface StoreContextType {
     notes?: string;
     transferProof?: Partial<TransferProof>;
     clientRequestId?: string;
-  }) => Promise<{ ok: boolean; order?: Order; paymentUrl?: string; error?: string }>;
+  }) => Promise<{
+    ok: boolean;
+    order?: Order;
+    paymentUrl?: string;
+    transferDetails?: PosteCcpTransferDetails;
+    error?: string;
+  }>;
   updateOrderInState: (updatedOrder: Order) => void;
   syncOrdersFromServer: (serverOrders: Order[]) => void;
   refreshAdminOrders: () => Promise<{ ok: boolean; count: number; error?: string }>;
@@ -1429,7 +1436,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     notes?: string;
     transferProof?: Partial<TransferProof>;
     clientRequestId?: string;
-  }): Promise<{ ok: boolean; order?: Order; paymentUrl?: string; error?: string }> => {
+  }): Promise<{
+    ok: boolean;
+    order?: Order;
+    paymentUrl?: string;
+    transferDetails?: PosteCcpTransferDetails;
+    error?: string;
+  }> => {
     const payload = {
       customerId: currentUser?.id,
       customerName: orderData.customerName,
@@ -1465,7 +1478,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return [res.order!, ...prev];
     });
     clearCart();
-    return { ok: true, order: res.order, paymentUrl: res.paymentUrl };
+    return {
+      ok: true,
+      order: res.order,
+      paymentUrl: res.paymentUrl,
+      transferDetails: res.transferDetails,
+    };
   };
 
   const createOrder = (orderData: {
@@ -1493,7 +1511,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }));
 
     const initialPayStatus =
-      orderData.paymentMethod === 'bank_transfer'
+      orderData.paymentMethod === 'bank_transfer' || orderData.paymentMethod === 'poste_ccp'
         ? 'Awaiting Bank Transfer'
         : orderData.paymentMethod === 'cod'
         ? 'Cash on Delivery'

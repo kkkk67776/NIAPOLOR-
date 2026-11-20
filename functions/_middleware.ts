@@ -37,7 +37,7 @@ export async function onRequest(context: MiddlewareContext): Promise<Response> {
     'Content-Security-Policy',
     [
       "default-src 'self'",
-      "script-src 'self' https://apis.google.com https://www.gstatic.com",
+      "script-src 'self' 'unsafe-inline' https://apis.google.com https://www.gstatic.com https://www.googletagmanager.com",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com data:",
       "img-src 'self' https: data:",

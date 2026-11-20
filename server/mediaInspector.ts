@@ -243,16 +243,36 @@ function pinnedHttpRequest(
   });
 }
 
+export type MediaTestFetcher = (
+  url: string,
+  method: 'HEAD' | 'GET'
+) => Promise<{
+  status: number;
+  headers: Record<string, string>;
+  bodyPrefix: Buffer;
+  finalUrl?: string;
+}>;
+
 async function fetchRemoteWithSafeRedirects(
   initialUrl: string,
   method: 'HEAD' | 'GET',
-  allowLoopbackForTest: boolean
+  allowLoopbackForTest: boolean,
+  testFetcher?: MediaTestFetcher
 ): Promise<{ finalUrl: string; res: PinnedHttpResult }> {
   let currentUrl = initialUrl;
   for (let hop = 0; hop < 5; hop++) {
     const parsed = new URL(currentUrl);
     const pinned = await assertSafePublicTarget(parsed, allowLoopbackForTest);
-    const res = await pinnedHttpRequest(parsed, method, pinned, 65536);
+    const res = testFetcher
+      ? await testFetcher(currentUrl, method).then((r) => ({
+          status: r.status,
+          ok: r.status >= 200 && r.status < 300,
+          headers: Object.fromEntries(
+            Object.entries(r.headers || {}).map(([k, v]) => [k.toLowerCase(), String(v)])
+          ),
+          bodyPrefix: r.bodyPrefix || Buffer.alloc(0),
+        }))
+      : await pinnedHttpRequest(parsed, method, pinned, 65536);
     if (res.status >= 300 && res.status < 400) {
       const location = res.headers['location'];
       if (!location) {
@@ -268,9 +288,10 @@ async function fetchRemoteWithSafeRedirects(
 
 export async function inspectImageUrlOnServer(
   rawUrl: string,
-  options: { allowLoopbackForTest?: boolean } = {}
+  options: { allowLoopbackForTest?: boolean; testFetcher?: MediaTestFetcher } = {}
 ): Promise<MediaInspectResult> {
   const allowLoopbackForTest = Boolean(options.allowLoopbackForTest);
+  const testFetcher = options.testFetcher;
   const norm = normalizeProductImageUrl(rawUrl);
 
   if (!norm.url) {
@@ -389,12 +410,12 @@ export async function inspectImageUrlOnServer(
   }
 
   const probeRemote = async (target: string): Promise<MediaInspectResult> => {
-    const headResult = await fetchRemoteWithSafeRedirects(target, 'HEAD', allowLoopbackForTest);
+    const headResult = await fetchRemoteWithSafeRedirects(target, 'HEAD', allowLoopbackForTest, testFetcher);
     let res = headResult.res;
     let finalUrl = headResult.finalUrl;
 
     if (res.status === 405 || res.status === 501 || res.status === 403 || !res.headers['content-type']) {
-      const getResult = await fetchRemoteWithSafeRedirects(target, 'GET', allowLoopbackForTest);
+      const getResult = await fetchRemoteWithSafeRedirects(target, 'GET', allowLoopbackForTest, testFetcher);
       res = getResult.res;
       finalUrl = getResult.finalUrl;
     }
@@ -435,7 +456,7 @@ export async function inspectImageUrlOnServer(
       const buf =
         res.bodyPrefix.length > 0
           ? res.bodyPrefix
-          : (await fetchRemoteWithSafeRedirects(finalUrl, 'GET', allowLoopbackForTest)).res.bodyPrefix;
+          : (await fetchRemoteWithSafeRedirects(finalUrl, 'GET', allowLoopbackForTest, testFetcher)).res.bodyPrefix;
       const htmlText = buf.toString('utf8');
       const suggestedImageUrl = extractMetaImageFromHtml(htmlText, finalUrl);
       return {
@@ -455,7 +476,7 @@ export async function inspectImageUrlOnServer(
       const prefix = (
         res.bodyPrefix.length > 0
           ? res.bodyPrefix
-          : (await fetchRemoteWithSafeRedirects(finalUrl, 'GET', allowLoopbackForTest)).res.bodyPrefix
+          : (await fetchRemoteWithSafeRedirects(finalUrl, 'GET', allowLoopbackForTest, testFetcher)).res.bodyPrefix
       ).subarray(0, 64);
       const magic = detectFormatFromMagicBytes(prefix);
       if (magic) {

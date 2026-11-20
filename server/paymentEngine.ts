@@ -28,6 +28,7 @@ import type {
   SupportTransaction,
   FinancialActivityLog,
   TransferProof,
+  PosteCcpTransferDetails,
 } from '../src/types/index';
 import {
   getGovernorateName,
@@ -120,7 +121,7 @@ function createInitialDb(): PaymentSystemDatabase {
       methods: {
         cod: { enabled: true },
         bank_transfer: {
-          enabled: true,
+          enabled: false, // Bank RIB is sealed internally for merchant settlement and never shown publicly
           accountHolder: 'ECHOX STORE TUNISIE SUARL',
           bankName: 'BIAT — Banque Internationale Arabe de Tunisie',
           ibanOrRib: 'TN59 0800 0000 1234 5678 9012',
@@ -139,6 +140,14 @@ function createInitialDb(): PaymentSystemDatabase {
           hasWalletId: false,
           hasWebhookSecret: false,
           readyForLive: false,
+        },
+        poste_ccp: {
+          enabled: true, // Uses sealed merchant RIB only on-demand when customer selects Poste Tunisienne / CCP Transfer
+          instructions: {
+            ar: 'يرجى إجراء التحويل عبر البريد التونسي (CCP / RIB) بالمبلغ الدقيق مع إدراج مرجع التحويل الفريد الخاص بالطلب في خانة البيان، ثم رفع وصل التحويل للمراجعة اليدوية من المالك.',
+            fr: 'Veuillez effectuer le virement Poste Tunisienne (CCP / RIB) du montant exact avec la référence unique de commande, puis téléverser votre reçu pour vérification manuelle.',
+            en: 'Please transfer the exact total via Poste Tunisienne / CCP using your unique order transfer reference, then upload the receipt for manual verification by the owner.',
+          },
         },
       },
       secrets: {
@@ -160,7 +169,7 @@ function createInitialDb(): PaymentSystemDatabase {
         id: `log_init_${Date.now()}`,
         action: 'PAYMENT_ENGINE_INITIALIZED',
         actor: 'system',
-        details: 'Initialized ECHOX STORE multi-vendor payment engine (COD & Bank Transfer active, Online Gateway disabled pending credentials).',
+        details: 'Initialized ECHOX STORE multi-vendor payment engine (COD active, internal RIB sealed and hidden from storefront, Online Gateway pending credentials).',
         timestamp: now,
       },
     ],
@@ -193,6 +202,14 @@ function mergeDatabaseSnapshot(raw: Partial<PaymentSystemDatabase>): PaymentSyst
         online_payment: {
           ...def.config.methods.online_payment,
           ...(raw.config?.methods?.online_payment || {}),
+        },
+        poste_ccp: {
+          ...def.config.methods.poste_ccp,
+          ...(raw.config?.methods?.poste_ccp || {}),
+          instructions: {
+            ...def.config.methods.poste_ccp.instructions,
+            ...(raw.config?.methods?.poste_ccp?.instructions || {}),
+          },
         },
       },
       secrets: {
@@ -536,10 +553,57 @@ function toMinorUnits(amount: number, currency: string): number {
   return currency === 'TND' ? Math.round(amount * 1000) : Math.round(amount * 100);
 }
 
-export function normalizePaymentMethod(method: PaymentMethodType): 'cod' | 'bank_transfer' | 'online_payment' {
+export function normalizePaymentMethod(method: PaymentMethodType): 'cod' | 'bank_transfer' | 'poste_ccp' | 'online_payment' {
+  if (method === 'poste_ccp') return 'poste_ccp';
   if (method === 'bank_transfer') return 'bank_transfer';
   if (method === 'online_payment' || method === 'konnect' || method === 'flouci') return 'online_payment';
   return 'cod';
+}
+
+export const CCP_MANUAL_VERIFICATION_NOTICE =
+  'لا يوجد تحقق آلي من CCP عبر API رسمي — يتم التحقق من وصول المبلغ الفعلي يدوياً في كشف الحساب البريدي/البنكي من طرف المالك قبل اعتماد الطلب وشحنه.';
+
+export function getPosteCcpTransferDetails(): {
+  ok: boolean;
+  statusCode?: number;
+  error?: string;
+  details?: PosteCcpTransferDetails;
+} {
+  const cfg = paymentDb.config;
+  if (!cfg.methods.poste_ccp?.enabled) {
+    return {
+      ok: false,
+      statusCode: 403,
+      error: 'وسيلة الدفع عبر Poste Tunisienne / CCP غير مفعّلة حالياً من مركز التحكم.',
+    };
+  }
+  const verifiedBank = getVerifiedBankTransferPublic();
+  if (verifiedBank.tamperDetected || verifiedBank.integrityVerified === false) {
+    return {
+      ok: false,
+      statusCode: 403,
+      error: 'تم تعليق عرض بيانات التحويل مؤقتاً لاكتشاف خلل في ختم الأمان الخاص بالحساب.',
+    };
+  }
+  if (!verifiedBank.ibanOrRib || !verifiedBank.ibanOrRib.trim()) {
+    return {
+      ok: false,
+      statusCode: 503,
+      error: 'بيانات الـ RIB / CCP غير مضبوطة بعد في إعدادات المالك.',
+    };
+  }
+  return {
+    ok: true,
+    details: {
+      enabled: true,
+      accountHolder: verifiedBank.accountHolder,
+      bankName: verifiedBank.bankName,
+      ibanOrRib: verifiedBank.ibanOrRib,
+      swiftCode: verifiedBank.swiftCode,
+      instructions: cfg.methods.bank_transfer.instructions || cfg.methods.poste_ccp.instructions,
+      manualVerificationNotice: CCP_MANUAL_VERIFICATION_NOTICE,
+    },
+  };
 }
 
 export function isOnlineGatewayReady(): boolean {
@@ -553,10 +617,27 @@ export function isOnlineGatewayReady(): boolean {
   return true;
 }
 
+function getHiddenBankTransferPublic(): PaymentSystemPublicConfig['methods']['bank_transfer'] {
+  return {
+    enabled: false,
+    accountHolder: '',
+    bankName: '',
+    ibanOrRib: '',
+    swiftCode: '',
+    instructions: { ar: '', fr: '', en: '' },
+  };
+}
+
 export function getPublicPaymentConfig(): PaymentSystemPublicConfig {
   const cfg = paymentDb.config;
   const ready = isOnlineGatewayReady();
   const provider = cfg.methods.online_payment.provider || 'konnect';
+  const verifiedBank = getVerifiedBankTransferPublic();
+  const posteCcpReady =
+    Boolean(cfg.methods.poste_ccp?.enabled) &&
+    verifiedBank.integrityVerified !== false &&
+    !verifiedBank.tamperDetected &&
+    Boolean(verifiedBank.ibanOrRib && verifiedBank.ibanOrRib.trim().length > 0);
   return {
     currency: cfg.currency,
     commissionRatePercent: cfg.commissionRatePercent,
@@ -565,7 +646,48 @@ export function getPublicPaymentConfig(): PaymentSystemPublicConfig {
     freeShippingThreshold: cfg.shipping.freeShippingThreshold,
     methods: {
       cod: { enabled: !!cfg.methods.cod.enabled },
-      bank_transfer: getVerifiedBankTransferPublic(),
+      bank_transfer: getHiddenBankTransferPublic(),
+      poste_ccp: {
+        enabled: posteCcpReady,
+        instructions: cfg.methods.poste_ccp?.instructions || { ar: '', fr: '', en: '' },
+        integrityVerified: verifiedBank.integrityVerified,
+        tamperDetected: verifiedBank.tamperDetected,
+      },
+      online_payment: {
+        enabled: !!cfg.methods.online_payment.enabled && ready,
+        provider,
+        mode: cfg.methods.online_payment.mode || 'sandbox',
+        hasApiKey: Boolean(cfg.secrets.apiKey && cfg.secrets.apiKey.trim().length > 0),
+        hasWalletId: Boolean(cfg.secrets.walletId && cfg.secrets.walletId.trim().length > 0),
+        hasWebhookSecret: Boolean(cfg.secrets.webhookSecret && cfg.secrets.webhookSecret.trim().length > 0),
+        readyForLive: ready,
+        lastConnectionCheck: cfg.methods.online_payment.lastConnectionCheck,
+      },
+    },
+    updatedAt: cfg.updatedAt,
+  };
+}
+
+export function getAdminPaymentConfig(): PaymentSystemPublicConfig {
+  const cfg = paymentDb.config;
+  const ready = isOnlineGatewayReady();
+  const provider = cfg.methods.online_payment.provider || 'konnect';
+  const verifiedBank = getVerifiedBankTransferPublic();
+  return {
+    currency: cfg.currency,
+    commissionRatePercent: cfg.commissionRatePercent,
+    taxRatePercent: cfg.taxRatePercent,
+    standardShippingFee: cfg.shipping.standardShippingFee,
+    freeShippingThreshold: cfg.shipping.freeShippingThreshold,
+    methods: {
+      cod: { enabled: !!cfg.methods.cod.enabled },
+      bank_transfer: verifiedBank,
+      poste_ccp: {
+        enabled: !!cfg.methods.poste_ccp?.enabled,
+        instructions: cfg.methods.poste_ccp?.instructions || { ar: '', fr: '', en: '' },
+        integrityVerified: verifiedBank.integrityVerified,
+        tamperDetected: verifiedBank.tamperDetected,
+      },
       online_payment: {
         enabled: !!cfg.methods.online_payment.enabled && ready,
         provider,
@@ -643,6 +765,8 @@ export async function updateAdminPaymentConfig(payload: {
   standardShippingFee?: number;
   freeShippingThreshold?: number;
   codEnabled?: boolean;
+  posteCcpEnabled?: boolean;
+  posteCcp?: { enabled?: boolean; instructions?: Partial<InternalPaymentConfig['methods']['poste_ccp']['instructions']> };
   bankTransfer?: Partial<InternalPaymentConfig['methods']['bank_transfer']>;
   onlinePayment?: {
     enabled?: boolean;
@@ -680,6 +804,22 @@ export async function updateAdminPaymentConfig(payload: {
   }
   if (typeof payload.codEnabled === 'boolean') {
     cfg.methods.cod.enabled = payload.codEnabled;
+  }
+  if (typeof payload.posteCcpEnabled === 'boolean') {
+    cfg.methods.poste_ccp = {
+      ...(cfg.methods.poste_ccp || { enabled: true, instructions: { ar: '', fr: '', en: '' } }),
+      enabled: payload.posteCcpEnabled,
+    };
+  }
+  if (payload.posteCcp) {
+    cfg.methods.poste_ccp = {
+      ...(cfg.methods.poste_ccp || { enabled: true, instructions: { ar: '', fr: '', en: '' } }),
+      ...(typeof payload.posteCcp.enabled === 'boolean' ? { enabled: payload.posteCcp.enabled } : {}),
+      instructions: {
+        ...(cfg.methods.poste_ccp?.instructions || { ar: '', fr: '', en: '' }),
+        ...(payload.posteCcp.instructions || {}),
+      },
+    };
   }
   if (payload.bankTransfer) {
     const identityChanged = isBankIdentityChange(payload.bankTransfer);
@@ -746,7 +886,7 @@ export async function updateAdminPaymentConfig(payload: {
   if (!saved.ok) {
     return { ok: false, statusCode: saved.statusCode || 503, error: saved.error };
   }
-  return { ok: true, config: getPublicPaymentConfig() };
+  return { ok: true, config: getAdminPaymentConfig() };
 }
 
 export async function testOnlineGatewayConnection(): Promise<{ ok: boolean; message: string; checkedAt: string }> {
@@ -850,6 +990,14 @@ function sanitizeOrigin(rawOrigin?: string): string {
   return fallback;
 }
 
+function computeOrderWebhookToken(trackingRef: string): string {
+  return crypto
+    .createHmac('sha256', getBankIntegritySecret())
+    .update(`wh1:${trackingRef}`)
+    .digest('hex')
+    .slice(0, 32);
+}
+
 async function initiateGatewaySession(params: {
   amount: number;
   currency: 'TND' | 'EUR' | 'USD';
@@ -874,6 +1022,7 @@ async function initiateGatewaySession(params: {
       mode === 'live'
         ? 'https://api.konnect.network/api/v2/payments/init-payment'
         : 'https://api.sandbox.konnect.network/api/v2/payments/init-payment';
+    const whToken = computeOrderWebhookToken(params.trackingRef);
     try {
       const initRes = await fetch(endpoint, {
         method: 'POST',
@@ -895,7 +1044,7 @@ async function initiateGatewaySession(params: {
           firstName: params.customerName.trim(),
           phoneNumber: params.customerPhone.trim(),
           email: params.customerEmail?.trim() || undefined,
-          webhook: `${origin}/api/payments/webhook/konnect`,
+          webhook: `${origin}/api/payments/webhook/konnect/${whToken}`,
           successUrl,
           failUrl,
           silentWebhook: true,
@@ -913,7 +1062,7 @@ async function initiateGatewaySession(params: {
         return {
           ok: false,
           statusCode: 502,
-          error: initJson?.message || 'فشل إنشاء جلسة الدفع الإلكتروني مع بوابة Konnect. يرجى التحقق من المفاتيح أو اختيار وسيلة أخرى.',
+          error: initJson?.message || 'فشل إنشاء جلسة الدفع الإلكتروني مع بوابة Konnect. يرجى التحقق من المفاتيح أو اختيار الدفع عند الاستلام.',
         };
       }
       return {
@@ -928,7 +1077,7 @@ async function initiateGatewaySession(params: {
       return {
         ok: false,
         statusCode: 502,
-        error: 'تعذر الاتصال ببوابة Konnect حالياً. يرجى استخدام التحويل البنكي أو الدفع عند الاستلام.',
+        error: 'تعذر الاتصال ببوابة Konnect حالياً. يرجى المحاولة لاحقاً أو اختيار الدفع عند الاستلام.',
       };
     }
   }
@@ -987,7 +1136,7 @@ async function initiateGatewaySession(params: {
       return {
         ok: false,
         statusCode: 502,
-        error: 'تعذر الاتصال ببوابة Flouci حالياً. يرجى استخدام التحويل البنكي أو الدفع عند الاستلام.',
+        error: 'تعذر الاتصال ببوابة Flouci حالياً. يرجى المحاولة لاحقاً أو اختيار الدفع عند الاستلام.',
       };
     }
   }
@@ -1004,6 +1153,7 @@ async function verifyGatewayPaymentRef(params: {
   payRef: string;
   expectedAmount: number;
   expectedCurrency: string;
+  expectedOrderId?: string;
 }): Promise<{ ok: boolean; status: 'completed' | 'pending' | 'failed'; reason?: string; statusCode?: number }> {
   const cfg = paymentDb.config;
   const secrets = cfg.secrets;
@@ -1027,7 +1177,20 @@ async function verifyGatewayPaymentRef(params: {
       const pStatus = String(checkJson.payment.status || '').toLowerCase();
       const paidAmount = Number(checkJson.payment.amount);
       const paidToken = String(checkJson.payment.token || params.expectedCurrency).toUpperCase();
+      const gatewayOrderId = String(checkJson.payment.orderId || '').trim();
 
+      if (
+        params.expectedOrderId &&
+        gatewayOrderId &&
+        gatewayOrderId.toUpperCase() !== params.expectedOrderId.trim().toUpperCase()
+      ) {
+        return {
+          ok: false,
+          status: 'failed',
+          reason: `Konnect orderId mismatch (${gatewayOrderId} != ${params.expectedOrderId})`,
+          statusCode: 403,
+        };
+      }
       if (paidToken !== String(params.expectedCurrency).toUpperCase()) {
         return { ok: false, status: 'failed', reason: `Currency mismatch (${paidToken} != ${params.expectedCurrency})`, statusCode: 403 };
       }
@@ -1068,6 +1231,19 @@ async function verifyGatewayPaymentRef(params: {
       const result = checkJson?.result;
       if (!checkRes.ok || !result) {
         return { ok: false, status: 'failed', reason: `Flouci returned HTTP ${checkRes.status}`, statusCode: 502 };
+      }
+      const gatewayTrackId = String(result.developer_tracking_id || '').trim();
+      if (
+        params.expectedOrderId &&
+        gatewayTrackId &&
+        gatewayTrackId.toUpperCase() !== params.expectedOrderId.trim().toUpperCase()
+      ) {
+        return {
+          ok: false,
+          status: 'failed',
+          reason: `Flouci order tracking mismatch (${gatewayTrackId} != ${params.expectedOrderId})`,
+          statusCode: 403,
+        };
       }
       const fStatus = String(result.status || '').toUpperCase();
       if (fStatus === 'SUCCESS') {
@@ -1126,6 +1302,7 @@ export async function processServerCheckout(input: ServerCheckoutInput): Promise
   order?: Order;
   transaction?: PaymentTransaction;
   paymentUrl?: string;
+  transferDetails?: PosteCcpTransferDetails;
 }> {
   await syncPaymentDbIfStale(true);
   if (!input || !Array.isArray(input.items) || input.items.length === 0) {
@@ -1184,6 +1361,22 @@ export async function processServerCheckout(input: ServerCheckoutInput): Promise
   if (normalizedMethod === 'cod' && !cfg.methods.cod.enabled) {
     return { ok: false, statusCode: 400, error: 'وسيلة الدفع عند الاستلام معطلة حالياً من مركز التحكم.' };
   }
+  let resolvedPosteCcpDetails: PosteCcpTransferDetails | undefined;
+  if (normalizedMethod === 'poste_ccp') {
+    const ccpCheck = getPosteCcpTransferDetails();
+    if (!ccpCheck.ok || !ccpCheck.details) {
+      if (ccpCheck.statusCode === 403 && /ختم الأمان/.test(ccpCheck.error || '')) {
+        appendActivity('BANK_INTEGRITY_TAMPER_BLOCKED', 'system', 'Blocked Poste Tunisienne / CCP checkout due to failed HMAC integrity seal on RIB settings.');
+        saveDatabaseBestEffort();
+      }
+      return {
+        ok: false,
+        statusCode: ccpCheck.statusCode || 400,
+        error: ccpCheck.error || 'وسيلة Poste Tunisienne / CCP غير متاحة حالياً.',
+      };
+    }
+    resolvedPosteCcpDetails = ccpCheck.details;
+  }
   if (normalizedMethod === 'bank_transfer') {
     const bankPublic = getVerifiedBankTransferPublic();
     if (bankPublic.tamperDetected) {
@@ -1204,7 +1397,7 @@ export async function processServerCheckout(input: ServerCheckoutInput): Promise
       return {
         ok: false,
         statusCode: 400,
-        error: 'الدفع الإلكتروني غير مفعّل بعد: يرجى إعداد مفاتيح البوابة المعتمدة في مركز التحكم أو اختيار الدفع عند الاستلام / التحويل البنكي.',
+        error: 'الدفع الإلكتروني غير مفعّل بعد: يرجى إعداد مفاتيح البوابة المعتمدة في مركز التحكم أو اختيار الدفع عند الاستلام.',
       };
     }
   }
@@ -1296,7 +1489,14 @@ export async function processServerCheckout(input: ServerCheckoutInput): Promise
   const now = new Date().toISOString();
   const orderId = `ord_${Date.now()}_${crypto.randomBytes(2).toString('hex')}`;
   const trackingNumber = `ECH-TN-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
-  const paymentReference = `ECH-REF-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+  const refPrefix = normalizedMethod === 'poste_ccp' ? 'ECH-CCP' : 'ECH-REF';
+  let paymentReference = `${refPrefix}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+  while (
+    paymentDb.orders.some(o => o.paymentReference === paymentReference) ||
+    paymentDb.transactions.some(t => t.paymentReference === paymentReference)
+  ) {
+    paymentReference = `${refPrefix}-${crypto.randomBytes(5).toString('hex').toUpperCase()}`;
+  }
   const transactionId = `txn_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
 
   // Split multi-vendor items into vendor sub-orders + commission calculation
@@ -1343,10 +1543,10 @@ export async function processServerCheckout(input: ServerCheckoutInput): Promise
   let initialPaymentStatus: PaymentStatus = 'Cash on Delivery';
   let submittedProof: TransferProof | undefined;
 
-  if (normalizedMethod === 'bank_transfer') {
-    if (input.transferProof && input.transferProof.referenceNumber?.trim()) {
+  if (normalizedMethod === 'bank_transfer' || normalizedMethod === 'poste_ccp') {
+    if (input.transferProof && (input.transferProof.referenceNumber?.trim() || input.transferProof.receiptImageDataUrl?.trim())) {
       const cleanImg = sanitizeReceiptImageDataUrl(input.transferProof.receiptImageDataUrl, {
-        source: 'checkout_bank_proof',
+        source: normalizedMethod === 'poste_ccp' ? 'checkout_poste_ccp_proof' : 'checkout_bank_proof',
         actorIp: input.actorIp,
       });
       if (!cleanImg.ok) {
@@ -1354,7 +1554,7 @@ export async function processServerCheckout(input: ServerCheckoutInput): Promise
       }
       initialPaymentStatus = 'Payment Verification';
       submittedProof = {
-        referenceNumber: input.transferProof.referenceNumber.trim(),
+        referenceNumber: (input.transferProof.referenceNumber || paymentReference).trim(),
         senderName: (input.transferProof.senderName || input.customerName).trim(),
         transferDate: input.transferProof.transferDate || now.split('T')[0],
         receiptImageDataUrl: cleanImg.value,
@@ -1439,7 +1639,9 @@ export async function processServerCheckout(input: ServerCheckoutInput): Promise
         status: 'new',
         timestamp: now,
         note:
-          normalizedMethod === 'bank_transfer'
+          normalizedMethod === 'poste_ccp'
+            ? `تم تسجيل الطلب (${trackingNumber}) — مرجع تحويل البريد التونسي / CCP: ${paymentReference}`
+            : normalizedMethod === 'bank_transfer'
             ? `تم تسجيل الطلب (${trackingNumber}) — مرجع التحويل: ${paymentReference}`
             : normalizedMethod === 'online_payment'
             ? `تم تسجيل الطلب (${trackingNumber}) — بانتظار تأكيد الدفع عبر بوابة ${cfg.methods.online_payment.provider}`
@@ -1456,7 +1658,12 @@ export async function processServerCheckout(input: ServerCheckoutInput): Promise
     customerName: order.customerName,
     customerPhone: order.customerPhone,
     method: normalizedMethod,
-    provider: normalizedMethod === 'online_payment' ? cfg.methods.online_payment.provider : undefined,
+    provider:
+      normalizedMethod === 'online_payment'
+        ? cfg.methods.online_payment.provider
+        : normalizedMethod === 'poste_ccp'
+        ? 'poste_ccp'
+        : undefined,
     externalPaymentId,
     amount: totalAmount,
     currency: cfg.currency,
@@ -1496,7 +1703,7 @@ export async function processServerCheckout(input: ServerCheckoutInput): Promise
   appendActivity(
     'ORDER_PAYMENT_CREATED',
     'customer',
-    `Order ${trackingNumber} (${normalizedMethod}) created with status "${initialPaymentStatus}" & ${subOrders.length} vendor sub-order(s).`,
+    `Order ${trackingNumber} (${normalizedMethod}, ref=${paymentReference}) created with status "${initialPaymentStatus}" & ${subOrders.length} vendor sub-order(s).`,
     orderId,
     totalAmount
   );
@@ -1505,7 +1712,7 @@ export async function processServerCheckout(input: ServerCheckoutInput): Promise
     return { ok: false, statusCode: savedCheckout.statusCode || 503, error: savedCheckout.error };
   }
 
-  return { ok: true, order, transaction, paymentUrl };
+  return { ok: true, order, transaction, paymentUrl, transferDetails: resolvedPosteCcpDetails };
 }
 
 export async function submitBankTransferProof(payload: {
@@ -1532,18 +1739,18 @@ export async function submitBankTransferProof(payload: {
       return { ok: false, statusCode: 403, error: 'رقم الهاتف لا يطابق رقم الطلب المسجل.' };
     }
   }
-  if (order.paymentMethod !== 'bank_transfer') {
-    return { ok: false, statusCode: 400, error: 'هذا الطلب ليس من نوع التحويل البنكي.' };
+  if (order.paymentMethod !== 'bank_transfer' && order.paymentMethod !== 'poste_ccp') {
+    return { ok: false, statusCode: 400, error: 'هذا الطلب ليس من نوع التحويل البريدي / البنكي.' };
   }
   if (order.paymentStatus === 'Paid' || order.paymentStatus === 'Refunded' || order.paymentStatus === 'Cancelled') {
     return { ok: false, statusCode: 400, error: `لا يمكن تعديل إثبات الدفع لحالة (${order.paymentStatus}).` };
   }
   if (!payload.referenceNumber?.trim() || !payload.senderName?.trim()) {
-    return { ok: false, statusCode: 400, error: 'يرجى إدخال رقم العملية البنكية واسم المحوّل.' };
+    return { ok: false, statusCode: 400, error: 'يرجى إدخال رقم العملية بالوصل واسم المحوّل.' };
   }
 
   const cleanImg = sanitizeReceiptImageDataUrl(payload.receiptImageDataUrl, {
-    source: 'submit_bank_transfer_proof',
+    source: order.paymentMethod === 'poste_ccp' ? 'submit_poste_ccp_proof' : 'submit_bank_transfer_proof',
     actorIp: payload.actorIp,
   });
   if (!cleanImg.ok) {
@@ -1580,9 +1787,9 @@ export async function submitBankTransferProof(payload: {
   });
 
   appendActivity(
-    'BANK_TRANSFER_PROOF_SUBMITTED',
+    order.paymentMethod === 'poste_ccp' ? 'POSTE_CCP_PROOF_SUBMITTED' : 'BANK_TRANSFER_PROOF_SUBMITTED',
     payload.isAdmin ? 'admin' : 'customer',
-    `Submitted bank transfer proof (${proof.referenceNumber}) for ${order.trackingNumber}. Awaiting Admin verification.`,
+    `Submitted ${order.paymentMethod === 'poste_ccp' ? 'Poste/CCP' : 'bank'} transfer proof (${proof.referenceNumber}) for ${order.trackingNumber}. Awaiting owner manual funds verification.`,
     order.id,
     order.totalAmount
   );
@@ -1598,6 +1805,8 @@ export async function adminVerifyPayment(payload: {
   transactionId?: string;
   action: 'approve' | 'reject';
   reason?: string;
+  confirmFundsReceived?: boolean;
+  verificationNote?: string;
   adminEmail?: string;
 }): Promise<{ ok: boolean; statusCode?: number; error?: string; order?: Order; transaction?: PaymentTransaction }> {
   await syncPaymentDbIfStale(true);
@@ -1619,13 +1828,39 @@ export async function adminVerifyPayment(payload: {
     return { ok: false, statusCode: 400, error: 'لا يمكن تعديل معاملة ملغاة أو مسترجعة.' };
   }
 
+  if (
+    payload.action === 'approve' &&
+    (order?.paymentMethod === 'poste_ccp' || txn?.method === 'poste_ccp') &&
+    payload.confirmFundsReceived !== true
+  ) {
+    return {
+      ok: false,
+      statusCode: 400,
+      error: 'يجب تأكيد التحقق الفعلي من وصول الأموال في حساب CCP / البنك قبل اعتماد طلب Poste Tunisienne كمدفوع.',
+    };
+  }
+
   const snapshot = JSON.stringify(paymentDb);
   const now = new Date().toISOString();
   const nextStatus: PaymentStatus = payload.action === 'approve' ? 'Paid' : 'Payment Failed';
+  const cleanVerifyNote = typeof payload.verificationNote === 'string' ? payload.verificationNote.trim() : '';
 
   if (order) {
     order.paymentStatus = nextStatus;
     order.updatedAt = now;
+    if (order.paymentMethod === 'poste_ccp') {
+      order.statusHistory = [
+        ...order.statusHistory,
+        {
+          status: order.status,
+          timestamp: now,
+          note:
+            payload.action === 'approve'
+              ? `تم التحقق يدوياً من وصول الأموال (${order.totalAmount.toFixed(3)} ${order.currency || 'TND'}) واعتماد الدفع عبر Poste Tunisienne / CCP${cleanVerifyNote ? ` — ${cleanVerifyNote}` : ''}`
+              : `تم رفض وصل التحويل البريدي / CCP${payload.reason ? `: ${payload.reason}` : ''}`,
+        },
+      ];
+    }
     if (order.subOrders) {
       order.subOrders.forEach(sub => {
         sub.payoutStatus = payload.action === 'approve' ? 'eligible' : 'pending';
@@ -1637,6 +1872,7 @@ export async function adminVerifyPayment(payload: {
   if (txn) {
     txn.status = nextStatus;
     txn.failureReason = payload.action === 'reject' ? (payload.reason || 'Rejected by Admin') : undefined;
+    txn.fundsVerifiedNote = payload.action === 'approve' && cleanVerifyNote ? cleanVerifyNote : txn.fundsVerifiedNote;
     txn.verifiedByAdmin = payload.adminEmail || 'Admin Panel';
     txn.verifiedAt = now;
     txn.updatedAt = now;
@@ -1652,9 +1888,13 @@ export async function adminVerifyPayment(payload: {
   });
 
   appendActivity(
-    payload.action === 'approve' ? 'PAYMENT_APPROVED_PAID' : 'PAYMENT_REJECTED_FAILED',
+    payload.action === 'approve'
+      ? order?.paymentMethod === 'poste_ccp' || txn?.method === 'poste_ccp'
+        ? 'POSTE_CCP_FUNDS_CONFIRMED_PAID'
+        : 'PAYMENT_APPROVED_PAID'
+      : 'PAYMENT_REJECTED_FAILED',
     'admin',
-    `${payload.action === 'approve' ? 'Marked Paid' : 'Rejected payment'} for ${order?.trackingNumber || txn?.trackingNumber}${payload.reason ? ` (${payload.reason})` : ''}.`,
+    `${payload.action === 'approve' ? 'Confirmed funds arrived & marked Paid' : 'Rejected payment'} for ${order?.trackingNumber || txn?.trackingNumber}${cleanVerifyNote ? ` [ref: ${cleanVerifyNote}]` : ''}${payload.reason ? ` (${payload.reason})` : ''}.`,
     targetOrderId,
     txn?.amount || order?.totalAmount
   );
@@ -2188,12 +2428,20 @@ export function trackPublicOrder(code: string, isAdmin = false, phoneProof?: str
     return { ok: true, order: found };
   }
   if (doesPhoneMatchOrder(found.customerPhone, phoneProof)) {
+    const ccpDetails =
+      found.paymentMethod === 'poste_ccp' &&
+      found.paymentStatus !== 'Paid' &&
+      found.paymentStatus !== 'Refunded' &&
+      found.paymentStatus !== 'Cancelled'
+        ? getPosteCcpTransferDetails()
+        : undefined;
     return {
       ok: true,
       order: {
         ...found,
         customerEmail: '',
         notes: '',
+        ...(ccpDetails?.ok && ccpDetails.details ? { transferDetails: ccpDetails.details } : {}),
         piiMasked: false,
       },
     };
@@ -2212,6 +2460,7 @@ export function trackPublicOrder(code: string, isAdmin = false, phoneProof?: str
       notes: undefined,
     },
     transferProof: undefined,
+    transferDetails: undefined,
     piiMasked: true,
   };
   return { ok: true, order: maskedOrder };
@@ -2241,7 +2490,7 @@ export function getAdminPaymentOverview() {
   );
 
   return {
-    config: getPublicPaymentConfig(),
+    config: getAdminPaymentConfig(),
     orders: paymentDb.orders,
     transactions: paymentDb.transactions,
     vendorLedgers: paymentDb.vendorLedgers,
@@ -2298,6 +2547,7 @@ function markOrderPaymentFromGateway(txn: PaymentTransaction, nextStatus: Paymen
 
 export async function handlePaymentWebhook(payload: {
   provider: string;
+  webhookToken?: string;
   method?: 'GET' | 'POST';
   signatureHeader?: string;
   rawBody: any;
@@ -2305,7 +2555,7 @@ export async function handlePaymentWebhook(payload: {
   query?: Record<string, any>;
 }): Promise<{ ok: boolean; statusCode: number; message: string; idempotentDuplicate?: boolean }> {
   await syncPaymentDbIfStale(true);
-  const { provider, method = 'POST', signatureHeader, rawBody, rawBodyText, query } = payload;
+  const { provider, webhookToken, method = 'POST', signatureHeader, rawBody, rawBodyText, query } = payload;
   const secrets = paymentDb.config.secrets;
   const mergedInput = {
     ...(query || {}),
@@ -2313,7 +2563,8 @@ export async function handlePaymentWebhook(payload: {
   };
 
   // Konnect silentWebhook uses GET ?payment_ref=... and does not carry an HMAC header;
-  // security relies on server-to-server Konnect API verification. For POST webhooks with webhookSecret, verify raw HMAC bytes.
+  // security relies on per-order HMAC webhook token (when attached) + mandatory server-to-server Konnect API verification.
+  // For POST webhooks with webhookSecret, verify raw HMAC bytes.
   const isSilentKonnectGet = method === 'GET' && provider === 'konnect' && Boolean(mergedInput.payment_ref);
 
   if (!isSilentKonnectGet && secrets.webhookSecret && secrets.webhookSecret.trim().length > 0) {
@@ -2376,6 +2627,19 @@ export async function handlePaymentWebhook(payload: {
     return { ok: false, statusCode: 404, message: 'Transaction not found.' };
   }
 
+  const targetRefLabel = txn ? txn.trackingNumber : supTxn!.supportReference;
+
+  if (webhookToken && webhookToken.trim().length > 0) {
+    const expectedWhToken = computeOrderWebhookToken(targetRefLabel);
+    const inBuf = Buffer.from(webhookToken.trim());
+    const expBuf = Buffer.from(expectedWhToken);
+    if (inBuf.length !== expBuf.length || !crypto.timingSafeEqual(inBuf, expBuf)) {
+      appendActivity('WEBHOOK_TOKEN_INVALID', 'webhook', `Rejected ${provider} webhook with invalid per-order webhook token on ${targetRefLabel}.`);
+      saveDatabaseBestEffort();
+      return { ok: false, statusCode: 403, message: 'Invalid webhook token.' };
+    }
+  }
+
   const targetAmount = txn ? txn.amount : supTxn!.amount;
   const targetCurrency = txn ? txn.currency : supTxn!.currency;
   const targetExternalRef = (txn?.externalPaymentId || supTxn?.externalPaymentId || payRefParam || '').trim();
@@ -2399,6 +2663,7 @@ export async function handlePaymentWebhook(payload: {
       payRef: targetExternalRef,
       expectedAmount: targetAmount,
       expectedCurrency: targetCurrency,
+      expectedOrderId: targetRefLabel,
     });
     if (!check.ok) {
       if (check.statusCode === 403) {
@@ -2409,7 +2674,7 @@ export async function handlePaymentWebhook(payload: {
       return { ok: false, statusCode: check.statusCode || 502, message: check.reason || 'Gateway verification error.' };
     }
     verifiedStatus = check.status;
-  } else if (secrets.webhookSecret) {
+  } else if (secrets.webhookSecret && secrets.webhookSecret.trim().length > 0) {
     const incomingStatus = String(mergedInput?.status || '').toLowerCase();
     verifiedStatus =
       incomingStatus === 'completed' || incomingStatus === 'paid' || incomingStatus === 'succeeded' || incomingStatus === 'success'
@@ -2417,6 +2682,10 @@ export async function handlePaymentWebhook(payload: {
         : incomingStatus === 'pending'
         ? 'pending'
         : 'failed';
+  } else {
+    appendActivity('WEBHOOK_UNAUTHORIZED', 'webhook', `Rejected unauthenticated ${provider} webhook without HMAC secret or gateway S2S reference.`);
+    saveDatabaseBestEffort();
+    return { ok: false, statusCode: 401, message: 'Webhook HMAC secret required for unsigned POST webhooks.' };
   }
 
   if (verifiedStatus === 'pending') {
@@ -2425,7 +2694,6 @@ export async function handlePaymentWebhook(payload: {
 
   const snapshot = JSON.stringify(paymentDb);
   const nextStatus: PaymentStatus = verifiedStatus === 'completed' ? 'Paid' : 'Payment Failed';
-  const targetRefLabel = txn ? txn.trackingNumber : supTxn!.supportReference;
 
   if (txn) {
     markOrderPaymentFromGateway(txn, nextStatus, `${provider} webhook`);
@@ -2508,6 +2776,7 @@ export async function verifyGatewayReturn(params: {
       payRef: extRef,
       expectedAmount: txn ? txn.amount : supTxn!.amount,
       expectedCurrency: txn ? txn.currency : supTxn!.currency,
+      expectedOrderId: txn ? txn.trackingNumber : supTxn!.supportReference,
     });
     if (check.ok && check.status === 'completed') {
       const snapshot = JSON.stringify(paymentDb);
@@ -2577,6 +2846,12 @@ export async function createSupportContribution(payload: {
   if (method === 'cod' && !cfg.methods.cod.enabled) {
     return { ok: false, statusCode: 400, error: 'الدفع النقدي غير مفعّل حالياً.' };
   }
+  if (method === 'poste_ccp') {
+    const ccpCheck = getPosteCcpTransferDetails();
+    if (!ccpCheck.ok) {
+      return { ok: false, statusCode: ccpCheck.statusCode || 400, error: ccpCheck.error || 'التحويل عبر Poste / CCP غير متاح حالياً.' };
+    }
+  }
   if (method === 'bank_transfer') {
     const bankPublic = getVerifiedBankTransferPublic();
     if (bankPublic.tamperDetected || !bankPublic.enabled) {
@@ -2592,7 +2867,7 @@ export async function createSupportContribution(payload: {
   let initialStatus: PaymentStatus = 'Cash on Delivery';
   let proof: TransferProof | undefined;
 
-  if (method === 'bank_transfer') {
+  if (method === 'bank_transfer' || method === 'poste_ccp') {
     if (payload.transferProof?.referenceNumber?.trim()) {
       const cleanImg = sanitizeReceiptImageDataUrl(payload.transferProof.receiptImageDataUrl, {
         source: 'support_bank_proof',

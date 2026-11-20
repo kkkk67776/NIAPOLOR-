@@ -500,8 +500,9 @@ async function fetchSecurityPostWithWakeRetry(
     });
 
   let res = await send();
-  if (res.status === 502 || res.status === 503 || res.status === 504) {
-    await new Promise((resolve) => setTimeout(resolve, 2500));
+  for (const waitMs of [2000, 4000, 6000]) {
+    if (res.status !== 502 && res.status !== 503 && res.status !== 504) break;
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
     res = await send();
   }
   const data = await safeReadJson(res);
@@ -525,6 +526,7 @@ export async function verifyAccessCodeServer(code: string): Promise<{
       return {
         success: false,
         httpStatus: res.status,
+        error: typeof data?.error === 'string' ? data.error : undefined,
       };
     }
     if (data.success && typeof data.gateToken === 'string' && data.gateToken) {

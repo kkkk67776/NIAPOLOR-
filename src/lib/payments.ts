@@ -6,6 +6,7 @@ import type {
   PaymentStatus,
   PaymentSystemPublicConfig,
   PaymentTransaction,
+  PosteCcpTransferDetails,
   RefundRequest,
   SupportTransaction,
   TransferProof,
@@ -62,15 +63,23 @@ export const DEFAULT_PUBLIC_PAYMENT_CONFIG: PaymentSystemPublicConfig = {
   methods: {
     cod: { enabled: true },
     bank_transfer: {
-      enabled: true,
-      accountHolder: 'ECHOX STORE TUNISIE SUARL',
-      bankName: 'BIAT — Banque Internationale Arabe de Tunisie',
-      ibanOrRib: 'TN59 0800 0000 1234 5678 9012',
-      swiftCode: 'BIATTNTT',
+      enabled: false,
+      accountHolder: '',
+      bankName: '',
+      ibanOrRib: '',
+      swiftCode: '',
       instructions: {
-        ar: 'يرجى إجراء التحويل بالمبلغ الدقيق مع إدراج الرقم المرجعي للطلب في خانة البيان، ثم إرسال إثبات التحويل.',
-        fr: 'Veuillez effectuer le virement du montant exact en mentionnant la référence dans le motif, puis soumettre le justificatif.',
-        en: 'Transfer the exact amount with the order reference in the transfer note, then submit your transfer proof.',
+        ar: '',
+        fr: '',
+        en: '',
+      },
+    },
+    poste_ccp: {
+      enabled: true,
+      instructions: {
+        ar: '',
+        fr: '',
+        en: '',
       },
     },
     online_payment: {
@@ -89,6 +98,34 @@ export const DEFAULT_PUBLIC_PAYMENT_CONFIG: PaymentSystemPublicConfig = {
 export function canOrderShipClient(order: Pick<Order, 'paymentMethod' | 'paymentStatus'>): boolean {
   if (order.paymentMethod === 'cod') return true;
   return order.paymentStatus === 'Paid' || order.paymentStatus === 'paid';
+}
+
+export async function readReceiptFileAsDataUrl(file: File): Promise<{ ok: boolean; dataUrl?: string; error?: string }> {
+  const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+  if (!allowed.includes(file.type)) {
+    return {
+      ok: false,
+      error: 'يرجى اختيار صورة وصل بصيغة JPEG أو PNG أو WebP فقط.',
+    };
+  }
+  if (file.size > 3.5 * 1024 * 1024) {
+    return {
+      ok: false,
+      error: 'حجم صورة الوصل كبير جداً (الحد الأقصى 3.5 ميغابايت).',
+    };
+  }
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string' && reader.result.startsWith('data:image/')) {
+        resolve({ ok: true, dataUrl: reader.result });
+      } else {
+        resolve({ ok: false, error: 'تعذر قراءة ملف الصورة المحدد.' });
+      }
+    };
+    reader.onerror = () => resolve({ ok: false, error: 'فشلت قراءة صورة الوصل.' });
+    reader.readAsDataURL(file);
+  });
 }
 
 export function getPaymentStatusTone(status: PaymentStatus): string {
@@ -120,6 +157,30 @@ export async function fetchPublicPaymentConfig(): Promise<PaymentSystemPublicCon
   const res = await fetch('/api/payments/config', { cache: 'no-store' });
   if (!res.ok) throw new Error('Failed to load payment config');
   return res.json();
+}
+
+export async function fetchPosteCcpTransferDetails(): Promise<{
+  ok: boolean;
+  details?: PosteCcpTransferDetails;
+  error?: string;
+}> {
+  const res = await fetch('/api/payments/poste-ccp/details', { cache: 'no-store' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) {
+    return { ok: false, error: data.error || 'تعذر تحميل بيانات التحويل البريدي.' };
+  }
+  return {
+    ok: true,
+    details: {
+      enabled: Boolean(data.enabled),
+      accountHolder: data.accountHolder || '',
+      bankName: data.bankName || '',
+      ibanOrRib: data.ibanOrRib || '',
+      swiftCode: data.swiftCode,
+      instructions: data.instructions || { ar: '', fr: '', en: '' },
+      manualVerificationNotice: data.manualVerificationNotice || '',
+    },
+  };
 }
 
 export async function trackOrderServer(code: string, phone?: string): Promise<{ ok: boolean; order?: Order; error?: string }> {
@@ -154,7 +215,14 @@ export async function submitServerCheckout(payload: {
   notes?: string;
   transferProof?: Partial<TransferProof>;
   clientRequestId?: string;
-}): Promise<{ ok: boolean; order?: Order; transaction?: PaymentTransaction; paymentUrl?: string; error?: string }> {
+}): Promise<{
+  ok: boolean;
+  order?: Order;
+  transaction?: PaymentTransaction;
+  paymentUrl?: string;
+  transferDetails?: PosteCcpTransferDetails;
+  error?: string;
+}> {
   const res = await fetch('/api/payments/checkout', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -164,7 +232,13 @@ export async function submitServerCheckout(payload: {
   if (!res.ok || !data.success) {
     return { ok: false, error: data.error || 'Checkout validation failed' };
   }
-  return { ok: true, order: data.order, transaction: data.transaction, paymentUrl: data.paymentUrl };
+  return {
+    ok: true,
+    order: data.order,
+    transaction: data.transaction,
+    paymentUrl: data.paymentUrl,
+    transferDetails: data.transferDetails,
+  };
 }
 
 export async function verifyGatewayReturnClient(params: {
@@ -215,6 +289,28 @@ export async function submitBankTransferProofClient(payload: {
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.success) {
     return { ok: false, error: data.error || 'Failed submitting transfer proof' };
+  }
+  return { ok: true, order: data.order };
+}
+
+export async function submitPosteCcpProofClient(payload: {
+  trackingNumber: string;
+  customerPhone?: string;
+  referenceNumber: string;
+  senderName: string;
+  transferDate?: string;
+  receiptImageDataUrl?: string;
+  notes?: string;
+}): Promise<{ ok: boolean; order?: Order; error?: string }> {
+  const res = await fetch('/api/payments/poste-ccp/proof', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) {
+    return { ok: false, error: data.error || 'Failed submitting Poste / CCP transfer proof' };
   }
   return { ok: true, order: data.order };
 }
@@ -374,6 +470,8 @@ export async function verifyAdminPaymentAction(payload: {
   transactionId?: string;
   action: 'approve' | 'reject';
   reason?: string;
+  confirmFundsReceived?: boolean;
+  verificationNote?: string;
 }): Promise<{ ok: boolean; order?: Order; transaction?: PaymentTransaction; error?: string }> {
   const res = await fetch('/api/admin/payments/verify', {
     method: 'POST',

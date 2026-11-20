@@ -103,7 +103,7 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
       if (trimmed.startsWith('#') && trimmed.length >= 5) {
         accessCheckTimerRef.current = setTimeout(() => {
           void runAccessCodeVerification(trimmed, false);
-        }, 500);
+        }, 1000);
       }
 
       // البحث عن المنتجات

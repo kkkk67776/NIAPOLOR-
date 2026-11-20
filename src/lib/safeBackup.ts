@@ -329,6 +329,7 @@ export interface SanitizedPaymentPublicSummary {
   methods: {
     cod: { enabled: boolean };
     bank_transfer: { enabled: boolean };
+    poste_ccp?: { enabled: boolean };
     online_payment: {
       enabled: boolean;
       provider: string;
@@ -1390,6 +1391,13 @@ const ONLINE_PAYMENT_POLICY_EXCLUDED = new Set<string>([
   'webhookPath',
 ]);
 
+const POSTE_CCP_ALLOWED = new Set<string>(['enabled']);
+const POSTE_CCP_POLICY_EXCLUDED = new Set<string>([
+  'instructions',
+  'integrityVerified',
+  'tamperDetected',
+]);
+
 export function sanitizePaymentPublicSummary(
   rawCfg: unknown,
   context: string,
@@ -1410,7 +1418,7 @@ export function sanitizePaymentPublicSummary(
   const methodKeys = getOwnSafeKeys(rawCfg.methods, `${context}.methods`);
   for (const mk of methodKeys) {
     assert(
-      mk === 'cod' || mk === 'bank_transfer' || mk === 'online_payment',
+      mk === 'cod' || mk === 'bank_transfer' || mk === 'poste_ccp' || mk === 'online_payment',
       'UNKNOWN_FIELD',
       `Unknown payment method key "${mk}" at ${context}.methods`
     );
@@ -1440,6 +1448,22 @@ export function sanitizePaymentPublicSummary(
     'paymentConfig.bank_transfer'
   );
 
+  if (rawCfg.methods.poste_ccp !== undefined) {
+    assert(
+      isPlainObject(rawCfg.methods.poste_ccp),
+      'INVALID_RECORD',
+      `Expected poste_ccp object at ${context}.methods.poste_ccp`
+    );
+    assertNoUnknownKeys(
+      rawCfg.methods.poste_ccp,
+      POSTE_CCP_ALLOWED,
+      POSTE_CCP_POLICY_EXCLUDED,
+      `${context}.methods.poste_ccp`,
+      auditCounts,
+      'paymentConfig.poste_ccp'
+    );
+  }
+
   assert(
     isPlainObject(rawCfg.methods.online_payment),
     'INVALID_RECORD',
@@ -1465,6 +1489,13 @@ export function sanitizePaymentPublicSummary(
       bank_transfer: {
         enabled: requireBoolean(rawCfg.methods.bank_transfer.enabled, `${context}.methods.bank_transfer.enabled`),
       },
+      ...(rawCfg.methods.poste_ccp !== undefined
+        ? {
+            poste_ccp: {
+              enabled: requireBoolean(rawCfg.methods.poste_ccp.enabled, `${context}.methods.poste_ccp.enabled`),
+            },
+          }
+        : {}),
       online_payment: {
         enabled: requireBoolean(rawCfg.methods.online_payment.enabled, `${context}.methods.online_payment.enabled`),
         provider: requireCleanString(rawCfg.methods.online_payment.provider, `${context}.methods.online_payment.provider`, limits, false),

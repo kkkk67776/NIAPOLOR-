@@ -35,7 +35,7 @@ import {
 } from '../lib/payments';
 import { Order, PaymentStatus } from '../types';
 
-type SubTab = 'settings' | 'transactions' | 'vendors' | 'support' | 'logs';
+type SubTab = 'settings' | 'ccp_reviews' | 'transactions' | 'vendors' | 'support' | 'logs';
 
 export const PaymentManagementTab: React.FC = () => {
   const {
@@ -67,8 +67,8 @@ export const PaymentManagementTab: React.FC = () => {
   );
 
   const [codEnabled, setCodEnabled] = useState<boolean>(paymentConfig.methods.cod.enabled);
-  const [bankEnabled, setBankEnabled] = useState<boolean>(
-    paymentConfig.methods.bank_transfer.enabled
+  const [posteCcpEnabled, setPosteCcpEnabled] = useState<boolean>(
+    paymentConfig.methods.poste_ccp?.enabled ?? true
   );
   const [bankHolder, setBankHolder] = useState<string>(
     paymentConfig.methods.bank_transfer.accountHolder || ''
@@ -120,6 +120,16 @@ export const PaymentManagementTab: React.FC = () => {
   const [txFilter, setTxFilter] = useState<string>('all');
   const [actionBusyId, setActionBusyId] = useState<string | null>(null);
   const [previewProofImage, setPreviewProofImage] = useState<string | null>(null);
+  const [ccpFundsChecked, setCcpFundsChecked] = useState<Record<string, boolean>>({});
+  const [ccpVerifyNotes, setCcpVerifyNotes] = useState<Record<string, string>>({});
+  const [ccpApproveModal, setCcpApproveModal] = useState<{
+    orderId: string;
+    txId?: string;
+    trackingNumber: string;
+    amountLabel: string;
+  } | null>(null);
+  const [ccpModalConfirm, setCcpModalConfirm] = useState(false);
+  const [ccpModalNote, setCcpModalNote] = useState('');
   const [rejectReasonPrompt, setRejectReasonPrompt] = useState<{
     orderId: string;
     txId?: string;
@@ -161,7 +171,7 @@ export const PaymentManagementTab: React.FC = () => {
         setFreeShippingThreshold(String(cfg.freeShippingThreshold));
       }
       setCodEnabled(cfg.methods.cod.enabled);
-      setBankEnabled(cfg.methods.bank_transfer.enabled);
+      setPosteCcpEnabled(cfg.methods.poste_ccp?.enabled ?? true);
       setBankHolder(cfg.methods.bank_transfer.accountHolder);
       setBankName(cfg.methods.bank_transfer.bankName);
       setBankIban(cfg.methods.bank_transfer.ibanOrRib);
@@ -198,8 +208,9 @@ export const PaymentManagementTab: React.FC = () => {
       standardShippingFee: Number.isFinite(parsedShipFee) ? parsedShipFee : 8,
       freeShippingThreshold: Number.isFinite(parsedFreeThresh) ? parsedFreeThresh : 200,
       codEnabled,
+      posteCcpEnabled,
       bankTransfer: {
-        enabled: bankEnabled,
+        enabled: false, // Locked hidden from generic public storefront config; shown dynamically only on Poste / CCP selection
         accountHolder: bankHolder.trim(),
         bankName: bankName.trim(),
         ibanOrRib: bankIban.trim(),
@@ -227,7 +238,7 @@ export const PaymentManagementTab: React.FC = () => {
       bankName.trim() !== (bankMeta.bankName || '').trim() ||
       bankIban.trim() !== (bankMeta.ibanOrRib || '').trim() ||
       bankSwift.trim() !== (bankMeta.swiftCode || '').trim() ||
-      Boolean(bankMeta.tamperDetected && bankEnabled);
+      Boolean(bankMeta.tamperDetected && posteCcpEnabled);
 
     if (bankChanged) {
       if (bankMeta.lockedByEnv) {
@@ -264,7 +275,7 @@ export const PaymentManagementTab: React.FC = () => {
         ? parsedFreeThresh
         : siteSettings.freeShippingThreshold,
       enableCOD: codEnabled,
-      enableBankTransfer: bankEnabled,
+      enableBankTransfer: false,
     });
 
     await refreshPaymentConfig();
@@ -291,7 +302,8 @@ export const PaymentManagementTab: React.FC = () => {
     orderId: string | undefined,
     txId: string | undefined,
     action: 'approve' | 'reject',
-    reason?: string
+    reason?: string,
+    options?: { confirmFundsReceived?: boolean; verificationNote?: string }
   ) => {
     const key = orderId || txId || '';
     setActionBusyId(key);
@@ -300,6 +312,8 @@ export const PaymentManagementTab: React.FC = () => {
       transactionId: txId,
       action,
       reason,
+      confirmFundsReceived: options?.confirmFundsReceived,
+      verificationNote: options?.verificationNote,
     });
     setActionBusyId(null);
 
@@ -314,7 +328,7 @@ export const PaymentManagementTab: React.FC = () => {
     showBanner(
       'ok',
       action === 'approve'
-        ? 'تم تأكيد الدفع وتحديث مستحقات البائعين ✓'
+        ? 'تم تأكيد وصول الأموال واعتماد الطلب كـ Paid وتحديث مستحقات البائعين ✓'
         : 'تم رفض إثبات التحويل وإبلاغ الطلب.'
     );
   };
@@ -377,6 +391,16 @@ export const PaymentManagementTab: React.FC = () => {
   const pendingRefundRequests = (overview?.refundRequests || []).filter(
     (r) => r.status === 'requested'
   );
+
+  const ccpTransferTxs = transactions.filter(
+    (tx) => tx.method === 'poste_ccp' || tx.method === 'bank_transfer'
+  );
+  const ccpPendingReviewCount = ccpTransferTxs.filter(
+    (tx) =>
+      tx.status === 'Payment Verification' ||
+      tx.status === 'Awaiting Bank Transfer' ||
+      tx.status === 'Payment Failed'
+  ).length;
 
   // Merge orders with transactions for complete lookup
   const filteredTransactions = transactions.filter((tx) =>
@@ -470,6 +494,13 @@ export const PaymentManagementTab: React.FC = () => {
               id: 'settings' as SubTab,
               label: language === 'ar' ? 'وسائل الدفع والبوابات' : 'Methods & Gateways',
               icon: CreditCard,
+            },
+            {
+              id: 'ccp_reviews' as SubTab,
+              label:
+                (language === 'ar' ? 'مراجعة تحويلات Poste / CCP' : 'Poste / CCP Reviews') +
+                ` (${ccpPendingReviewCount})`,
+              icon: Building2,
             },
             {
               id: 'transactions' as SubTab,
@@ -647,7 +678,41 @@ export const PaymentManagementTab: React.FC = () => {
             </label>
           </div>
 
-          {/* 2. Bank Transfer Configuration */}
+          {/* 1.5 Independent Poste Tunisienne / CCP Transfer Toggle Card */}
+          <div className="p-4 sm:p-5 rounded-3xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#FF6B00]/30 space-y-2.5">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-[#FF6B00]/10 text-[#FF6B00] flex items-center justify-center shrink-0">
+                  <Building2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className="text-xs sm:text-sm font-black">{t.payments.posteCcpLabel}</h4>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
+                      مراجعة يدوية لوصول الأموال
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    يستخدم رقم الـ RIB المحفوظ أدناه ويظهر للعميل فقط عند اختيار "البريد التونسي / CCP" أثناء إتمام الطلب، مع مرجع تحويل فريد لكل طلب وإمكانية رفع وصل التحويل.
+                  </p>
+                </div>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer text-xs font-bold shrink-0">
+                <input
+                  type="checkbox"
+                  checked={posteCcpEnabled}
+                  onChange={(e) => setPosteCcpEnabled(e.target.checked)}
+                  className="w-4 h-4 accent-[#FF6B00] cursor-pointer"
+                />
+                <span>{posteCcpEnabled ? 'مفعّل' : 'معطّل'}</span>
+              </label>
+            </div>
+            <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2">
+              {t.payments.ccpManualVerifyNotice}
+            </p>
+          </div>
+
+          {/* 2. Internal Merchant Bank RIB (Hidden from Storefront Customers) */}
           <div className="p-4 sm:p-5 rounded-3xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-800 space-y-4">
             <div className="flex items-center justify-between flex-wrap gap-3">
               <div className="flex items-center gap-3">
@@ -656,7 +721,15 @@ export const PaymentManagementTab: React.FC = () => {
                 </div>
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <h4 className="text-xs sm:text-sm font-black">{t.payments.bankTransferLabel}</h4>
+                    <h4 className="text-xs sm:text-sm font-black">
+                      {language === 'ar'
+                        ? 'الحساب البنكي الداخلي للتسوية (مخفي تماماً عن العملاء)'
+                        : 'Internal Merchant Settlement RIB (Hidden from Storefront)'}
+                    </h4>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-white dark:bg-slate-700 flex items-center gap-1">
+                      <Lock className="w-3 h-3" />
+                      <span>مخفي عن واجهة المتجر والطلبات</span>
+                    </span>
                     {currentCfg.methods.bank_transfer.lockedByEnv ? (
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
                         <Lock className="w-3 h-3" />
@@ -665,7 +738,7 @@ export const PaymentManagementTab: React.FC = () => {
                     ) : currentCfg.methods.bank_transfer.tamperDetected ? (
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/15 text-red-700 dark:text-red-400 border border-red-500/30 flex items-center gap-1">
                         <AlertTriangle className="w-3 h-3" />
-                        <span>تنبيه تلاعب: تم تعليق التحويلات تلقائياً</span>
+                        <span>تنبيه تلاعب: يحتاج إعادة ختم PIN</span>
                       </span>
                     ) : (
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
@@ -680,19 +753,13 @@ export const PaymentManagementTab: React.FC = () => {
                     )}
                   </div>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    {t.payments.bankTransferDesc}
+                    محفوظ للمالك فقط ولا يظهر للعملاء إطلاقاً؛ تتم تسوية مدفوعات Konnect إلى الحساب البنكي المرتبط بحساب التاجر.
                   </p>
                 </div>
               </div>
-              <label className="flex items-center gap-2 cursor-pointer text-xs font-bold">
-                <input
-                  type="checkbox"
-                  checked={bankEnabled}
-                  onChange={(e) => setBankEnabled(e.target.checked)}
-                  className="w-4 h-4 accent-[#FF6B00] cursor-pointer"
-                />
-                <span>{bankEnabled ? 'مفعّل' : 'معطّل'}</span>
-              </label>
+              <span className="text-[11px] font-bold px-2.5 py-1 rounded-xl bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 shrink-0">
+                ✓ محمي ومخفي عاماً
+              </span>
             </div>
 
             {currentCfg.methods.bank_transfer.tamperDetected && (
@@ -846,11 +913,16 @@ export const PaymentManagementTab: React.FC = () => {
             </div>
 
             {!currentCfg.methods.online_payment.readyForLive && (
-              <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-700 dark:text-amber-300 flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>
-                  يبقى الدفع الإلكتروني <strong>معطلاً افتراضياً</strong> ولا يقبل أي معاملات حتى يتم إدخال مفتاح API ومعرّف المحفظة الحقيقيين وحفظهما على الخادم. يتم قبول التحقق النهائي فقط عبر Webhook موقّع.
-                </span>
+              <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-700 dark:text-amber-300 space-y-1">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>
+                    يبقى الدفع الإلكتروني <strong>معطلاً افتراضياً</strong> ولا يقبل أي معاملات حتى يتم إدخال <strong>Konnect API Key</strong> و<strong>Receiver Wallet ID</strong> وحفظهما على الخادم (أو عبر متغيرات البيئة <code>KONNECT_API_KEY</code> و<code>KONNECT_WALLET_ID</code>).
+                  </span>
+                </div>
+                <p className="text-[10px] opacity-90 ps-6">
+                  متطلبات Konnect للإنتاج (Live): تفعيل حساب التاجر (KYB / الباتيندا أو معرف جبائي)، ربط رقم الحساب البنكي RIB داخل لوحة Konnect للتسوية، واستخدام Webhook خادمي مؤمّن بـ HMAC + تحقق مباشر من Konnect قبل تحديث الطلب إلى Paid.
+                </p>
               </div>
             )}
 
@@ -1028,6 +1100,179 @@ export const PaymentManagementTab: React.FC = () => {
             </button>
           </div>
         </form>
+      )}
+
+      {/* SUB-TAB 1.5: DEDICATED POSTE TUNISIENNE / CCP TRANSFER REVIEW PANEL */}
+      {subTab === 'ccp_reviews' && (
+        <div className="space-y-4">
+          <div className="p-4 rounded-3xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <p className="font-black">لوحة التحقق اليدوي من وصول أموال Poste Tunisienne / CCP</p>
+              <p className="text-[11px] opacity-90">
+                لا يوجد تحقق آلي من حساب البريد التونسي عبر API رسمي. لا تعتمد أي طلب كـ Paid ولا تشحنه قبل مطابقة المبلغ والمرجع في كشف حسابك البريدي/البنكي الفعلي ثم تأكيد وصول الأموال أدناه.
+              </p>
+            </div>
+          </div>
+
+          {ccpTransferTxs.length === 0 ? (
+            <div className="p-8 text-center rounded-3xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-800 text-xs text-slate-500">
+              لا توجد طلبات تحويل عبر Poste Tunisienne / CCP حتى الآن.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {ccpTransferTxs.map((tx) => {
+                const linkedOrder = serverOrders.find((o) => o.id === tx.orderId);
+                const proof = tx.transferProof || linkedOrder?.transferProof;
+                const isChecked = Boolean(ccpFundsChecked[tx.id]);
+                const noteVal = ccpVerifyNotes[tx.id] || '';
+                const canReview =
+                  tx.status === 'Payment Verification' ||
+                  tx.status === 'Awaiting Bank Transfer' ||
+                  tx.status === 'Payment Failed';
+
+                return (
+                  <div
+                    key={tx.id}
+                    className="p-4 sm:p-5 rounded-3xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-800 space-y-3 text-xs"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono font-black bg-white dark:bg-[#0F172A] px-2.5 py-1 rounded-xl border border-slate-200 dark:border-slate-700">
+                          {tx.trackingNumber}
+                        </span>
+                        <span className="font-mono font-bold text-[#FF6B00] bg-[#FF6B00]/10 px-2.5 py-1 rounded-xl">
+                          {tx.paymentReference}
+                        </span>
+                        <span
+                          className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${getPaymentStatusTone(
+                            tx.status
+                          )}`}
+                        >
+                          {(t.payments.statuses as Record<string, string>)[tx.status] || tx.status}
+                        </span>
+                      </div>
+                      <span className="text-base font-black font-mono tabular-nums text-slate-900 dark:text-white">
+                        {tx.amount.toFixed(3)} {tx.currency}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-600 dark:text-slate-300">
+                      <span>
+                        الحريف: <strong>{tx.customerName || linkedOrder?.customerName || '—'}</strong>
+                      </span>
+                      {(tx.customerPhone || linkedOrder?.customerPhone) && (
+                        <span className="font-mono" dir="ltr">
+                          {tx.customerPhone || linkedOrder?.customerPhone}
+                        </span>
+                      )}
+                      {tx.verifiedAt && (
+                        <span className="text-emerald-600 font-bold">
+                          ✓ تم الاعتماد: {new Date(tx.verifiedAt).toLocaleString('ar-TN')}
+                        </span>
+                      )}
+                      {tx.fundsVerifiedNote && (
+                        <span className="font-mono text-indigo-600 dark:text-indigo-400">
+                          مرجع الكشف: {tx.fundsVerifiedNote}
+                        </span>
+                      )}
+                    </div>
+
+                    {proof ? (
+                      <div className="p-3 rounded-2xl bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div className="space-y-0.5">
+                          <span className="text-[11px] font-black text-indigo-600 dark:text-indigo-400 block">
+                            تفاصيل وصل التحويل المرفوع:
+                          </span>
+                          <div>
+                            رقم العملية: <strong className="font-mono">{proof.referenceNumber}</strong> · المحوّل:{' '}
+                            <strong>{proof.senderName}</strong> · التاريخ:{' '}
+                            <span className="font-mono">{proof.transferDate}</span>
+                          </div>
+                          {proof.notes && <p className="text-[11px] text-slate-500">{proof.notes}</p>}
+                        </div>
+                        {proof.receiptImageDataUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setPreviewProofImage(proof.receiptImageDataUrl || null)}
+                            className="px-3 py-1.5 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-[11px] font-bold flex items-center gap-1.5 cursor-pointer shrink-0"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>معاينة صورة الوصل</span>
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-amber-700 dark:text-amber-300 font-semibold">
+                        لم يرفع العميل وصل التحويل بعد — بانتظار رفع الوصل أو وصول التحويل بالمرجع ({tx.paymentReference}).
+                      </p>
+                    )}
+
+                    {canReview && (
+                      <div className="p-3 rounded-2xl bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 space-y-2.5">
+                        <label className="flex items-start gap-2 cursor-pointer text-xs font-bold text-slate-800 dark:text-slate-100">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) =>
+                              setCcpFundsChecked((prev) => ({ ...prev, [tx.id]: e.target.checked }))
+                            }
+                            className="mt-0.5 w-4 h-4 accent-emerald-600 cursor-pointer shrink-0"
+                          />
+                          <span>
+                            أؤكد أنني راجعت كشف حساب CCP / البنك وتأكدت من وصول مبلغ ({tx.amount.toFixed(3)} {tx.currency}) فعلياً بالكامل.
+                          </span>
+                        </label>
+
+                        <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
+                          <input
+                            type="text"
+                            value={noteVal}
+                            onChange={(e) =>
+                              setCcpVerifyNotes((prev) => ({ ...prev, [tx.id]: e.target.value }))
+                            }
+                            placeholder="مرجع الإشعار البريدي / رقم العملية بالكشف (اختياري)..."
+                            className="flex-1 text-[11px] py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-transparent"
+                          />
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              disabled={!isChecked || actionBusyId === tx.orderId || actionBusyId === tx.id}
+                              onClick={() =>
+                                handleVerifyPayment(tx.orderId, tx.id, 'approve', undefined, {
+                                  confirmFundsReceived: true,
+                                  verificationNote: noteVal.trim() || undefined,
+                                })
+                              }
+                              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-45 disabled:cursor-not-allowed text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                              <span>تأكيد وصول الأموال واعتماد (Paid)</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setRejectReasonPrompt({
+                                  orderId: tx.orderId,
+                                  txId: tx.id,
+                                  mode: 'verify_reject',
+                                })
+                              }
+                              className="px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-600 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                            >
+                              <XCircle className="w-3.5 h-3.5" />
+                              <span>رفض الوصل</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       )}
 
       {/* SUB-TAB 2: TRANSACTIONS & BANK TRANSFER PROOFS */}
@@ -1213,13 +1458,28 @@ export const PaymentManagementTab: React.FC = () => {
                         <button
                           type="button"
                           disabled={actionBusyId === tx.orderId || actionBusyId === tx.id}
-                          onClick={() => handleVerifyPayment(tx.orderId, tx.id, 'approve')}
+                          onClick={() => {
+                            if (tx.method === 'poste_ccp') {
+                              setCcpModalConfirm(false);
+                              setCcpModalNote('');
+                              setCcpApproveModal({
+                                orderId: tx.orderId,
+                                txId: tx.id,
+                                trackingNumber: tx.trackingNumber,
+                                amountLabel: `${tx.amount.toFixed(3)} ${tx.currency}`,
+                              });
+                            } else {
+                              handleVerifyPayment(tx.orderId, tx.id, 'approve');
+                            }
+                          }}
                           className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer"
                         >
                           <Check className="w-3.5 h-3.5" />
                           <span>
                             {tx.method === 'cod'
                               ? 'تأكيد استلام المبلغ النقدي (Paid)'
+                              : tx.method === 'poste_ccp'
+                              ? 'تحقق من وصول الأموال واعتماد (Paid)'
                               : 'اعتماد الدفع وتأكيده (Paid)'}
                           </span>
                         </button>
@@ -1568,6 +1828,69 @@ export const PaymentManagementTab: React.FC = () => {
                 className="px-4 py-2 rounded-xl bg-red-600 text-white text-xs font-bold cursor-pointer"
               >
                 تأكيد التنفيذ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Mandatory Manual Funds Confirmation for Poste Tunisienne / CCP */}
+      {ccpApproveModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs"
+          onClick={() => setCcpApproveModal(null)}
+        >
+          <div
+            className="max-w-md w-full bg-white dark:bg-[#0F172A] rounded-3xl p-5 border border-[#E2E8F0] dark:border-slate-700 space-y-4 text-xs"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h4 className="text-sm font-black flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-[#FF6B00]" />
+              <span>تأكيد وصول أموال Poste Tunisienne / CCP</span>
+            </h4>
+            <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+              الطلب <strong>{ccpApproveModal.trackingNumber}</strong> بمبلغ{' '}
+              <strong className="font-mono">{ccpApproveModal.amountLabel}</strong>. لا يوجد تحقق آلي عبر API — يرجى مطابقة كشف الحساب قبل الاعتماد.
+            </p>
+            <label className="flex items-start gap-2 cursor-pointer font-bold">
+              <input
+                type="checkbox"
+                checked={ccpModalConfirm}
+                onChange={(e) => setCcpModalConfirm(e.target.checked)}
+                className="mt-0.5 w-4 h-4 accent-emerald-600 shrink-0"
+              />
+              <span>أؤكد أنني تحققت من وصول الأموال فعلياً إلى الحساب البريدي / البنكي.</span>
+            </label>
+            <input
+              type="text"
+              value={ccpModalNote}
+              onChange={(e) => setCcpModalNote(e.target.value)}
+              placeholder="مرجع الإشعار في كشف الحساب (اختياري)..."
+              className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setCcpApproveModal(null)}
+                className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold cursor-pointer"
+              >
+                تراجع
+              </button>
+              <button
+                type="button"
+                disabled={!ccpModalConfirm}
+                onClick={async () => {
+                  const target = ccpApproveModal;
+                  const note = ccpModalNote.trim() || undefined;
+                  setCcpApproveModal(null);
+                  await handleVerifyPayment(target.orderId, target.txId, 'approve', undefined, {
+                    confirmFundsReceived: true,
+                    verificationNote: note,
+                  });
+                }}
+                className="px-4 py-2 rounded-xl bg-emerald-600 disabled:opacity-45 text-white text-xs font-bold cursor-pointer"
+              >
+                تأكيد وصول الأموال (Paid)
               </button>
             </div>
           </div>

@@ -287,6 +287,12 @@ export default function OwnerSecurityRoom({ onUnlockSuccess, onNavigate, vaultOp
         setLockoutTime(serverResult.remainingSeconds || 30);
         sendEmailAlert('تنبيه أمني خطير', `محاولات فاشلة متكررة (${newAttempts} محاولات).`);
         setError(serverResult.error || 'تم تجاوز الحد المسموح. تم تجميد البوابة لمدة 30 ثانية.');
+      } else if (serverResult.httpStatus === 403 && !serverResult.attemptsLeft && /الشيفرة|انتهت صلاحية|البوابة السرية/.test(serverResult.error || '')) {
+        setError(serverResult.error || 'انتهت صلاحية بوابة الدخول، سيتم العودة لإدخال الشيفرة السرية في البحث.');
+        setTimeout(() => {
+          clearPendingVaultGateToken();
+          setIsModalOpen(false);
+        }, 2200);
       } else {
         setError(
           serverResult.error ||

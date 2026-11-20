@@ -186,7 +186,7 @@ export function generateSmartStoreReply(params: {
   }
 
   // 5. Payment Methods
-  if (/(دفع|استلام|خلاص|بنك|تحويل|كاش|فلوس|بطاق|paiement|payer|especes|virement|carte|payment|pay|cash|cod|bank|transfer|iban|rib)/i.test(norm)) {
+  if (/(دفع|استلام|خلاص|بنك|تحويل|بريد|كاش|فلوس|بطاق|paiement|payer|especes|virement|poste|ccp|carte|payment|pay|cash|cod|bank|transfer|iban|rib)/i.test(norm)) {
     const methods: string[] = [];
     if (siteSettings.enableCOD || paymentConfig.methods.cod.enabled) {
       methods.push(
@@ -197,22 +197,22 @@ export function generateSmartStoreReply(params: {
           : 'الدفع عند الاستلام نقداً بعد معاينة الطلبية'
       );
     }
-    if (siteSettings.enableBankTransfer || paymentConfig.methods.bank_transfer.enabled) {
+    if (paymentConfig.methods.poste_ccp?.enabled) {
       methods.push(
         language === 'fr'
-          ? 'Virement bancaire / postal avec justificatif'
+          ? 'Poste Tunisienne / Virement CCP (les coordonnées de transfert s’affichent uniquement lors du choix à la caisse)'
           : language === 'en'
-          ? 'Bank / Postal Transfer with receipt verification'
-          : 'التحويل البنكي أو البريدي مع إرفاق الوصل'
+          ? 'Poste Tunisienne / CCP Transfer (transfer details are shown only when selected at checkout)'
+          : 'التحويل عبر البريد التونسي / Poste Tunisienne (CCP) — تظهر بيانات التحويل عند اختيار هذه الوسيلة أثناء إتمام الطلب فقط'
       );
     }
     if (paymentConfig.methods.online_payment.enabled && paymentConfig.methods.online_payment.readyForLive) {
       methods.push(
         language === 'fr'
-          ? 'Paiement en ligne sécurisé'
+          ? 'Paiement en ligne sécurisé (Konnect : Carte bancaire / E-Dinar)'
           : language === 'en'
-          ? 'Secure online card / E-Dinar payment'
-          : 'الدفع الإلكتروني الآمن بالبطاقة أو E-Dinar'
+          ? 'Secure online payment (Konnect: Bank Card / E-Dinar)'
+          : 'الدفع الإلكتروني الآمن بالبطاقة البنكية أو E-Dinar عبر Konnect'
       );
     }
     if (language === 'fr') {

@@ -377,7 +377,7 @@ async function proxyToUpstreamBackend(
     let upstream = await fetch(targetUrl, buildInit());
 
     if (canRetryUpstream && isColdStartStatus(upstream.status)) {
-      for (const waitMs of [2000, 3500]) {
+      for (const waitMs of [2500, 4000, 6000, 8000]) {
         await new Promise((resolve) => setTimeout(resolve, waitMs));
         upstream = await fetch(targetUrl, buildInit());
         if (!isColdStartStatus(upstream.status)) break;
