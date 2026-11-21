@@ -413,7 +413,7 @@ export default function OwnerSecurityRoom({ onUnlockSuccess, onNavigate, vaultOp
           <div className="w-12 h-12 rounded-2xl bg-[#F59E0B]/10 border border-[#F59E0B]/30 flex items-center justify-center text-[#F59E0B] mb-3 shadow-inner">
             <Shield className="w-6 h-6" />
           </div>
-          <h2 className="text-lg font-bold tracking-wider text-white">ECHOX VAULT</h2>
+          <h2 className="text-lg font-bold tracking-wider text-white">NIAPOLOR VAULT</h2>
           <p className="text-xs text-gray-400 mt-1">
             {isChangeMode ? 'تغيير رمز الـ PIN الحالي' : 'أدخل رمز الـ PIN السري للمتابعة إلى مركز التحكم'}
           </p>

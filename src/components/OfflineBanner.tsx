@@ -49,22 +49,22 @@ export const OfflineBanner: React.FC = () => {
 
   return (
     <div className="max-w-7xl mx-auto w-full px-2.5 sm:px-4 pt-3" role="status" aria-live="polite">
-      <div className="rounded-2xl border border-[#FF6B00]/30 bg-[#FFF7F2] dark:bg-[#111827] px-3.5 sm:px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+      <div className="rounded-2xl border border-[#FF6B00]/30 bg-[#FAF9F7] dark:bg-[#141418] px-3.5 sm:px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
         <div className="flex items-start sm:items-center gap-3 min-w-0">
           <div className="w-9 h-9 rounded-xl bg-[#FF6B00]/15 text-[#FF6B00] flex items-center justify-center shrink-0">
             <WifiOff className="w-4 h-4" />
           </div>
           <div className="min-w-0 space-y-0.5">
-            <p className="text-xs sm:text-sm font-black text-[#0F172A] dark:text-white leading-snug">
+            <p className="text-xs sm:text-sm font-black text-[#111113] dark:text-[#F7F6F3] leading-snug">
               {t.offline.title}
             </p>
-            <p className="text-[11px] sm:text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+            <p className="text-[11px] sm:text-xs text-[#5A5854] dark:text-[#B5B0A8] leading-relaxed">
               {products.length > 0 ? t.offline.cachedNotice : t.offline.noCachedNotice}
               {formattedSync && (
                 <>
                   {' '}
                   <span aria-hidden="true">·</span>{' '}
-                  <span className="text-slate-500 dark:text-slate-400 font-semibold">
+                  <span className="text-[#7A756D] dark:text-[#8E8980] font-semibold">
                     {t.offline.lastSyncedPrefix} {formattedSync}
                   </span>
                 </>

@@ -2475,7 +2475,7 @@ app.post('/api/support/contribute', async (req: Request, res: Response) => {
       emitAdminNotification({
         category: 'payment',
         severity: 'success',
-        title: '🤝 مساهمة دعم جديدة لمنصة ECHOX',
+        title: '🤝 مساهمة دعم جديدة لمنصة NIAPOLOR',
         body: `${result.supportTransaction.supporterName || 'داعم'} — ${result.supportTransaction.amount} د.ت`,
         url: '/owner/dashboard',
       });
@@ -2976,7 +2976,7 @@ app.put('/api/admin/store/state', async (req: Request, res: Response) => {
     if (newest) {
       emitPublicStoreNotification({
         tag: 'منتج جديد',
-        title: `🆕 منتج جديد في ECHOX Store: ${newest.name?.ar || newest.name?.en || newest.name?.fr || 'منتج جديد'}`,
+        title: `🆕 منتج جديد في NIAPOLOR: ${newest.name?.ar || newest.name?.en || newest.name?.fr || 'منتج جديد'}`,
         body: `متوفر الآن بسعر ${newest.price} د.ت — اطلبه الآن مع التوصيل لكافة الولايات.`,
         url: `/?product=${encodeURIComponent(newest.id)}`,
       });
@@ -2987,7 +2987,7 @@ app.put('/api/admin/store/state', async (req: Request, res: Response) => {
       emitPublicStoreNotification({
         tag: newestBanner.tag || 'عرض جديد',
         title: `🔥 ${newestBanner.title}`,
-        body: newestBanner.subtitle || 'اكتشف العروض الجديدة في ECHOX Store الآن.',
+        body: newestBanner.subtitle || 'اكتشف العروض الجديدة في NIAPOLOR الآن.',
         url: '/',
       });
     }

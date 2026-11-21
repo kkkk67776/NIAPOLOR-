@@ -440,7 +440,7 @@ export const PaymentManagementTab: React.FC = () => {
           <button
             type="button"
             onClick={() => setBannerMsg(null)}
-            className="text-slate-400 hover:text-slate-700 cursor-pointer"
+            className="text-[#8E8980] hover:text-[#111113] dark:hover:text-[#F7F6F3] cursor-pointer"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -449,8 +449,8 @@ export const PaymentManagementTab: React.FC = () => {
 
       {/* Financial Snapshot KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-        <div className="p-3.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-800">
-          <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block">
+        <div className="p-3.5 rounded-2xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A]">
+          <span className="text-[11px] font-bold text-[#7A756D] dark:text-[#8E8980] block">
             {language === 'ar' ? 'المدفوعات المؤكدة (Paid)' : 'Confirmed Paid'}
           </span>
           <span className="text-lg font-black text-emerald-600 dark:text-emerald-400 font-mono tabular-nums mt-1 block">
@@ -458,8 +458,8 @@ export const PaymentManagementTab: React.FC = () => {
           </span>
         </div>
 
-        <div className="p-3.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-800">
-          <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block">
+        <div className="p-3.5 rounded-2xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A]">
+          <span className="text-[11px] font-bold text-[#7A756D] dark:text-[#8E8980] block">
             {language === 'ar' ? 'بانتظار التحقق / التحويل' : 'Awaiting Verification'}
           </span>
           <span className="text-lg font-black text-amber-600 dark:text-amber-400 font-mono tabular-nums mt-1 block">
@@ -467,8 +467,8 @@ export const PaymentManagementTab: React.FC = () => {
           </span>
         </div>
 
-        <div className="p-3.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-800">
-          <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block">
+        <div className="p-3.5 rounded-2xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A]">
+          <span className="text-[11px] font-bold text-[#7A756D] dark:text-[#8E8980] block">
             {language === 'ar' ? 'مستحقات البائعين المؤهلة' : 'Vendor Eligible Payouts'}
           </span>
           <span className="text-lg font-black text-[#FF6B00] font-mono tabular-nums mt-1 block">
@@ -476,9 +476,9 @@ export const PaymentManagementTab: React.FC = () => {
           </span>
         </div>
 
-        <div className="p-3.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-800">
-          <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block">
-            {language === 'ar' ? 'دعم ECHOX المستقل (Paid)' : 'Support ECHOX (Paid)'}
+        <div className="p-3.5 rounded-2xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A]">
+          <span className="text-[11px] font-bold text-[#7A756D] dark:text-[#8E8980] block">
+            {language === 'ar' ? 'دعم NIAPOLOR المستقل (Paid)' : 'Support NIAPOLOR (Paid)'}
           </span>
           <span className="text-lg font-black text-blue-600 dark:text-blue-400 font-mono tabular-nums mt-1 block">
             {(overview?.supportTotalPaid || 0).toFixed(3)} {currentCfg.currency}
@@ -487,7 +487,7 @@ export const PaymentManagementTab: React.FC = () => {
       </div>
 
       {/* Sub-Tabs Hairline Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-[#E2E8F0] dark:border-slate-800">
+      <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-[#E6E2D8] dark:border-[#23232A]">
         <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
           {[
             {
@@ -519,7 +519,7 @@ export const PaymentManagementTab: React.FC = () => {
             {
               id: 'support' as SubTab,
               label:
-                (language === 'ar' ? 'سجل ادعم ECHOX' : 'Support ECHOX') +
+                (language === 'ar' ? 'سجل ادعم NIAPOLOR' : 'Support NIAPOLOR') +
                 ` (${overview?.supportTransactions?.length || 0})`,
               icon: HeartHandshake,
             },
@@ -538,8 +538,8 @@ export const PaymentManagementTab: React.FC = () => {
                 onClick={() => setSubTab(item.id)}
                 className={`px-3.5 py-1.5 rounded-full text-xs font-bold shrink-0 flex items-center gap-1.5 transition-all cursor-pointer ${
                   active
-                    ? 'bg-[#0F172A] dark:bg-white text-white dark:text-[#0F172A]'
-                    : 'bg-[#F8FAFC] dark:bg-[#1E293B] text-slate-600 dark:text-slate-300 border border-[#E2E8F0] dark:border-slate-700 hover:border-[#FF6B00]'
+                    ? 'bg-[#111113] dark:bg-[#F7F6F3] text-white dark:text-[#111113]'
+                    : 'bg-[#F3F1EC] dark:bg-[#18181D] text-[#5A5854] dark:text-[#B5B0A8] border border-[#E6E2D8] dark:border-[#32323C] hover:border-[#FF6B00]'
                 }`}
               >
                 <Icon className="w-3.5 h-3.5" />
@@ -553,7 +553,7 @@ export const PaymentManagementTab: React.FC = () => {
           type="button"
           onClick={loadAll}
           disabled={loading}
-          className="px-3 py-1.5 rounded-xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-700 text-xs font-bold flex items-center gap-1.5 hover:border-[#FF6B00] cursor-pointer"
+          className="px-3 py-1.5 rounded-xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#32323C] text-xs font-bold flex items-center gap-1.5 hover:border-[#FF6B00] cursor-pointer"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           <span>{language === 'ar' ? 'تحديث' : 'Refresh'}</span>
@@ -564,7 +564,7 @@ export const PaymentManagementTab: React.FC = () => {
       {subTab === 'settings' && (
         <form onSubmit={handleSaveConfig} className="space-y-4">
           {/* General Financial Rules */}
-          <div className="p-4 sm:p-5 rounded-3xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-800 space-y-4">
+          <div className="p-4 sm:p-5 rounded-3xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] space-y-4">
             <h3 className="text-sm font-black flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-[#FF6B00]" />
               <span>
@@ -582,7 +582,7 @@ export const PaymentManagementTab: React.FC = () => {
                 <select
                   value={currency}
                   onChange={(e) => setCurrency(e.target.value as 'TND' | 'EUR' | 'USD')}
-                  className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] font-bold"
+                  className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418] text-[#111113] dark:text-[#F7F6F3] font-bold"
                 >
                   <option value="TND">TND (د.ت)</option>
                   <option value="EUR">EUR (€)</option>
@@ -601,7 +601,7 @@ export const PaymentManagementTab: React.FC = () => {
                   max="50"
                   value={commissionRate}
                   onChange={(e) => setCommissionRate(e.target.value)}
-                  className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] font-mono font-bold"
+                  className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418] font-mono font-bold"
                   dir="ltr"
                 />
               </div>
@@ -617,7 +617,7 @@ export const PaymentManagementTab: React.FC = () => {
                   max="40"
                   value={taxRate}
                   onChange={(e) => setTaxRate(e.target.value)}
-                  className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] font-mono font-bold"
+                  className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418] font-mono font-bold"
                   dir="ltr"
                 />
               </div>
@@ -632,7 +632,7 @@ export const PaymentManagementTab: React.FC = () => {
                   min="0"
                   value={shippingFee}
                   onChange={(e) => setShippingFee(e.target.value)}
-                  className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] font-mono font-bold"
+                  className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418] font-mono font-bold"
                   dir="ltr"
                 />
               </div>
@@ -647,7 +647,7 @@ export const PaymentManagementTab: React.FC = () => {
                   min="0"
                   value={freeShippingThreshold}
                   onChange={(e) => setFreeShippingThreshold(e.target.value)}
-                  className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] font-mono font-bold"
+                  className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418] font-mono font-bold"
                   dir="ltr"
                 />
               </div>
@@ -655,14 +655,14 @@ export const PaymentManagementTab: React.FC = () => {
           </div>
 
           {/* 1. Cash on Delivery Card */}
-          <div className="p-4 sm:p-5 rounded-3xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-800 flex items-center justify-between gap-4">
+          <div className="p-4 sm:p-5 rounded-3xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0">
                 <Banknote className="w-5 h-5" />
               </div>
               <div>
                 <h4 className="text-xs sm:text-sm font-black">{t.payments.codLabel}</h4>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                <p className="text-[11px] text-[#7A756D] dark:text-[#8E8980]">
                   {t.payments.codDesc}
                 </p>
               </div>
@@ -679,7 +679,7 @@ export const PaymentManagementTab: React.FC = () => {
           </div>
 
           {/* 1.5 Independent Poste Tunisienne / CCP Transfer Toggle Card */}
-          <div className="p-4 sm:p-5 rounded-3xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#FF6B00]/30 space-y-2.5">
+          <div className="p-4 sm:p-5 rounded-3xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#FF6B00]/30 space-y-2.5">
             <div className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-[#FF6B00]/10 text-[#FF6B00] flex items-center justify-center shrink-0">
@@ -692,7 +692,7 @@ export const PaymentManagementTab: React.FC = () => {
                       مراجعة يدوية لوصول الأموال
                     </span>
                   </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  <p className="text-[11px] text-[#7A756D] dark:text-[#8E8980] mt-0.5">
                     يستخدم رقم الـ RIB المحفوظ أدناه ويظهر للعميل فقط عند اختيار "البريد التونسي / CCP" أثناء إتمام الطلب، مع مرجع تحويل فريد لكل طلب وإمكانية رفع وصل التحويل.
                   </p>
                 </div>
@@ -713,7 +713,7 @@ export const PaymentManagementTab: React.FC = () => {
           </div>
 
           {/* 2. Internal Merchant Bank RIB (Hidden from Storefront Customers) */}
-          <div className="p-4 sm:p-5 rounded-3xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-800 space-y-4">
+          <div className="p-4 sm:p-5 rounded-3xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] space-y-4">
             <div className="flex items-center justify-between flex-wrap gap-3">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-[#FF6B00]/10 text-[#FF6B00] flex items-center justify-center shrink-0">
@@ -726,7 +726,7 @@ export const PaymentManagementTab: React.FC = () => {
                         ? 'الحساب البنكي الداخلي للتسوية (مخفي تماماً عن العملاء)'
                         : 'Internal Merchant Settlement RIB (Hidden from Storefront)'}
                     </h4>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-white dark:bg-slate-700 flex items-center gap-1">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#111113] text-white dark:bg-[#23232A] flex items-center gap-1">
                       <Lock className="w-3 h-3" />
                       <span>مخفي عن واجهة المتجر والطلبات</span>
                     </span>
@@ -747,12 +747,12 @@ export const PaymentManagementTab: React.FC = () => {
                       </span>
                     )}
                     {currentCfg.methods.bank_transfer.ibanFingerprint && (
-                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-slate-200/70 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-[#EBE7DF] dark:bg-[#1C1C22] text-[#5A5854] dark:text-[#B5B0A8]">
                         بصمة الحساب: {currentCfg.methods.bank_transfer.ibanFingerprint}
                       </span>
                     )}
                   </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  <p className="text-[11px] text-[#7A756D] dark:text-[#8E8980]">
                     محفوظ للمالك فقط ولا يظهر للعملاء إطلاقاً؛ تتم تسوية مدفوعات Konnect إلى الحساب البنكي المرتبط بحساب التاجر.
                   </p>
                 </div>
@@ -768,7 +768,7 @@ export const PaymentManagementTab: React.FC = () => {
               </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200 dark:border-slate-700">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-[#E6E2D8] dark:border-[#23232A]">
               <div>
                 <label className="text-[11px] font-bold block mb-1">{t.payments.beneficiary}</label>
                 <input
@@ -776,7 +776,7 @@ export const PaymentManagementTab: React.FC = () => {
                   value={bankHolder}
                   disabled={Boolean(currentCfg.methods.bank_transfer.lockedByEnv)}
                   onChange={(e) => setBankHolder(e.target.value)}
-                  className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] disabled:opacity-60"
+                  className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418] disabled:opacity-60"
                 />
               </div>
 
@@ -787,7 +787,7 @@ export const PaymentManagementTab: React.FC = () => {
                   value={bankName}
                   disabled={Boolean(currentCfg.methods.bank_transfer.lockedByEnv)}
                   onChange={(e) => setBankName(e.target.value)}
-                  className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] disabled:opacity-60"
+                  className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418] disabled:opacity-60"
                 />
               </div>
 
@@ -799,7 +799,7 @@ export const PaymentManagementTab: React.FC = () => {
                   disabled={Boolean(currentCfg.methods.bank_transfer.lockedByEnv)}
                   onChange={(e) => setBankIban(e.target.value)}
                   dir="ltr"
-                  className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] font-mono disabled:opacity-60"
+                  className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418] font-mono disabled:opacity-60"
                 />
               </div>
 
@@ -811,7 +811,7 @@ export const PaymentManagementTab: React.FC = () => {
                   disabled={Boolean(currentCfg.methods.bank_transfer.lockedByEnv)}
                   onChange={(e) => setBankSwift(e.target.value)}
                   dir="ltr"
-                  className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] font-mono disabled:opacity-60"
+                  className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418] font-mono disabled:opacity-60"
                 />
               </div>
             </div>
@@ -836,7 +836,7 @@ export const PaymentManagementTab: React.FC = () => {
                   onChange={(e) => setBankConfirmPin(e.target.value)}
                   placeholder="أدخل رمز PIN للتأكيد"
                   dir="ltr"
-                  className="sm:w-48 text-xs py-2 px-3 rounded-xl border border-amber-400 dark:border-amber-600 bg-white dark:bg-[#0F172A] font-mono font-bold text-center"
+                  className="sm:w-48 text-xs py-2 px-3 rounded-xl border border-amber-400 dark:border-amber-600 bg-white dark:bg-[#141418] font-mono font-bold text-center"
                 />
               </div>
             )}
@@ -848,7 +848,7 @@ export const PaymentManagementTab: React.FC = () => {
                   rows={2}
                   value={bankInstAr}
                   onChange={(e) => setBankInstAr(e.target.value)}
-                  className="w-full text-[11px] py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A]"
+                  className="w-full text-[11px] py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418]"
                 />
               </div>
               <div>
@@ -858,7 +858,7 @@ export const PaymentManagementTab: React.FC = () => {
                   value={bankInstFr}
                   onChange={(e) => setBankInstFr(e.target.value)}
                   dir="ltr"
-                  className="w-full text-[11px] py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A]"
+                  className="w-full text-[11px] py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418]"
                 />
               </div>
               <div>
@@ -868,14 +868,14 @@ export const PaymentManagementTab: React.FC = () => {
                   value={bankInstEn}
                   onChange={(e) => setBankInstEn(e.target.value)}
                   dir="ltr"
-                  className="w-full text-[11px] py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A]"
+                  className="w-full text-[11px] py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418]"
                 />
               </div>
             </div>
           </div>
 
           {/* 3. Online Payment Gateway (Strictly Gated on Server Secrets) */}
-          <div className="p-4 sm:p-5 rounded-3xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-800 space-y-4">
+          <div className="p-4 sm:p-5 rounded-3xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-blue-500/10 text-blue-600 flex items-center justify-center shrink-0">
@@ -895,7 +895,7 @@ export const PaymentManagementTab: React.FC = () => {
                       </span>
                     )}
                   </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  <p className="text-[11px] text-[#7A756D] dark:text-[#8E8980]">
                     {t.payments.onlinePaymentDesc}
                   </p>
                 </div>
@@ -926,13 +926,13 @@ export const PaymentManagementTab: React.FC = () => {
               </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200 dark:border-slate-700">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-[#E6E2D8] dark:border-[#23232A]">
               <div>
                 <label className="text-[11px] font-bold block mb-1">مزوّد البوابة (Gateway Provider)</label>
                 <select
                   value={onlineProvider}
                   onChange={(e) => setOnlineProvider(e.target.value as any)}
-                  className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] font-bold"
+                  className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418] text-[#111113] dark:text-[#F7F6F3] font-bold"
                 >
                   <option value="konnect">Konnect Tunisia (متوافق مع API الرسمي)</option>
                   <option value="flouci">Flouci Tunisia</option>
@@ -945,7 +945,7 @@ export const PaymentManagementTab: React.FC = () => {
                 <select
                   value={onlineMode}
                   onChange={(e) => setOnlineMode(e.target.value as any)}
-                  className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] font-bold"
+                  className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418] text-[#111113] dark:text-[#F7F6F3] font-bold"
                 >
                   <option value="sandbox">Sandbox (بيئة الاختبار)</option>
                   <option value="live">Live (الإنتاج الفعلي)</option>
@@ -982,7 +982,7 @@ export const PaymentManagementTab: React.FC = () => {
                       : 'أدخل API Key الحقيقي...'
                   }
                   dir="ltr"
-                  className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] font-mono"
+                  className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418] font-mono"
                 />
               </div>
 
@@ -1013,7 +1013,7 @@ export const PaymentManagementTab: React.FC = () => {
                       : 'أدخل Receiver Wallet ID...'
                   }
                   dir="ltr"
-                  className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] font-mono"
+                  className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418] font-mono"
                 />
               </div>
 
@@ -1030,18 +1030,18 @@ export const PaymentManagementTab: React.FC = () => {
                   onChange={(e) => setWebhookSecretInput(e.target.value)}
                   placeholder="مفتاح التحقق HMAC للـ Webhook..."
                   dir="ltr"
-                  className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] font-mono"
+                  className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418] font-mono"
                 />
               </div>
             </div>
 
             {typeof window !== 'undefined' && (
-              <div className="p-3 rounded-2xl bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px]">
+              <div className="p-3 rounded-2xl bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#23232A] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px]">
                 <div className="min-w-0">
-                  <span className="font-bold text-slate-500 block">
+                  <span className="font-bold text-[#7A756D] dark:text-[#8E8980] block">
                     {language === 'ar' ? 'رابط Webhook الرسمي للمزوّد:' : 'Gateway Webhook URL:'}
                   </span>
-                  <code className="font-mono text-slate-800 dark:text-slate-200 break-all" dir="ltr">
+                  <code className="font-mono text-[#111113] dark:text-[#B5B0A8] break-all" dir="ltr">
                     {`${window.location.origin}/api/payments/webhook/${onlineProvider}`}
                   </code>
                 </div>
@@ -1053,7 +1053,7 @@ export const PaymentManagementTab: React.FC = () => {
                     setCopiedWebhook(true);
                     setTimeout(() => setCopiedWebhook(false), 2000);
                   }}
-                  className="px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-600 hover:border-[#FF6B00] font-bold shrink-0 cursor-pointer"
+                  className="px-3 py-1.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] hover:border-[#FF6B00] font-bold shrink-0 cursor-pointer"
                 >
                   {copiedWebhook ? t.payments.copied : t.payments.copy}
                 </button>
@@ -1065,7 +1065,7 @@ export const PaymentManagementTab: React.FC = () => {
                 type="button"
                 onClick={handleTestGateway}
                 disabled={testingGateway}
-                className="px-4 py-2 rounded-xl bg-white dark:bg-[#0F172A] border border-slate-300 dark:border-slate-600 hover:border-[#FF6B00] text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                className="px-4 py-2 rounded-xl bg-white dark:bg-[#141418] border border-[#D6D0C4] dark:border-[#32323C] hover:border-[#FF6B00] text-xs font-bold flex items-center gap-1.5 cursor-pointer"
               >
                 {testingGateway ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1116,7 +1116,7 @@ export const PaymentManagementTab: React.FC = () => {
           </div>
 
           {ccpTransferTxs.length === 0 ? (
-            <div className="p-8 text-center rounded-3xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-800 text-xs text-slate-500">
+            <div className="p-8 text-center rounded-3xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] text-xs text-[#7A756D] dark:text-[#8E8980]">
               لا توجد طلبات تحويل عبر Poste Tunisienne / CCP حتى الآن.
             </div>
           ) : (
@@ -1134,11 +1134,11 @@ export const PaymentManagementTab: React.FC = () => {
                 return (
                   <div
                     key={tx.id}
-                    className="p-4 sm:p-5 rounded-3xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-800 space-y-3 text-xs"
+                    className="p-4 sm:p-5 rounded-3xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] space-y-3 text-xs"
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-mono font-black bg-white dark:bg-[#0F172A] px-2.5 py-1 rounded-xl border border-slate-200 dark:border-slate-700">
+                        <span className="font-mono font-black bg-white dark:bg-[#141418] px-2.5 py-1 rounded-xl border border-[#E6E2D8] dark:border-[#32323C]">
                           {tx.trackingNumber}
                         </span>
                         <span className="font-mono font-bold text-[#FF6B00] bg-[#FF6B00]/10 px-2.5 py-1 rounded-xl">
@@ -1152,12 +1152,12 @@ export const PaymentManagementTab: React.FC = () => {
                           {(t.payments.statuses as Record<string, string>)[tx.status] || tx.status}
                         </span>
                       </div>
-                      <span className="text-base font-black font-mono tabular-nums text-slate-900 dark:text-white">
+                      <span className="text-base font-black font-mono tabular-nums text-[#111113] dark:text-[#F7F6F3]">
                         {tx.amount.toFixed(3)} {tx.currency}
                       </span>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-600 dark:text-slate-300">
+                    <div className="flex flex-wrap items-center gap-3 text-[11px] text-[#5A5854] dark:text-[#B5B0A8]">
                       <span>
                         الحريف: <strong>{tx.customerName || linkedOrder?.customerName || '—'}</strong>
                       </span>
@@ -1179,7 +1179,7 @@ export const PaymentManagementTab: React.FC = () => {
                     </div>
 
                     {proof ? (
-                      <div className="p-3 rounded-2xl bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="p-3 rounded-2xl bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#32323C] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                         <div className="space-y-0.5">
                           <span className="text-[11px] font-black text-indigo-600 dark:text-indigo-400 block">
                             تفاصيل وصل التحويل المرفوع:
@@ -1189,7 +1189,7 @@ export const PaymentManagementTab: React.FC = () => {
                             <strong>{proof.senderName}</strong> · التاريخ:{' '}
                             <span className="font-mono">{proof.transferDate}</span>
                           </div>
-                          {proof.notes && <p className="text-[11px] text-slate-500">{proof.notes}</p>}
+                          {proof.notes && <p className="text-[11px] text-[#7A756D] dark:text-[#8E8980]">{proof.notes}</p>}
                         </div>
                         {proof.receiptImageDataUrl && (
                           <button
@@ -1209,8 +1209,8 @@ export const PaymentManagementTab: React.FC = () => {
                     )}
 
                     {canReview && (
-                      <div className="p-3 rounded-2xl bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 space-y-2.5">
-                        <label className="flex items-start gap-2 cursor-pointer text-xs font-bold text-slate-800 dark:text-slate-100">
+                      <div className="p-3 rounded-2xl bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#32323C] space-y-2.5">
+                        <label className="flex items-start gap-2 cursor-pointer text-xs font-bold text-[#111113] dark:text-[#F7F6F3]">
                           <input
                             type="checkbox"
                             checked={isChecked}
@@ -1232,7 +1232,7 @@ export const PaymentManagementTab: React.FC = () => {
                               setCcpVerifyNotes((prev) => ({ ...prev, [tx.id]: e.target.value }))
                             }
                             placeholder="مرجع الإشعار البريدي / رقم العملية بالكشف (اختياري)..."
-                            className="flex-1 text-[11px] py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-transparent"
+                            className="flex-1 text-[11px] py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent"
                           />
                           <div className="flex items-center gap-2 shrink-0">
                             <button
@@ -1289,15 +1289,15 @@ export const PaymentManagementTab: React.FC = () => {
                 {pendingRefundRequests.map((req) => (
                   <div
                     key={req.id}
-                    className="p-3 rounded-2xl bg-white dark:bg-[#0F172A] border border-purple-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+                    className="p-3 rounded-2xl bg-white dark:bg-[#141418] border border-purple-200 dark:border-[#32323C] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
                   >
                     <div>
                       <span className="font-mono font-bold text-[#FF6B00]">{req.trackingNumber}</span>
-                      <span className="mx-2 text-slate-400">•</span>
+                      <span className="mx-2 text-[#8E8980]">•</span>
                       <span className="font-bold tabular-nums">
                         {req.amount.toFixed(3)} {currentCfg.currency}
                       </span>
-                      <p className="text-[11px] text-slate-500 mt-0.5">{req.reason}</p>
+                      <p className="text-[11px] text-[#7A756D] dark:text-[#8E8980] mt-0.5">{req.reason}</p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <button
@@ -1312,7 +1312,7 @@ export const PaymentManagementTab: React.FC = () => {
                         type="button"
                         disabled={actionBusyId === req.orderId}
                         onClick={() => handleProcessRefund(req.orderId, 'reject_refund')}
-                        className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-bold cursor-pointer"
+                        className="px-3 py-1.5 rounded-xl bg-[#F3F1EC] dark:bg-[#18181D] text-[#5A5854] dark:text-[#B5B0A8] text-[11px] font-bold cursor-pointer"
                       >
                         رفض الطلب
                       </button>
@@ -1345,7 +1345,7 @@ export const PaymentManagementTab: React.FC = () => {
                 className={`px-3 py-1 rounded-full text-[11px] font-bold shrink-0 transition-all cursor-pointer ${
                   txFilter === st
                     ? 'bg-[#FF6B00] text-white'
-                    : 'bg-[#F8FAFC] dark:bg-[#1E293B] text-slate-600 dark:text-slate-300 border border-[#E2E8F0] dark:border-slate-700'
+                    : 'bg-[#F3F1EC] dark:bg-[#18181D] text-[#5A5854] dark:text-[#B5B0A8] border border-[#E6E2D8] dark:border-[#32323C]'
                 }`}
               >
                 {st === 'all'
@@ -1356,7 +1356,7 @@ export const PaymentManagementTab: React.FC = () => {
           </div>
 
           {filteredTransactions.length === 0 ? (
-            <div className="p-8 text-center rounded-3xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-800 text-xs text-slate-500">
+            <div className="p-8 text-center rounded-3xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] text-xs text-[#7A756D] dark:text-[#8E8980]">
               لا توجد معاملات مالية ضمن هذا التصنيف بعد.
             </div>
           ) : (
@@ -1367,11 +1367,11 @@ export const PaymentManagementTab: React.FC = () => {
                 return (
                   <div
                     key={tx.id}
-                    className="p-4 rounded-3xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-800 space-y-3"
+                    className="p-4 rounded-3xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] space-y-3"
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-mono font-black text-xs bg-white dark:bg-[#0F172A] px-2.5 py-1 rounded-xl border border-slate-200 dark:border-slate-700">
+                        <span className="font-mono font-black text-xs bg-white dark:bg-[#141418] px-2.5 py-1 rounded-xl border border-[#E6E2D8] dark:border-[#32323C]">
                           {tx.trackingNumber}
                         </span>
                         <span className="font-mono text-[11px] text-[#FF6B00] font-bold">
@@ -1387,19 +1387,19 @@ export const PaymentManagementTab: React.FC = () => {
                       </div>
 
                       <div className="flex items-center gap-3">
-                        <span className="text-sm font-black tabular-nums text-[#0F172A] dark:text-white">
+                        <span className="text-sm font-black tabular-nums text-[#111113] dark:text-[#F7F6F3]">
                           {tx.amount.toFixed(3)} {tx.currency}
                         </span>
-                        <span className="text-[10px] text-slate-400">
+                        <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980]">
                           {new Date(tx.updatedAt).toLocaleString('ar-TN')}
                         </span>
                       </div>
                     </div>
 
-                    <div className="text-xs flex flex-wrap items-center justify-between gap-2 text-slate-600 dark:text-slate-300">
+                    <div className="text-xs flex flex-wrap items-center justify-between gap-2 text-[#5A5854] dark:text-[#B5B0A8]">
                       <div>
                         <span>الحريف: </span>
-                        <strong className="text-[#0F172A] dark:text-white">
+                        <strong className="text-[#111113] dark:text-[#F7F6F3]">
                           {linkedOrder?.customerName || '—'}
                         </strong>
                         <span className="mx-2">•</span>
@@ -1422,7 +1422,7 @@ export const PaymentManagementTab: React.FC = () => {
 
                     {/* Bank Transfer Proof Block */}
                     {proof && (
-                      <div className="p-3 rounded-2xl bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                      <div className="p-3 rounded-2xl bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#32323C] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
                         <div className="space-y-0.5">
                           <span className="text-[11px] font-black text-indigo-600 dark:text-indigo-400 block">
                             إثبات التحويل المرفق:
@@ -1433,7 +1433,7 @@ export const PaymentManagementTab: React.FC = () => {
                             <span className="font-mono">{proof.transferDate}</span>
                           </div>
                           {proof.notes && (
-                            <p className="text-[11px] text-slate-500">{proof.notes}</p>
+                            <p className="text-[11px] text-[#7A756D] dark:text-[#8E8980]">{proof.notes}</p>
                           )}
                         </div>
                         {proof.receiptImageDataUrl && (
@@ -1450,7 +1450,7 @@ export const PaymentManagementTab: React.FC = () => {
                     )}
 
                     {/* Admin Verification & Lifecycle Actions */}
-                    <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+                    <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[#E6E2D8] dark:border-[#23232A]">
                       {(tx.status === 'Payment Verification' ||
                         tx.status === 'Awaiting Bank Transfer' ||
                         tx.status === 'Cash on Delivery' ||
@@ -1528,7 +1528,7 @@ export const PaymentManagementTab: React.FC = () => {
                               mode: 'cancel',
                             })
                           }
-                          className="px-3 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-bold cursor-pointer"
+                          className="px-3 py-1.5 rounded-xl bg-[#EBE7DF] dark:bg-[#23232A] text-[#5A5854] dark:text-[#B5B0A8] text-[11px] font-bold cursor-pointer"
                         >
                           إلغاء مالي للطلب
                         </button>
@@ -1554,7 +1554,7 @@ export const PaymentManagementTab: React.FC = () => {
           </div>
 
           {!overview?.vendorSummaries?.length ? (
-            <div className="p-8 text-center rounded-3xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-800 text-xs text-slate-500">
+            <div className="p-8 text-center rounded-3xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] text-xs text-[#7A756D] dark:text-[#8E8980]">
               لا توجد سجلات مالية للبائعين بعد. ستظهر هنا تلقائياً عند إتمام أي طلب متعدد أو أحادي البائعين.
             </div>
           ) : (
@@ -1562,33 +1562,33 @@ export const PaymentManagementTab: React.FC = () => {
               {overview.vendorSummaries.map((vs) => (
                 <div
                   key={vs.vendorId}
-                  className="p-4 rounded-3xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-800 space-y-3"
+                  className="p-4 rounded-3xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] space-y-3"
                 >
                   <div className="flex items-center justify-between">
                     <div>
                       <h4 className="text-sm font-black">{vs.vendorName}</h4>
-                      <span className="text-[11px] font-mono text-slate-400">{vs.vendorId}</span>
+                      <span className="text-[11px] font-mono text-[#7A756D] dark:text-[#8E8980]">{vs.vendorId}</span>
                     </div>
-                    <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700">
+                    <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#32323C]">
                       {vs.entriesCount} عمليات
                     </span>
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
-                    <div className="p-2.5 rounded-xl bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700">
-                      <span className="text-[10px] text-slate-400 block">إجمالي المبيعات</span>
+                    <div className="p-2.5 rounded-xl bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#32323C]">
+                      <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980] block">إجمالي المبيعات</span>
                       <strong className="font-mono tabular-nums">
                         {vs.grossTotal.toFixed(3)} {currentCfg.currency}
                       </strong>
                     </div>
-                    <div className="p-2.5 rounded-xl bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700">
-                      <span className="text-[10px] text-slate-400 block">عمولة المنصة</span>
+                    <div className="p-2.5 rounded-xl bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#32323C]">
+                      <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980] block">عمولة المنصة</span>
                       <strong className="font-mono tabular-nums text-[#FF6B00]">
                         {vs.commissionTotal.toFixed(3)} {currentCfg.currency}
                       </strong>
                     </div>
-                    <div className="p-2.5 rounded-xl bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700">
-                      <span className="text-[10px] text-slate-400 block">معلق (غير مؤكد)</span>
+                    <div className="p-2.5 rounded-xl bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#32323C]">
+                      <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980] block">معلق (غير مؤكد)</span>
                       <strong className="font-mono tabular-nums text-amber-600">
                         {vs.netPending.toFixed(3)} {currentCfg.currency}
                       </strong>
@@ -1601,8 +1601,8 @@ export const PaymentManagementTab: React.FC = () => {
                         {vs.netEligible.toFixed(3)} {currentCfg.currency}
                       </strong>
                     </div>
-                    <div className="p-2.5 rounded-xl bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 sm:col-span-2">
-                      <span className="text-[10px] text-slate-400 block">تمت تسويته وصرفه</span>
+                    <div className="p-2.5 rounded-xl bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#32323C] sm:col-span-2">
+                      <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980] block">تمت تسويته وصرفه</span>
                       <strong className="font-mono tabular-nums text-blue-600">
                         {vs.netSettled.toFixed(3)} {currentCfg.currency}
                       </strong>
@@ -1614,7 +1614,7 @@ export const PaymentManagementTab: React.FC = () => {
                       type="button"
                       disabled={actionBusyId === vs.vendorId}
                       onClick={() => handleSettleVendor(vs.vendorId, vs.vendorName)}
-                      className="w-full py-2 rounded-xl bg-[#0F172A] dark:bg-white text-white dark:text-[#0F172A] hover:bg-[#FF6B00] hover:text-white text-xs font-bold transition-colors cursor-pointer"
+                      className="w-full py-2 rounded-xl bg-[#111113] dark:bg-[#F7F6F3] text-white dark:text-[#111113] hover:bg-[#FF6B00] dark:hover:bg-[#FF6B00] hover:text-white dark:hover:text-white text-xs font-bold transition-colors cursor-pointer"
                     >
                       {actionBusyId === vs.vendorId
                         ? 'جارٍ تسجيل التسوية...'
@@ -1628,7 +1628,7 @@ export const PaymentManagementTab: React.FC = () => {
         </div>
       )}
 
-      {/* SUB-TAB 4: INDEPENDENT SUPPORT ECHOX LOG */}
+      {/* SUB-TAB 4: INDEPENDENT SUPPORT NIAPOLOR LOG */}
       {subTab === 'support' && (
         <div className="space-y-3">
           <div className="p-3.5 rounded-2xl bg-[#FF6B00]/10 border border-[#FF6B00]/20 text-xs text-[#FF6B00] font-bold flex items-center gap-2">
@@ -1637,15 +1637,15 @@ export const PaymentManagementTab: React.FC = () => {
           </div>
 
           {!overview?.supportTransactions?.length ? (
-            <div className="p-8 text-center rounded-3xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-800 text-xs text-slate-500">
-              لا توجد مساهمات مسجلة في "ادعم ECHOX" حتى الآن.
+            <div className="p-8 text-center rounded-3xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] text-xs text-[#7A756D] dark:text-[#8E8980]">
+              لا توجد مساهمات مسجلة في "ادعم NIAPOLOR" حتى الآن.
             </div>
           ) : (
             <div className="space-y-2.5">
               {overview.supportTransactions.map((sup) => (
                 <div
                   key={sup.id}
-                  className="p-4 rounded-2xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
+                  className="p-4 rounded-2xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
                 >
                   <div className="space-y-1">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -1659,7 +1659,7 @@ export const PaymentManagementTab: React.FC = () => {
                       >
                         {(t.payments.statuses as Record<string, string>)[sup.status] || sup.status}
                       </span>
-                      <span className="text-[11px] text-slate-400">
+                      <span className="text-[11px] text-[#7A756D] dark:text-[#8E8980]">
                         {new Date(sup.createdAt).toLocaleString('ar-TN')}
                       </span>
                     </div>
@@ -1672,7 +1672,7 @@ export const PaymentManagementTab: React.FC = () => {
                       )}
                       <span> • الوسيلة: {sup.method}</span>
                     </div>
-                    {sup.note && <p className="text-[11px] text-slate-500">{sup.note}</p>}
+                    {sup.note && <p className="text-[11px] text-[#7A756D] dark:text-[#8E8980]">{sup.note}</p>}
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
@@ -1711,23 +1711,23 @@ export const PaymentManagementTab: React.FC = () => {
       {subTab === 'logs' && (
         <div className="space-y-2">
           {!overview?.activityLogs?.length ? (
-            <div className="p-8 text-center rounded-3xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-800 text-xs text-slate-500">
+            <div className="p-8 text-center rounded-3xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] text-xs text-[#7A756D] dark:text-[#8E8980]">
               سجل التدقيق المالي فارغ حالياً.
             </div>
           ) : (
             overview.activityLogs.map((log) => (
               <div
                 key={log.id}
-                className="p-3 rounded-2xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+                className="p-3 rounded-2xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
               >
                 <div className="space-y-0.5">
                   <div className="flex items-center gap-2">
-                    <span className="font-mono text-[10px] font-black px-2 py-0.5 rounded-lg bg-[#0F172A] text-white dark:bg-white dark:text-[#0F172A]">
+                    <span className="font-mono text-[10px] font-black px-2 py-0.5 rounded-lg bg-[#111113] text-white dark:bg-[#F7F6F3] dark:text-[#111113]">
                       {log.action}
                     </span>
-                    <span className="text-[10px] text-slate-400">actor: {log.actor}</span>
+                    <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980]">actor: {log.actor}</span>
                   </div>
-                  <p className="text-[11px] text-slate-600 dark:text-slate-300">{log.details}</p>
+                  <p className="text-[11px] text-[#5A5854] dark:text-[#B5B0A8]">{log.details}</p>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
                   {typeof log.amount === 'number' && (
@@ -1735,7 +1735,7 @@ export const PaymentManagementTab: React.FC = () => {
                       {log.amount.toFixed(3)} {currentCfg.currency}
                     </span>
                   )}
-                  <span className="text-[10px] font-mono text-slate-400">
+                  <span className="text-[10px] font-mono text-[#7A756D] dark:text-[#8E8980]">
                     {new Date(log.timestamp).toLocaleString('ar-TN')}
                   </span>
                 </div>
@@ -1752,7 +1752,7 @@ export const PaymentManagementTab: React.FC = () => {
           onClick={() => setPreviewProofImage(null)}
         >
           <div
-            className="max-w-xl w-full bg-white dark:bg-[#0F172A] rounded-3xl p-4 space-y-3 border border-slate-700"
+            className="max-w-xl w-full bg-white dark:bg-[#141418] rounded-3xl p-4 space-y-3 border border-[#E6E2D8] dark:border-[#32323C]"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">
@@ -1760,7 +1760,7 @@ export const PaymentManagementTab: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setPreviewProofImage(null)}
-                className="p-1.5 rounded-full bg-slate-100 dark:bg-slate-800 cursor-pointer"
+                className="p-1.5 rounded-full bg-[#F3F1EC] dark:bg-[#18181D] cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1768,7 +1768,7 @@ export const PaymentManagementTab: React.FC = () => {
             <img
               src={previewProofImage}
               alt="Transfer Receipt"
-              className="w-full max-h-[70vh] object-contain rounded-2xl bg-slate-100 dark:bg-slate-900"
+              className="w-full max-h-[70vh] object-contain rounded-2xl bg-[#F3F1EC] dark:bg-[#18181D]"
             />
           </div>
         </div>
@@ -1784,7 +1784,7 @@ export const PaymentManagementTab: React.FC = () => {
           }}
         >
           <div
-            className="max-w-md w-full bg-white dark:bg-[#0F172A] rounded-3xl p-5 border border-[#E2E8F0] dark:border-slate-700 space-y-4"
+            className="max-w-md w-full bg-white dark:bg-[#141418] rounded-3xl p-5 border border-[#E6E2D8] dark:border-[#32323C] space-y-4"
             onClick={(e) => e.stopPropagation()}
           >
             <h4 className="text-sm font-black">
@@ -1799,7 +1799,7 @@ export const PaymentManagementTab: React.FC = () => {
               value={reasonText}
               onChange={(e) => setReasonText(e.target.value)}
               placeholder="أدخل السبب أو الملاحظة..."
-              className="w-full text-xs p-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent"
+              className="w-full text-xs p-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent"
             />
             <div className="flex justify-end gap-2">
               <button
@@ -1808,7 +1808,7 @@ export const PaymentManagementTab: React.FC = () => {
                   setRejectReasonPrompt(null);
                   setReasonText('');
                 }}
-                className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold cursor-pointer"
+                className="px-4 py-2 rounded-xl bg-[#F3F1EC] dark:bg-[#18181D] text-xs font-bold cursor-pointer"
               >
                 تراجع
               </button>
@@ -1841,14 +1841,14 @@ export const PaymentManagementTab: React.FC = () => {
           onClick={() => setCcpApproveModal(null)}
         >
           <div
-            className="max-w-md w-full bg-white dark:bg-[#0F172A] rounded-3xl p-5 border border-[#E2E8F0] dark:border-slate-700 space-y-4 text-xs"
+            className="max-w-md w-full bg-white dark:bg-[#141418] rounded-3xl p-5 border border-[#E6E2D8] dark:border-[#32323C] space-y-4 text-xs"
             onClick={(e) => e.stopPropagation()}
           >
             <h4 className="text-sm font-black flex items-center gap-2">
               <Building2 className="w-4 h-4 text-[#FF6B00]" />
               <span>تأكيد وصول أموال Poste Tunisienne / CCP</span>
             </h4>
-            <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+            <p className="text-[11px] text-[#5A5854] dark:text-[#B5B0A8] leading-relaxed">
               الطلب <strong>{ccpApproveModal.trackingNumber}</strong> بمبلغ{' '}
               <strong className="font-mono">{ccpApproveModal.amountLabel}</strong>. لا يوجد تحقق آلي عبر API — يرجى مطابقة كشف الحساب قبل الاعتماد.
             </p>
@@ -1866,13 +1866,13 @@ export const PaymentManagementTab: React.FC = () => {
               value={ccpModalNote}
               onChange={(e) => setCcpModalNote(e.target.value)}
               placeholder="مرجع الإشعار في كشف الحساب (اختياري)..."
-              className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent"
+              className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent"
             />
             <div className="flex justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setCcpApproveModal(null)}
-                className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold cursor-pointer"
+                className="px-4 py-2 rounded-xl bg-[#F3F1EC] dark:bg-[#18181D] text-xs font-bold cursor-pointer"
               >
                 تراجع
               </button>

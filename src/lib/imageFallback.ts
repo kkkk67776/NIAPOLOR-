@@ -1,6 +1,6 @@
 import type React from 'react';
 
-export const FALLBACK_STORE_IMAGE = '/assets/images/echox-logo.webp';
+export const FALLBACK_STORE_IMAGE = '/assets/images/niapolor-badge.webp';
 
 export function handleStoreImageError(event: React.SyntheticEvent<HTMLImageElement>): void {
   const img = event.currentTarget;

@@ -152,7 +152,7 @@ export const SupportEchoxModal: React.FC = () => {
         ? {
             transferProof: {
               referenceNumber: proofRef.trim() || 'CCP-SUPPORT',
-              senderName: supporterName.trim() || 'داعم ECHOX',
+              senderName: supporterName.trim() || 'داعم NIAPOLOR',
               receiptImageDataUrl: proofImage || undefined,
             },
           }
@@ -182,22 +182,22 @@ export const SupportEchoxModal: React.FC = () => {
       onClick={resetAndClose}
     >
       <div
-        className="w-full max-w-lg bg-white dark:bg-[#0F172A] rounded-3xl border border-[#E2E8F0] dark:border-slate-800 shadow-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col text-[#0F172A] dark:text-slate-100"
+        className="w-full max-w-lg bg-white dark:bg-[#0B0B0D] rounded-3xl border border-[#E6E2D8] dark:border-[#23232A] shadow-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col text-[#111113] dark:text-[#F7F6F3]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="p-4 sm:p-5 bg-[#0F172A] text-white flex items-center justify-between border-b border-slate-800">
+        <div className="p-4 sm:p-5 bg-[#0B0B0D] text-white flex items-center justify-between border-b border-[#23232A]">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-2xl bg-[#FF6B00] text-white flex items-center justify-center shrink-0">
               <HeartHandshake className="w-5 h-5" />
             </div>
             <div>
               <h2 className="text-sm sm:text-base font-black">{t.supportEchox.title}</h2>
-              <p className="text-[11px] text-slate-300 leading-snug">
+              <p className="text-[11px] text-[#B5B0A8] leading-snug">
                 {language === 'ar'
-                  ? 'مساهمة مستقلة لتطوير منصة ECHOX'
+                  ? 'مساهمة مستقلة لتطوير منصة NIAPOLOR'
                   : language === 'fr'
-                  ? 'Contribution indépendante pour ECHOX'
+                  ? 'Contribution indépendante pour NIAPOLOR'
                   : 'Independent platform support contribution'}
               </p>
             </div>
@@ -223,7 +223,7 @@ export const SupportEchoxModal: React.FC = () => {
                 <h3 className="text-base font-black text-emerald-800 dark:text-emerald-300">
                   {t.supportEchox.successTitle}
                 </h3>
-                <p className="text-xs text-slate-600 dark:text-slate-300">
+                <p className="text-xs text-[#5A5854] dark:text-[#B5B0A8]">
                   {t.supportEchox.receiptRef}{' '}
                   <strong className="font-mono text-[#FF6B00]">{receipt.supportReference}</strong>
                 </p>
@@ -242,8 +242,8 @@ export const SupportEchoxModal: React.FC = () => {
               </div>
 
               {receipt.method === 'poste_ccp' && ccpDetails && (
-                <div className="p-3.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-700 text-xs space-y-1.5">
-                  <p className="font-black text-slate-900 dark:text-white">{t.payments.posteCcpDetailsTitle}</p>
+                <div className="p-3.5 rounded-2xl bg-[#FAF9F7] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] text-xs space-y-1.5">
+                  <p className="font-black text-[#111113] dark:text-[#F7F6F3]">{t.payments.posteCcpDetailsTitle}</p>
                   <p className="text-[11px]">
                     {t.payments.beneficiary}: <strong>{ccpDetails.accountHolder}</strong>
                   </p>
@@ -280,7 +280,7 @@ export const SupportEchoxModal: React.FC = () => {
                 </div>
               )}
 
-              <div className="p-3 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-[11px] text-slate-600 dark:text-slate-300 flex items-start gap-2">
+              <div className="p-3 rounded-2xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] text-[11px] text-[#5A5854] dark:text-[#B5B0A8] flex items-start gap-2">
                 <ShieldCheck className="w-4 h-4 text-[#FF6B00] shrink-0 mt-0.5" />
                 <span>{t.supportEchox.independentNotice}</span>
               </div>
@@ -288,14 +288,14 @@ export const SupportEchoxModal: React.FC = () => {
               <button
                 type="button"
                 onClick={resetAndClose}
-                className="w-full py-2.5 rounded-xl bg-[#0F172A] dark:bg-slate-700 hover:bg-[#FF6B00] text-white text-xs font-bold transition-colors cursor-pointer"
+                className="w-full py-2.5 rounded-xl bg-[#111113] dark:bg-[#18181D] hover:bg-[#FF6B00] dark:hover:bg-[#FF6B00] border border-transparent dark:border-[#32323C] text-white text-xs font-bold transition-colors cursor-pointer"
               >
                 {language === 'ar' ? 'إغلاق' : language === 'fr' ? 'Fermer' : 'Close'}
               </button>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
-              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+              <p className="text-xs text-[#5A5854] dark:text-[#B5B0A8] leading-relaxed">
                 {t.supportEchox.subtitle}
               </p>
 
@@ -311,7 +311,7 @@ export const SupportEchoxModal: React.FC = () => {
                       className={`py-2 rounded-xl text-xs font-black tabular-nums border transition-all cursor-pointer ${
                         parseFloat(amountInput) === amt
                           ? 'bg-[#FF6B00] text-white border-[#FF6B00] shadow-xs'
-                          : 'bg-[#F8FAFC] dark:bg-[#1E293B] border-[#E2E8F0] dark:border-slate-700 hover:border-[#FF6B00]'
+                          : 'bg-[#FAF9F7] dark:bg-[#18181D] border-[#E6E2D8] dark:border-[#23232A] hover:border-[#FF6B00]'
                       }`}
                     >
                       {amt} {currency}
@@ -326,7 +326,7 @@ export const SupportEchoxModal: React.FC = () => {
                   value={amountInput}
                   onChange={(e) => setAmountInput(e.target.value)}
                   placeholder={t.supportEchox.customAmountPlaceholder}
-                  className="w-full text-sm font-black tabular-nums py-2.5 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#1E293B] focus:outline-hidden focus:border-[#FF6B00]"
+                  className="w-full text-sm font-black tabular-nums py-2.5 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#18181D] focus:outline-hidden focus:border-[#FF6B00]"
                   dir="ltr"
                 />
               </div>
@@ -334,19 +334,19 @@ export const SupportEchoxModal: React.FC = () => {
               {/* Supporter Optional Fields */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 <div>
-                  <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 block mb-1">
+                  <label className="text-[11px] font-bold text-[#5A5854] dark:text-[#B5B0A8] block mb-1">
                     {t.supportEchox.supporterName}
                   </label>
                   <input
                     type="text"
                     value={supporterName}
                     onChange={(e) => setSupporterName(e.target.value)}
-                    placeholder="ECHOX Supporter"
-                    className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent focus:outline-hidden focus:border-[#FF6B00]"
+                    placeholder="NIAPOLOR Supporter"
+                    className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent focus:outline-hidden focus:border-[#FF6B00]"
                   />
                 </div>
                 <div>
-                  <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 block mb-1">
+                  <label className="text-[11px] font-bold text-[#5A5854] dark:text-[#B5B0A8] block mb-1">
                     {t.supportEchox.supporterPhone}
                   </label>
                   <input
@@ -355,13 +355,13 @@ export const SupportEchoxModal: React.FC = () => {
                     onChange={(e) => setSupporterPhone(e.target.value)}
                     placeholder="+216 ..."
                     dir="ltr"
-                    className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent focus:outline-hidden focus:border-[#FF6B00]"
+                    className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent focus:outline-hidden focus:border-[#FF6B00]"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 block mb-1">
+                <label className="text-[11px] font-bold text-[#5A5854] dark:text-[#B5B0A8] block mb-1">
                   {t.supportEchox.supporterNote}
                 </label>
                 <input
@@ -369,7 +369,7 @@ export const SupportEchoxModal: React.FC = () => {
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                   placeholder="..."
-                  className="w-full text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent focus:outline-hidden focus:border-[#FF6B00]"
+                  className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent focus:outline-hidden focus:border-[#FF6B00]"
                 />
               </div>
 
@@ -383,7 +383,7 @@ export const SupportEchoxModal: React.FC = () => {
                       className={`flex items-center gap-3 p-3 rounded-2xl border cursor-pointer transition-all ${
                         method === 'cod'
                           ? 'border-[#FF6B00] bg-[#FF6B00]/5'
-                          : 'border-[#E2E8F0] dark:border-slate-700'
+                          : 'border-[#E6E2D8] dark:border-[#23232A]'
                       }`}
                     >
                       <input
@@ -405,7 +405,7 @@ export const SupportEchoxModal: React.FC = () => {
                       className={`flex items-center gap-3 p-3 rounded-2xl border cursor-pointer transition-all ${
                         method === 'poste_ccp'
                           ? 'border-[#FF6B00] bg-[#FF6B00]/5'
-                          : 'border-[#E2E8F0] dark:border-slate-700'
+                          : 'border-[#E6E2D8] dark:border-[#23232A]'
                       }`}
                     >
                       <input
@@ -427,7 +427,7 @@ export const SupportEchoxModal: React.FC = () => {
                       className={`flex items-center gap-3 p-3 rounded-2xl border cursor-pointer transition-all ${
                         method === 'online_payment'
                           ? 'border-[#FF6B00] bg-[#FF6B00]/5'
-                          : 'border-[#E2E8F0] dark:border-slate-700'
+                          : 'border-[#E6E2D8] dark:border-[#23232A]'
                       }`}
                     >
                       <input
@@ -441,7 +441,7 @@ export const SupportEchoxModal: React.FC = () => {
                       <span className="text-xs font-bold">{t.payments.onlinePaymentLabel}</span>
                     </label>
                   ) : (
-                    <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-[11px] text-slate-500 flex items-center gap-2">
+                    <div className="p-2.5 rounded-xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] text-[11px] text-[#7A756D] dark:text-[#8E8980] flex items-center gap-2">
                       <CreditCard className="w-4 h-4 shrink-0" />
                       <span>{t.payments.onlineNotConfigured}</span>
                     </div>
@@ -450,9 +450,9 @@ export const SupportEchoxModal: React.FC = () => {
 
                 {/* On-demand Poste / CCP transfer details rendered ONLY when selected */}
                 {method === 'poste_ccp' && (
-                  <div className="p-3.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#FF6B00]/30 space-y-2.5 text-xs">
+                  <div className="p-3.5 rounded-2xl bg-[#FAF9F7] dark:bg-[#18181D] border border-[#FF6B00]/30 space-y-2.5 text-xs">
                     {ccpLoading ? (
-                      <div className="flex items-center gap-2 text-slate-500">
+                      <div className="flex items-center gap-2 text-[#7A756D] dark:text-[#8E8980]">
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
                         <span>جاري تحميل بيانات التحويل...</span>
                       </div>
@@ -460,7 +460,7 @@ export const SupportEchoxModal: React.FC = () => {
                       <p className="text-red-600 dark:text-red-400 font-bold">{ccpError}</p>
                     ) : ccpDetails ? (
                       <>
-                        <p className="font-black text-slate-900 dark:text-white">
+                        <p className="font-black text-[#111113] dark:text-[#F7F6F3]">
                           {t.payments.posteCcpDetailsTitle}
                         </p>
                         <div className="space-y-1 text-[11px]">
@@ -470,7 +470,7 @@ export const SupportEchoxModal: React.FC = () => {
                           <p>
                             {t.payments.bankName}: <strong>{ccpDetails.bankName}</strong>
                           </p>
-                          <div className="flex items-center justify-between gap-2 bg-white dark:bg-[#0F172A] p-2 rounded-xl border border-slate-200 dark:border-slate-700">
+                          <div className="flex items-center justify-between gap-2 bg-white dark:bg-[#141418] p-2 rounded-xl border border-[#E6E2D8] dark:border-[#23232A]">
                             <span className="font-mono font-bold break-all" dir="ltr">
                               {ccpDetails.ibanOrRib}
                             </span>
@@ -481,7 +481,7 @@ export const SupportEchoxModal: React.FC = () => {
                                 setCopiedRib(true);
                                 setTimeout(() => setCopiedRib(false), 1800);
                               }}
-                              className="px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-600 text-[10px] font-bold flex items-center gap-1 shrink-0 cursor-pointer"
+                              className="px-2 py-1 rounded-lg border border-[#D6D0C4] dark:border-[#32323C] text-[10px] font-bold flex items-center gap-1 shrink-0 cursor-pointer"
                             >
                               {copiedRib ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
                               <span>{copiedRib ? t.payments.copied : t.payments.copy}</span>
@@ -494,9 +494,9 @@ export const SupportEchoxModal: React.FC = () => {
                             value={proofRef}
                             onChange={(e) => setProofRef(e.target.value)}
                             placeholder="رقم وصل التحويل (اختياري)"
-                            className="w-full text-[11px] py-1.5 px-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-[#0F172A]"
+                            className="w-full text-[11px] py-1.5 px-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418]"
                           />
-                          <label className="flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-xl border border-dashed border-slate-300 dark:border-slate-600 hover:border-[#FF6B00] text-[11px] font-bold cursor-pointer">
+                          <label className="flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-xl border border-dashed border-[#D6D0C4] dark:border-[#32323C] hover:border-[#FF6B00] text-[11px] font-bold cursor-pointer">
                             <Upload className="w-3.5 h-3.5 text-[#FF6B00]" />
                             <span>{proofImage ? 'تم إرفاق صورة الوصل ✓' : 'إرفاق صورة الوصل (اختياري)'}</span>
                             <input

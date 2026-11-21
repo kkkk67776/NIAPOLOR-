@@ -144,12 +144,12 @@ export function getPaymentStatusTone(status: PaymentStatus): string {
     case 'Refunded':
       return 'bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-500/30';
     case 'Cancelled':
-      return 'bg-slate-500/10 text-slate-700 dark:text-slate-300 border-slate-400/30';
+      return 'bg-[#EBE7DF] dark:bg-[#23232A] text-[#5A5854] dark:text-[#B5B0A8] border-[#D6D0C4] dark:border-[#32323C]';
     case 'Payment Failed':
     case 'failed':
       return 'bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/30';
     default:
-      return 'bg-slate-100 text-slate-700 border-slate-300';
+      return 'bg-[#F3F1EC] dark:bg-[#18181D] text-[#5A5854] dark:text-[#B5B0A8] border-[#E6E2D8] dark:border-[#23232A]';
   }
 }
 

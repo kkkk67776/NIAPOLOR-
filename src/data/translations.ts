@@ -2,14 +2,14 @@ import { Language } from '../types';
 
 export const translations = {
   ar: {
-    brandName: 'ECHOX Store',
-    brandMarket: 'ECHOX Store',
-    brandStore: 'ECHOX Store',
+    brandName: 'NIAPOLOR',
+    brandMarket: 'NIAPOLOR',
+    brandStore: 'NIAPOLOR',
     searchPlaceholder: 'ابحث عن قطعة، جهاز، أو علامة تجارية...',
     allCategories: 'كافة التصنيفات',
     
     header: {
-      brandName: 'ECHOX Store',
+      brandName: 'NIAPOLOR',
       subtitle: 'متجر الأجهزة والمعدات وقطع الغيار الأصلية',
       searchPlaceholder: 'ابحث في المعدات والأجهزة وقطع الغيار...',
       language: 'اللغة',
@@ -18,11 +18,11 @@ export const translations = {
       darkMode: 'الوضع المظلم',
       notifications: 'إشعارات المتجر',
       noNotifications: 'لا توجد إشعارات جديدة حالياً',
-      notificationPromo: 'تخفيض 10% بمناسبة إطلاق التشكيلة الجديدة! استخدم كود ECHOX2026 عند إتمام الطلب.',
+      notificationPromo: 'تخفيض 10% بمناسبة إطلاق التشكيلة الجديدة! استخدم كود NIAPOLOR2026 عند إتمام الطلب.',
       notificationCod: 'ميزة الدفع عند الاستلام والمعاينة مفعلة رسمياً لكافة ولايات تونس الـ24.',
       close: 'إغلاق',
-      allTunisiaGuarantee: 'وعد وضمان ECHOX Store',
-      rightsSummary: 'ECHOX Store © 2026 — تونس',
+      allTunisiaGuarantee: 'وعد وضمان NIAPOLOR',
+      rightsSummary: 'NIAPOLOR © 2026 — تونس',
     },
 
     categories: {
@@ -52,9 +52,9 @@ export const translations = {
       categories: 'الأقسام',
       search: 'البحث',
       cart: 'السلة',
-      categoriesSheetTitle: 'تصفح أقسام ECHOX Store',
+      categoriesSheetTitle: 'تصفح أقسام NIAPOLOR',
       categoriesSheetSubtitle: 'اختر القسم لفلترة المنتجات فوراً',
-      searchModalTitle: 'البحث في متجر ECHOX Store',
+      searchModalTitle: 'البحث في متجر NIAPOLOR',
       searchPlaceholder: 'ابحث عن اسم منتج، علامة، أو قسم...',
       browseByCat: 'تصفح حسب القسم',
       foundMatches: 'عثرنا على',
@@ -96,11 +96,11 @@ export const translations = {
     },
 
     hero: {
-      badge: 'المنصة الأولى المعتمدة في تونس',
-      title: 'قطع وأجهزة أصلية مع ضمان الجودة',
-      subtitle: 'اكتشف أكبر تشكيلة من المعدات الميكانيكية والإلكترونية الأصلية من كبرى الشركات التونسية والعالمية مع التوصيل لـ 24 ولاية والدفع عند الاستلام.',
-      shopNow: 'تصفح العروض الآن',
-      learnPromise: 'تعرف على ميثاق الجودة',
+      badge: 'تشكيلة الفخامة المعتمدة في تونس',
+      title: 'اكتشف كل ما تحتاجه',
+      subtitle: 'أرقى المعدات الأصلية، الأجهزة الدقيقة، وقطع الغيار المعتمدة من كبرى العلامات التونسية والعالمية مع التوصيل لـ 24 ولاية والدفع عند الاستلام.',
+      shopNow: 'تسوّق الآن',
+      learnPromise: 'ميثاق الجودة',
       verifiedDistributor: 'موزعون وشركات معتمدة',
       guarantee: 'ضمان أصلي 100%',
     },
@@ -160,7 +160,7 @@ export const translations = {
       yourComment: 'رأيك وتجربتك مع المنتج...',
       commentPlaceholder: 'اكتب انطباعك عن الجودة وسرعة التوصيل...',
       submitReview: 'نشر التقييم',
-      reviewSubmitted: 'تم نشر تقييمك بنجاح! شكراً لمشاركتك رأيك مع حرفاء ECHOX Store.',
+      reviewSubmitted: 'تم نشر تقييمك بنجاح! شكراً لمشاركتك رأيك مع حرفاء NIAPOLOR.',
       discountOff: 'تخفيض',
     },
 
@@ -180,7 +180,7 @@ export const translations = {
       total: 'المجموع الكلي:',
       proceedToCheckout: 'متابعة إتمام الطلب',
       couponCode: 'كود التخفيض',
-      couponPlaceholder: 'كود الخصم (جرب ECHOX2026)',
+      couponPlaceholder: 'كود الخصم (جرب NIAPOLOR2026)',
       applyCoupon: 'تطبيق',
       couponApplied: 'تم تفعيل كود الخصم بنجاح (-10%)!',
       invalidCoupon: 'كود غير صالح أو منتهي الصلاحية',
@@ -268,7 +268,7 @@ export const translations = {
     },
 
     promisePage: {
-      title: 'ميثاق الجودة والوعد — ECHOX Store',
+      title: 'ميثاق الجودة والوعد — NIAPOLOR',
       subtitle: 'ثقتكم هي رأس مالنا. هذا ما نلتزم به تجاه كل حريف في الـ 24 ولاية تونسية.',
       point1Title: '1. قطع أصلية 100% دون تهاون',
       point1Desc: 'نتعامل حصرياً مع الوكلاء الرسميين والمصنعين المعتمدين في تونس والخارج، ولا مكان في متجرنا للقطع المقلدة أو منخفضة الجودة.',
@@ -281,8 +281,8 @@ export const translations = {
     },
 
     ownerSecurity: {
-      portalTitle: 'مركز التحكم — ECHOX Store',
-      securityBadge: 'نظام الحماية الخادمية Argon2id — ECHOX SECURITY',
+      portalTitle: 'مركز التحكم — NIAPOLOR',
+      securityBadge: 'نظام الحماية الخادمية Argon2id — NIAPOLOR SECURITY',
       authorizedEmailTitle: 'حساب Google المصرح له حصراً بمركز التحكم:',
       authorizedPhoneTitle: 'رقم الهاتف المعتمد لمركز التحكم:',
       loginWithGoogle: 'تسجيل الدخول إلى مركز التحكم',
@@ -399,7 +399,7 @@ export const translations = {
     },
 
     chat: {
-      widgetTitle: 'محادثة مباشرة مع فريق ECHOX Store',
+      widgetTitle: 'محادثة مباشرة مع فريق NIAPOLOR',
       supportOnline: 'متصل ومستعد لمساعدتك في تونس',
       placeholder: 'اكتب استفسارك هنا (منتج، سعر، توصيل، رقم تتبع)...',
       send: 'إرسال',
@@ -480,9 +480,9 @@ export const translations = {
     },
 
     supportEchox: {
-      navLabel: 'ادعم ECHOX',
-      title: 'ادعم ECHOX Store',
-      subtitle: 'ساهم في تطوير ودعم منصة ECHOX التونسية المستقلة. معاملة مستقلة تماماً عن المشتريات ومستحقات البائعين.',
+      navLabel: 'ادعم NIAPOLOR',
+      title: 'ادعم NIAPOLOR',
+      subtitle: 'ساهم في تطوير ودعم منصة NIAPOLOR التونسية المستقلة. معاملة مستقلة تماماً عن المشتريات ومستحقات البائعين.',
       amountLabel: 'مبلغ الدعم (بالدينار التونسي)',
       customAmountPlaceholder: 'أدخل أي مبلغ تريده...',
       supporterName: 'الاسم (اختياري)',
@@ -490,9 +490,9 @@ export const translations = {
       supporterNote: 'رسالة دعم (اختياري)',
       chooseMethod: 'اختر وسيلة الدعم',
       submitBtn: 'تأكيد مساهمة الدعم',
-      successTitle: 'شكراً لدعمك ECHOX!',
+      successTitle: 'شكراً لدعمك NIAPOLOR!',
       receiptRef: 'المرجع المستقل للدعم:',
-      independentNotice: 'هذه المساهمة مسجلة في سجل دعم ECHOX المستقل ولا تؤثر على الطلبات أو عمولات البائعين.',
+      independentNotice: 'هذه المساهمة مسجلة في سجل دعم NIAPOLOR المستقل ولا تؤثر على الطلبات أو عمولات البائعين.',
     },
 
     supportHub: {
@@ -506,7 +506,7 @@ export const translations = {
       liveChatTitle: 'شات الدعم الفوري',
       liveChatSubtitle: 'تحدث مع الفريق بالمتجر',
       openBtn: 'فتح',
-      autoAck: 'شكراً لتواصلك معنا! تم إشعار إدارة ECHOX وسيتم الرد عليك في غضون لحظات أو الاتصال بك هاتفياً.',
+      autoAck: 'شكراً لتواصلك معنا! تم إشعار إدارة NIAPOLOR وسيتم الرد عليك في غضون لحظات أو الاتصال بك هاتفياً.',
     },
 
     staticExtras: {
@@ -532,7 +532,7 @@ export const translations = {
       quickLinks: 'روابط سريعة',
       customerService: 'خدمة الحرفاء',
       deliveryAllTunisia: 'توصيل مغطى لـ 24 ولاية تونسية',
-      rights: 'جميع الحقوق محفوظة © 2026 منصة ECHOX Store تونس.',
+      rights: 'جميع الحقوق محفوظة © 2026 منصة NIAPOLOR تونس.',
       privacyPolicy: 'سياسة الخصوصية',
       termsOfService: 'شروط الاستخدام',
       returnPolicy: 'سياسة الإرجاع والضمان',
@@ -556,14 +556,14 @@ export const translations = {
   },
 
   fr: {
-    brandName: 'ECHOX Store',
-    brandMarket: 'ECHOX Store',
-    brandStore: 'ECHOX Store',
+    brandName: 'NIAPOLOR',
+    brandMarket: 'NIAPOLOR',
+    brandStore: 'NIAPOLOR',
     searchPlaceholder: 'Rechercher une pièce, outillage, marque...',
     allCategories: 'Toutes les catégories',
 
     header: {
-      brandName: 'ECHOX Store',
+      brandName: 'NIAPOLOR',
       subtitle: 'Outillage, Équipements & Pièces Certifiées',
       searchPlaceholder: 'Rechercher pièces, outillage et équipements...',
       language: 'Langue',
@@ -572,11 +572,11 @@ export const translations = {
       darkMode: 'Mode Sombre',
       notifications: 'Notifications',
       noNotifications: 'Aucune notification pour le moment',
-      notificationPromo: 'Remise de 10% pour le lancement ! Utilisez le code ECHOX2026 lors de votre commande.',
+      notificationPromo: 'Remise de 10% pour le lancement ! Utilisez le code NIAPOLOR2026 lors de votre commande.',
       notificationCod: 'Paiement à la livraison et vérification du colis disponibles sur les 24 gouvernorats.',
       close: 'Fermer',
-      allTunisiaGuarantee: 'Engagement & Garantie ECHOX Store',
-      rightsSummary: 'ECHOX Store © 2026 — Tunisie',
+      allTunisiaGuarantee: 'Engagement & Garantie NIAPOLOR',
+      rightsSummary: 'NIAPOLOR © 2026 — Tunisie',
     },
 
     categories: {
@@ -606,9 +606,9 @@ export const translations = {
       categories: 'Rayons',
       search: 'Recherche',
       cart: 'Panier',
-      categoriesSheetTitle: 'Explorer les Rayons ECHOX Store',
+      categoriesSheetTitle: 'Explorer les Rayons NIAPOLOR',
       categoriesSheetSubtitle: 'Sélectionnez un rayon pour filtrer instantanément',
-      searchModalTitle: 'Rechercher dans ECHOX Store',
+      searchModalTitle: 'Rechercher dans NIAPOLOR',
       searchPlaceholder: 'Nom d’article, marque ou référence...',
       browseByCat: 'Parcourir par Rayon',
       foundMatches: 'Nous avons trouvé',
@@ -650,10 +650,10 @@ export const translations = {
     },
 
     hero: {
-      badge: 'Première plateforme certifiée en Tunisie',
-      title: 'Pièces & Outillage d’Origine avec Garantie',
-      subtitle: 'Découvrez la plus vaste sélection de matériel mécanique et électronique auprès des grands distributeurs tunisiens et internationaux. Livraison 24 gouvernorats.',
-      shopNow: 'Découvrir les offres',
+      badge: 'Nouvelle Collection Certifiée en Tunisie',
+      title: 'DÉCOUVREZ TOUT CE DONT VOUS AVEZ BESOIN',
+      subtitle: 'Explorez notre sélection haut de gamme d’équipements, instruments et pièces certifiées avec livraison sur les 24 gouvernorats et paiement à la réception.',
+      shopNow: 'ACHETER MAINTENANT',
       learnPromise: 'Notre Charte Qualité',
       verifiedDistributor: 'Distributeurs Agréés',
       guarantee: 'Garantie 100% Authentique',
@@ -734,7 +734,7 @@ export const translations = {
       total: 'Total Général :',
       proceedToCheckout: 'Valider la Commande',
       couponCode: 'Code promo',
-      couponPlaceholder: 'Code promo (ex : ECHOX2026)',
+      couponPlaceholder: 'Code promo (ex : NIAPOLOR2026)',
       applyCoupon: 'Appliquer',
       couponApplied: 'Code promo activé avec succès (-10%) !',
       invalidCoupon: 'Code promo invalide ou expiré',
@@ -822,7 +822,7 @@ export const translations = {
     },
 
     promisePage: {
-      title: 'La Promesse ECHOX Store — Charte d’Excellence',
+      title: 'La Promesse NIAPOLOR — Charte d’Excellence',
       subtitle: 'Votre confiance est notre capital. Nos engagements envers chaque client des 24 gouvernorats.',
       point1Title: '1. Produits 100% Authentiques et Certifiés',
       point1Desc: 'Nous travaillons exclusivement avec des distributeurs officiels. Aucune contrefaçon n’est tolérée.',
@@ -835,12 +835,12 @@ export const translations = {
     },
 
     ownerSecurity: {
-      portalTitle: "Panneau d'administration — ECHOX Store",
-      securityBadge: 'Architecture de Sécurité Serveur Argon2id — ECHOX SECURITY',
+      portalTitle: "Panneau d'administration — NIAPOLOR",
+      securityBadge: 'Architecture de Sécurité Serveur Argon2id — NIAPOLOR SECURITY',
       authorizedEmailTitle: 'Compte Google Habilité (Admin) :',
       authorizedPhoneTitle: 'Numéro de Téléphone Admin :',
       loginWithGoogle: "Connexion au Panneau d'administration",
-      unauthorizedAlert: "Accès refusé ! Ce compte n'est pas habilité à administrer ECHOX Store.",
+      unauthorizedAlert: "Accès refusé ! Ce compte n'est pas habilité à administrer NIAPOLOR.",
       accessGranted: 'Bienvenue ! Session sécurisée validée avec succès.',
       logout: 'Déconnexion Sécurisée',
       enterDashboard: "Accéder au Panneau d'administration",
@@ -953,11 +953,11 @@ export const translations = {
     },
 
     chat: {
-      widgetTitle: 'Assistance Directe ECHOX Store',
+      widgetTitle: 'Assistance Directe NIAPOLOR',
       supportOnline: 'En ligne pour vous aider en Tunisie',
       placeholder: 'Votre question (article, prix, livraison, suivi)...',
       send: 'Envoyer',
-      ownerName: 'Support Technique ECHOX Store',
+      ownerName: 'Support Technique NIAPOLOR',
       instantReplyNotice: 'Votre message est transmis directement au propriétaire.',
       resetChat: 'Nouvelle conversation',
       quickChips: ['Frais de livraison ?', 'Modes de paiement ?', 'Code promo ?', 'Articles en stock ?'],
@@ -975,7 +975,7 @@ export const translations = {
       subject: 'Objet de la demande',
       message: 'Votre message...',
       sendBtn: "Transmettre au Panneau d'administration",
-      sentSuccess: "Message transmis avec succès au Panneau d'administration d'ECHOX Store.",
+      sentSuccess: "Message transmis avec succès au Panneau d'administration de NIAPOLOR.",
     },
 
     payments: {
@@ -1034,9 +1034,9 @@ export const translations = {
     },
 
     supportEchox: {
-      navLabel: 'Soutenir ECHOX',
-      title: 'Soutenir ECHOX Store',
-      subtitle: 'Contribuez directement au développement d’ECHOX Store. Transaction financière indépendante des ventes et vendeurs.',
+      navLabel: 'Soutenir NIAPOLOR',
+      title: 'Soutenir NIAPOLOR',
+      subtitle: 'Contribuez directement au développement de NIAPOLOR. Transaction financière indépendante des ventes et vendeurs.',
       amountLabel: 'Montant de soutien (DT)',
       customAmountPlaceholder: 'Entrez le montant souhaité...',
       supporterName: 'Votre nom (optionnel)',
@@ -1044,7 +1044,7 @@ export const translations = {
       supporterNote: 'Message de soutien (optionnel)',
       chooseMethod: 'Mode de paiement du soutien',
       submitBtn: 'Valider la contribution',
-      successTitle: 'Merci pour votre soutien à ECHOX !',
+      successTitle: 'Merci pour votre soutien à NIAPOLOR !',
       receiptRef: 'Référence indépendante :',
       independentNotice: 'Enregistré séparément des commandes produits et soldes vendeurs.',
     },
@@ -1060,7 +1060,7 @@ export const translations = {
       liveChatTitle: "Chat d'assistance en direct",
       liveChatSubtitle: "Parlez avec l'équipe du magasin",
       openBtn: 'Ouvrir',
-      autoAck: 'Merci de nous avoir contactés ! Notre équipe ECHOX a été notifiée et vous répondra sous peu.',
+      autoAck: 'Merci de nous avoir contactés ! Notre équipe NIAPOLOR a été notifiée et vous répondra sous peu.',
     },
 
     staticExtras: {
@@ -1086,7 +1086,7 @@ export const translations = {
       quickLinks: 'Navigation',
       customerService: 'Service Client',
       deliveryAllTunisia: 'Livraison garantie sur les 24 gouvernorats tunisiens',
-      rights: 'Tous droits réservés © 2026 ECHOX Store Tunisie.',
+      rights: 'Tous droits réservés © 2026 NIAPOLOR Tunisie.',
       privacyPolicy: 'Confidentialité',
       termsOfService: 'Conditions Générales',
       returnPolicy: 'Politique de Retour',
@@ -1110,14 +1110,14 @@ export const translations = {
   },
 
   en: {
-    brandName: 'ECHOX Store',
-    brandMarket: 'ECHOX Store',
-    brandStore: 'ECHOX Store',
+    brandName: 'NIAPOLOR',
+    brandMarket: 'NIAPOLOR',
+    brandStore: 'NIAPOLOR',
     searchPlaceholder: 'Search for a part, hardware tool, brand...',
     allCategories: 'All Categories',
 
     header: {
-      brandName: 'ECHOX Store',
+      brandName: 'NIAPOLOR',
       subtitle: 'Genuine Tools, Hardware & Equipment Store',
       searchPlaceholder: 'Search tools, spare parts, equipment...',
       language: 'Language',
@@ -1126,11 +1126,11 @@ export const translations = {
       darkMode: 'Dark Mode',
       notifications: 'Notifications',
       noNotifications: 'No notifications currently',
-      notificationPromo: '10% Launch Discount! Use voucher code ECHOX2026 at checkout.',
+      notificationPromo: '10% Launch Discount! Use voucher code NIAPOLOR2026 at checkout.',
       notificationCod: 'Cash on delivery & package inspection enabled for all 24 Tunisian governorates.',
       close: 'Close',
-      allTunisiaGuarantee: 'ECHOX Store Quality Promise & Warranty',
-      rightsSummary: 'ECHOX Store © 2026 — Tunisia',
+      allTunisiaGuarantee: 'NIAPOLOR Quality Promise & Warranty',
+      rightsSummary: 'NIAPOLOR © 2026 — Tunisia',
     },
 
     categories: {
@@ -1160,9 +1160,9 @@ export const translations = {
       categories: 'Categories',
       search: 'Search',
       cart: 'Cart',
-      categoriesSheetTitle: 'Explore ECHOX Store Categories',
+      categoriesSheetTitle: 'Explore NIAPOLOR Categories',
       categoriesSheetSubtitle: 'Pick a category to filter products instantly',
-      searchModalTitle: 'Search ECHOX Store',
+      searchModalTitle: 'Search NIAPOLOR',
       searchPlaceholder: 'Search product name, brand, or category...',
       browseByCat: 'Browse by Category',
       foundMatches: 'Found',
@@ -1204,10 +1204,10 @@ export const translations = {
     },
 
     hero: {
-      badge: 'Tunisia’s #1 Certified Equipment Platform',
-      title: 'Genuine Tools & Hardware With Quality Warranty',
-      subtitle: 'Explore Tunisia’s premier catalog of mechanical tools, precision electronics, and original spare parts. Fast delivery across 24 governorates with Cash on Delivery.',
-      shopNow: 'Browse Deals Now',
+      badge: 'New Season Curated Collection',
+      title: 'DISCOVER EVERYTHING YOU NEED',
+      subtitle: 'Explore NIAPOLOR’s curated collection of precision instruments, luxury hardware, and certified equipment. Fast 24-governorate delivery with Cash on Delivery.',
+      shopNow: 'SHOP NOW',
       learnPromise: 'Our Quality Charter',
       verifiedDistributor: 'Verified Distributors',
       guarantee: '100% Genuine Guarantee',
@@ -1288,7 +1288,7 @@ export const translations = {
       total: 'Grand Total:',
       proceedToCheckout: 'Proceed to Checkout',
       couponCode: 'Voucher Code',
-      couponPlaceholder: 'Voucher code (try ECHOX2026)',
+      couponPlaceholder: 'Voucher code (try NIAPOLOR2026)',
       applyCoupon: 'Apply',
       couponApplied: 'Voucher code activated (-10%)!',
       invalidCoupon: 'Invalid or expired voucher code',
@@ -1376,7 +1376,7 @@ export const translations = {
     },
 
     promisePage: {
-      title: 'The ECHOX Store Promise — Quality Charter',
+      title: 'The NIAPOLOR Promise — Quality Charter',
       subtitle: 'Your trust is our cornerstone. Our guarantee to every customer across all 24 governorates.',
       point1Title: '1. 100% Genuine, Zero Compromise',
       point1Desc: 'We exclusively source from authorized agents and manufacturers in Tunisia and abroad. No counterfeits.',
@@ -1389,12 +1389,12 @@ export const translations = {
     },
 
     ownerSecurity: {
-      portalTitle: 'Admin Panel — ECHOX Store',
-      securityBadge: 'Argon2id Server Architecture — ECHOX SECURITY',
+      portalTitle: 'Admin Panel — NIAPOLOR',
+      securityBadge: 'Argon2id Server Architecture — NIAPOLOR SECURITY',
       authorizedEmailTitle: 'Authorized Admin Google Account:',
       authorizedPhoneTitle: 'Admin Contact Phone:',
       loginWithGoogle: 'Sign in to Admin Panel',
-      unauthorizedAlert: 'Access Denied! This account is not authorized to administer ECHOX Store.',
+      unauthorizedAlert: 'Access Denied! This account is not authorized to administer NIAPOLOR.',
       accessGranted: 'Welcome! Admin session successfully verified.',
       logout: 'Secure Admin Logout',
       enterDashboard: 'Enter Admin Panel',
@@ -1507,11 +1507,11 @@ export const translations = {
     },
 
     chat: {
-      widgetTitle: 'Direct ECHOX Store Support',
+      widgetTitle: 'Direct NIAPOLOR Support',
       supportOnline: 'Online to assist you across Tunisia',
       placeholder: 'Ask about a product, price, shipping, or tracking code...',
       send: 'Send',
-      ownerName: 'ECHOX Store Technical Support',
+      ownerName: 'NIAPOLOR Technical Support',
       instantReplyNotice: 'Your inquiry goes straight to the owner control room.',
       resetChat: 'New Chat',
       quickChips: ['Shipping fees?', 'Payment methods?', 'Discount code?', 'Available tools?'],
@@ -1529,7 +1529,7 @@ export const translations = {
       subject: 'Subject',
       message: 'Message...',
       sendBtn: 'Send to Admin Panel',
-      sentSuccess: 'Inquiry transmitted directly to ECHOX Store Admin Panel.',
+      sentSuccess: 'Inquiry transmitted directly to NIAPOLOR Admin Panel.',
     },
 
     payments: {
@@ -1537,7 +1537,7 @@ export const translations = {
       codLabel: 'Cash on Delivery (COD)',
       codDesc: 'Pay cash directly to the courier upon inspecting your delivery.',
       bankTransferLabel: 'Bank Transfer',
-      bankTransferDesc: 'Direct bank transfer to ECHOX verified account with transfer proof submission.',
+      bankTransferDesc: 'Direct bank transfer to NIAPOLOR verified account with transfer proof submission.',
       posteCcpLabel: 'Poste Tunisienne / CCP Transfer',
       posteCcpDesc: 'Postal CCP transfer with unique order reference and receipt upload for manual verification.',
       posteCcpDetailsTitle: 'Poste Tunisienne / CCP Transfer Details',
@@ -1588,9 +1588,9 @@ export const translations = {
     },
 
     supportEchox: {
-      navLabel: 'Support ECHOX',
-      title: 'Support ECHOX Store',
-      subtitle: 'Voluntary contribution to support the ECHOX Store platform. Completely isolated from product orders and vendor commissions.',
+      navLabel: 'Support NIAPOLOR',
+      title: 'Support NIAPOLOR',
+      subtitle: 'Voluntary contribution to support the NIAPOLOR platform. Completely isolated from product orders and vendor commissions.',
       amountLabel: 'Support Amount',
       customAmountPlaceholder: 'Enter custom amount...',
       supporterName: 'Your Name (optional)',
@@ -1598,7 +1598,7 @@ export const translations = {
       supporterNote: 'Message (optional)',
       chooseMethod: 'Select Payment Method',
       submitBtn: 'Submit Support Contribution',
-      successTitle: 'Thank you for supporting ECHOX!',
+      successTitle: 'Thank you for supporting NIAPOLOR!',
       receiptRef: 'Support Receipt Reference:',
       independentNotice: 'Recorded in independent Support Transactions with zero impact on orders or vendor payouts.',
     },
@@ -1614,7 +1614,7 @@ export const translations = {
       liveChatTitle: 'Live Support Chat',
       liveChatSubtitle: 'Chat with the store team',
       openBtn: 'Open',
-      autoAck: 'Thanks for reaching out! Our ECHOX Store team has been notified and will reply shortly.',
+      autoAck: 'Thanks for reaching out! Our NIAPOLOR team has been notified and will reply shortly.',
     },
 
     staticExtras: {
@@ -1640,7 +1640,7 @@ export const translations = {
       quickLinks: 'Navigation',
       customerService: 'Customer Service',
       deliveryAllTunisia: 'Guaranteed delivery across all 24 Tunisian governorates',
-      rights: 'All rights reserved © 2026 ECHOX Store Tunisia.',
+      rights: 'All rights reserved © 2026 NIAPOLOR Tunisia.',
       privacyPolicy: 'Privacy Policy',
       termsOfService: 'Terms of Service',
       returnPolicy: 'Return Policy & Warranty',

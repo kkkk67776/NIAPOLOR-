@@ -28,11 +28,32 @@ const PromiseView = lazy(() => import('./components/StaticPages').then(m => ({ d
 const CompaniesView = lazy(() => import('./components/StaticPages').then(m => ({ default: m.CompaniesView })));
 const ContactView = lazy(() => import('./components/StaticPages').then(m => ({ default: m.ContactView })));
 
-const RouteFallback: React.FC = () => (
-  <div className="min-h-[45vh] flex items-center justify-center">
-    <div className="w-8 h-8 rounded-full border-3 border-[#FF6B00]/25 border-t-[#FF6B00] animate-spin" />
-  </div>
-);
+const RouteFallback: React.FC = () => {
+  return (
+    <div className="min-h-[56vh] flex flex-col items-center justify-center gap-5 px-4 py-12 animate-fadeIn">
+      <div className="relative flex items-center justify-center w-20 h-20">
+        <span className="absolute inset-0 rounded-full border-2 border-[#FF6B00]/15 border-t-[#FF6B00] animate-spin" />
+        <div className="w-14 h-14 rounded-full bg-[#0B0B0D] border border-[#FF6B00]/30 flex items-center justify-center p-2 shadow-[0_8px_24px_rgba(255,107,0,0.2)]">
+          <img
+            src="/assets/images/niapolor-emblem.webp"
+            alt="NIAPOLOR"
+            width={44}
+            height={44}
+            className="w-full h-full object-contain"
+          />
+        </div>
+      </div>
+      <div className="text-center space-y-1" dir="ltr">
+        <p className="text-sm font-black tracking-[0.26em] uppercase text-[#111113] dark:text-[#F7F6F3]">
+          NIAPOL<span className="text-[#FF6B00]">O</span>R
+        </p>
+        <p className="text-[9px] font-bold tracking-[0.32em] uppercase text-[#7A756D] dark:text-[#9A958E]">
+          LUXURY BRANDS
+        </p>
+      </div>
+    </div>
+  );
+};
 
 class RouteErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -53,10 +74,10 @@ class RouteErrorBoundary extends React.Component<
             <WifiOff className="w-6 h-6" />
           </div>
           <div className="space-y-1 max-w-sm">
-            <p className="text-sm font-black text-slate-800 dark:text-slate-100">
+            <p className="text-sm font-black text-[#111113] dark:text-[#F7F6F3]">
               تعذر عرض هذه الصفحة حالياً
             </p>
-            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+            <p className="text-xs text-[#6B665F] dark:text-[#A19E97] leading-relaxed">
               قد يكون السبب انقطاع الإنترنت عن هذه الصفحة لأول مرة. تحقق من الاتصال ثم أعد المحاولة.
             </p>
           </div>
@@ -64,7 +85,7 @@ class RouteErrorBoundary extends React.Component<
             <button
               type="button"
               onClick={() => window.location.reload()}
-              className="px-4 py-2 rounded-xl bg-[#FF6B00] hover:bg-[#E05E00] text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+              className="px-4 py-2 rounded-xl bg-[#FF6B00] hover:bg-[#E05E00] text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               <span>إعادة المحاولة</span>
@@ -199,7 +220,7 @@ const AppContent: React.FC = () => {
                 tracking: res.order?.trackingNumber || res.supportTransaction?.supportReference || trackingParam,
                 message:
                   res.kind === 'support'
-                    ? 'تم تأكيد مساهمة دعم ECHOX الإلكترونية بنجاح ✓'
+                    ? 'تم تأكيد مساهمة دعم NIAPOLOR الإلكترونية بنجاح ✓'
                     : `تم تأكيد دفع الطلب (${res.order?.trackingNumber || trackingParam}) بنجاح ✓`,
               });
             } else if (paymentReturn === 'fail' || res.paymentStatus === 'Payment Failed') {
@@ -289,7 +310,7 @@ const AppContent: React.FC = () => {
     currentView === 'owner_dashboard';
 
   return (
-    <div className="min-h-screen flex flex-col bg-white dark:bg-[#0B0F17] text-[#0F172A] dark:text-slate-100 selection:bg-[#FF6B00] selection:text-white transition-colors overflow-x-hidden max-w-[100vw] w-full">
+    <div className="min-h-screen flex flex-col bg-[#FAF9F7] dark:bg-[#0B0B0D] text-[#111113] dark:text-[#F7F6F3] selection:bg-[#FF6B00] selection:text-white transition-colors overflow-x-hidden max-w-[100vw] w-full">
       {/* 1. Header */}
       <Header />
 

@@ -286,6 +286,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } else {
       document.documentElement.classList.remove('dark');
     }
+    const metaTheme = document.querySelector('meta[name="theme-color"]');
+    if (metaTheme) {
+      metaTheme.setAttribute('content', isDarkMode ? '#0B0B0D' : '#FFFFFF');
+    }
   }, [isDarkMode]);
 
   const t = getTranslation(language);
@@ -358,10 +362,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, []);
 
   const normalizeAssetUrl = (url: string): string => {
-    if (!url || typeof url !== 'string') return '/assets/images/echox-logo.webp';
+    if (!url || typeof url !== 'string') return '/assets/images/niapolor-badge.webp';
     const trimmed = url.trim();
-    if (!trimmed) return '/assets/images/echox-logo.webp';
-    if (trimmed.includes('file_0000000048188243bc0b721218c854fc_ea3ea21d.png')) return '/assets/images/echox-logo.webp';
+    if (!trimmed) return '/assets/images/niapolor-badge.webp';
+    if (trimmed.includes('file_0000000048188243bc0b721218c854fc_ea3ea21d.png')) return '/assets/images/niapolor-badge.webp';
     if (trimmed.includes('product_drill_cordless_pro')) return '/assets/images/product_drill_cordless_pro.webp';
     if (trimmed.includes('product_automotive_headlight')) return '/assets/images/product_automotive_headlight.webp';
     if (trimmed.includes('product_digital_multimeter')) return '/assets/images/product_digital_multimeter.webp';
@@ -385,7 +389,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       .map((item: unknown) => (typeof item === 'string' ? item.trim() : ''))
       .filter(Boolean)
       .map(normalizeAssetUrl);
-    return cleaned.length > 0 ? cleaned : ['/assets/images/echox-logo.webp'];
+    return cleaned.length > 0 ? cleaned : ['/assets/images/niapolor-badge.webp'];
   };
 
   // 3. Products
@@ -661,7 +665,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       title: 'عروض وتخفيضات اليوم على كافة المعدات وقطع الغيار',
       subtitle: 'توصيل سريع لكافة الـ24 ولاية والدفع عند المعاينة والاستلام',
       active: true,
-      bgGradient: 'from-[#FF6B00] via-[#F97316] to-[#EA580C]'
+      bgGradient: 'from-[#FF6B00] via-[#F97316] to-[#E05E00]'
     }
   ];
 
@@ -767,7 +771,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         {
           productId: products[0]?.id || 'prod_1',
           productName: products[0]?.name || { ar: 'طلب هاتفي مباشر', fr: 'Commande directe', en: 'Direct Order' },
-          productImage: products[0]?.images[0] || '/assets/images/echox-logo.webp',
+          productImage: products[0]?.images[0] || '/assets/images/niapolor-badge.webp',
           unitPrice: orderData.totalAmount || 150.000,
           quantity: 1,
           totalPrice: orderData.totalAmount || 150.000
@@ -1118,7 +1122,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const applyCoupon = (code: string): boolean => {
     const clean = code.trim().toUpperCase();
-    if (clean === 'ECHOX2026' || clean === 'ECHOX10') {
+    if (clean === 'NIAPOLOR2026' || clean === 'NIAPOLOR10' || clean === 'ECHOX2026' || clean === 'ECHOX10') {
       setCouponCode(clean);
       setDiscountRate(0.10); // 10% discount
       return true;
@@ -1542,7 +1546,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         {
           status: 'new',
           timestamp: now,
-          note: 'تم تسجيل الطلب بنجاح عبر منصة ECHOX STORE'
+          note: 'تم تسجيل الطلب بنجاح عبر منصة NIAPOLOR'
         }
       ]
     };

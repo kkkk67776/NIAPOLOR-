@@ -206,7 +206,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
   const [footerDescEn, setFooterDescEn] = useState(siteSettings.description?.en || '');
   const [footerSupportPhone, setFooterSupportPhone] = useState(siteSettings.supportPhone || '+216 21 511 162');
   const [footerWhatsappPhone, setFooterWhatsappPhone] = useState(siteSettings.whatsappPhone || '21621511162');
-  const [footerEmail, setFooterEmail] = useState(siteSettings.officialEmail || 'contact@echox-store.tn');
+  const [footerEmail, setFooterEmail] = useState(siteSettings.officialEmail || 'contact@niapolor.tn');
   const [footerAddressAr, setFooterAddressAr] = useState(siteSettings.addressMultilingual?.ar || siteSettings.address || '');
   const [footerAddressFr, setFooterAddressFr] = useState(siteSettings.addressMultilingual?.fr || '');
   const [footerAddressEn, setFooterAddressEn] = useState(siteSettings.addressMultilingual?.en || '');
@@ -332,7 +332,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
   const [bannerTag, setBannerTag] = useState('عروض حصرية');
   const [bannerTitle, setBannerTitle] = useState('');
   const [bannerSubtitle, setBannerSubtitle] = useState('');
-  const [bannerGradient, setBannerGradient] = useState('from-[#FF6B00] via-[#F97316] to-[#EA580C]');
+  const [bannerGradient, setBannerGradient] = useState('from-[#FF6B00] via-[#F97316] to-[#E05E00]');
 
   // 6. Orders States & Manual Order Form
   const [orderSearch, setOrderSearch] = useState('');
@@ -511,10 +511,10 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
   if (checking) {
     if (!isOwnerUnlocked()) return null;
     return (
-      <div className="min-h-[85vh] flex items-center justify-center bg-[#0B0F17] text-white">
+      <div className="min-h-[85vh] flex items-center justify-center bg-[#0B0B0D] text-[#F7F6F3]">
         <div className="flex flex-col items-center gap-3">
           <div className="w-10 h-10 border-3 border-[#FF6B00] border-t-transparent rounded-full animate-spin" />
-          <span className="text-xs font-bold text-slate-300">جارٍ التحقق من صلاحيات مركز التحكم (Argon2id)...</span>
+          <span className="text-xs font-bold text-[#B5B0A8]">جارٍ التحقق من صلاحيات مركز التحكم (Argon2id)...</span>
         </div>
       </div>
     );
@@ -910,9 +910,9 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           originalPrice: prodOriginalPrice ? parseFloat(prodOriginalPrice) : undefined,
           stock: parseInt(prodStock) || 0,
           companyId: prodCompanyId,
-          companyName: selectedComp?.name || 'ECHOX Distribution',
+          companyName: selectedComp?.name || 'NIAPOLOR Distribution',
           governorate: prodGov,
-          images: normalizedImgs.length > 0 ? normalizedImgs : ['/assets/images/echox-logo.webp'],
+          images: normalizedImgs.length > 0 ? normalizedImgs : ['/assets/images/niapolor-badge.webp'],
           featured: prodFeatured,
           active: true,
           deliveryTimeDays: 2
@@ -1006,7 +1006,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
 
     const res = await addCompany({
       name: partnerName.trim(),
-      logo: partnerLogo.trim() || '/assets/images/echox-logo.webp',
+      logo: partnerLogo.trim() || '/assets/images/niapolor-badge.webp',
       phone: partnerPhone.trim(),
       email: partnerEmail.trim() || 'contact@partner.tn',
       address: partnerAddress.trim() || 'المنطقة الصناعية',
@@ -1191,17 +1191,21 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
   });
 
   return (
-    <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8 space-y-5 animate-fadeIn select-none text-[#0F172A] dark:text-slate-100">
+    <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8 space-y-5 animate-fadeIn select-none text-[#111113] dark:text-[#F7F6F3]">
       
       {/* 1. Header Card with Sovereign Credentials and Logout */}
-      <div className="bg-[#0B0F17] rounded-3xl p-4 sm:p-6 text-white flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl border border-slate-800">
+      <div className="bg-[#0B0B0D] rounded-3xl p-4 sm:p-6 text-[#F7F6F3] flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl border border-[#23232A]">
         <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-[#FF6B00] text-white flex items-center justify-center font-black text-xl shadow-lg shrink-0">
-            EX
+          <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-[#141418] border border-[#FF6B00]/40 text-white flex items-center justify-center font-black text-xl shadow-lg shrink-0">
+            <img
+              src="/assets/images/niapolor-emblem.webp"
+              alt="NIAPOLOR"
+              className="w-8 h-8 object-contain"
+            />
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-base sm:text-lg font-black tracking-tight text-white leading-tight">
+              <h1 className="text-base sm:text-lg font-black tracking-tight text-[#F7F6F3] leading-tight">
                 لوحة الإعدادات الشاملة — مركز التحكم
               </h1>
               <span className="text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full flex items-center gap-1">
@@ -1209,8 +1213,8 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                 <span>جلسة مشفرة نشطة</span>
               </span>
             </div>
-            <p className="text-xs text-slate-400 mt-0.5">
-              الحساب المعتمد: <strong className="text-white">{ownerSettings.loginEmail}</strong> • الهاتف: <strong className="text-white font-mono">{ownerSettings.primaryPhone}</strong>
+            <p className="text-xs text-[#8E8980] mt-0.5">
+              الحساب المعتمد: <strong className="text-[#F7F6F3]">{ownerSettings.loginEmail}</strong> • الهاتف: <strong className="text-[#F7F6F3] font-mono">{ownerSettings.primaryPhone}</strong>
             </p>
           </div>
         </div>
@@ -1236,9 +1240,9 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
 
       {/* 2. Top Summary KPI Metrics Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
-        <div className="bg-[#F8FAFC] dark:bg-[#1E293B] rounded-2xl sm:rounded-3xl p-3.5 sm:p-4 border border-[#E2E8F0] dark:border-slate-800 shadow-2xs">
+        <div className="bg-[#F3F1EC] dark:bg-[#18181D] rounded-2xl sm:rounded-3xl p-3.5 sm:p-4 border border-[#E6E2D8] dark:border-[#23232A] shadow-2xs">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">إجمالي المبيعات</span>
+            <span className="text-[11px] font-bold text-[#7A756D] dark:text-[#8E8980]">إجمالي المبيعات</span>
             <span className="w-7 h-7 rounded-xl bg-[#FF6B00]/10 text-[#FF6B00] flex items-center justify-center">
               <TrendingUp className="w-3.5 h-3.5" />
             </span>
@@ -1247,65 +1251,65 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
             <span className="text-lg sm:text-2xl font-black text-[#FF6B00] font-mono block leading-none">
               {totalSales.toFixed(3)}
             </span>
-            <span className="text-[10px] text-slate-500 font-bold mt-1 block">دينار تونسي</span>
+            <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980] font-bold mt-1 block">دينار تونسي</span>
           </div>
         </div>
 
-        <div className="bg-[#F8FAFC] dark:bg-[#1E293B] rounded-2xl sm:rounded-3xl p-3.5 sm:p-4 border border-[#E2E8F0] dark:border-slate-800 shadow-2xs">
+        <div className="bg-[#F3F1EC] dark:bg-[#18181D] rounded-2xl sm:rounded-3xl p-3.5 sm:p-4 border border-[#E6E2D8] dark:border-[#23232A] shadow-2xs">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">إجمالي الطلبات</span>
+            <span className="text-[11px] font-bold text-[#7A756D] dark:text-[#8E8980]">إجمالي الطلبات</span>
             <span className="w-7 h-7 rounded-xl bg-blue-500/10 text-blue-500 flex items-center justify-center">
               <ShoppingBag className="w-3.5 h-3.5" />
             </span>
           </div>
           <div className="mt-2">
-            <span className="text-lg sm:text-2xl font-black text-[#0F172A] dark:text-white font-mono block leading-none">
+            <span className="text-lg sm:text-2xl font-black text-[#111113] dark:text-[#F7F6F3] font-mono block leading-none">
               {totalOrdersCount}
             </span>
-            <span className="text-[10px] text-slate-500 font-bold mt-1 block">طلب مسجل بالمتجر</span>
+            <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980] font-bold mt-1 block">طلب مسجل بالمتجر</span>
           </div>
         </div>
 
-        <div className="bg-[#F8FAFC] dark:bg-[#1E293B] rounded-2xl sm:rounded-3xl p-3.5 sm:p-4 border border-[#E2E8F0] dark:border-slate-800 shadow-2xs">
+        <div className="bg-[#F3F1EC] dark:bg-[#18181D] rounded-2xl sm:rounded-3xl p-3.5 sm:p-4 border border-[#E6E2D8] dark:border-[#23232A] shadow-2xs">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">المنتجات المعروضة</span>
+            <span className="text-[11px] font-bold text-[#7A756D] dark:text-[#8E8980]">المنتجات المعروضة</span>
             <span className="w-7 h-7 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
               <Package className="w-3.5 h-3.5" />
             </span>
           </div>
           <div className="mt-2">
-            <span className="text-lg sm:text-2xl font-black text-[#0F172A] dark:text-white font-mono block leading-none">
+            <span className="text-lg sm:text-2xl font-black text-[#111113] dark:text-[#F7F6F3] font-mono block leading-none">
               {products.length}
             </span>
-            <span className="text-[10px] text-slate-500 font-bold mt-1 block">منتج متاح للشراء</span>
+            <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980] font-bold mt-1 block">منتج متاح للشراء</span>
           </div>
         </div>
 
-        <div className="bg-[#F8FAFC] dark:bg-[#1E293B] rounded-2xl sm:rounded-3xl p-3.5 sm:p-4 border border-[#E2E8F0] dark:border-slate-800 shadow-2xs">
+        <div className="bg-[#F3F1EC] dark:bg-[#18181D] rounded-2xl sm:rounded-3xl p-3.5 sm:p-4 border border-[#E6E2D8] dark:border-[#23232A] shadow-2xs">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">الشركاء والعلامات</span>
+            <span className="text-[11px] font-bold text-[#7A756D] dark:text-[#8E8980]">الشركاء والعلامات</span>
             <span className="w-7 h-7 rounded-xl bg-purple-500/10 text-purple-500 flex items-center justify-center">
               <Building2 className="w-3.5 h-3.5" />
             </span>
           </div>
           <div className="mt-2">
-            <span className="text-lg sm:text-2xl font-black text-[#0F172A] dark:text-white font-mono block leading-none">
+            <span className="text-lg sm:text-2xl font-black text-[#111113] dark:text-[#F7F6F3] font-mono block leading-none">
               {companies.length}
             </span>
-            <span className="text-[10px] text-slate-500 font-bold mt-1 block">شريك وموزع معتمد</span>
+            <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980] font-bold mt-1 block">شريك وموزع معتمد</span>
           </div>
         </div>
       </div>
 
       {/* 3. Google Play Horizontal Tab Chips Navigation */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none snap-x border-b border-[#E2E8F0] dark:border-slate-800">
+      <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none snap-x border-b border-[#E6E2D8] dark:border-[#23232A]">
         <button
           type="button"
           onClick={() => setActiveTab('overview')}
           className={`px-4 py-2 rounded-full text-xs font-bold shrink-0 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 ${
             activeTab === 'overview'
               ? 'bg-[#FF6B00] text-white shadow-xs'
-              : 'bg-[#F8FAFC] dark:bg-[#1E293B] text-slate-700 dark:text-slate-200 border border-[#E2E8F0] dark:border-slate-800 hover:border-slate-400'
+              : 'bg-[#F3F1EC] dark:bg-[#18181D] text-[#5A5854] dark:text-[#B5B0A8] border border-[#E6E2D8] dark:border-[#23232A] hover:border-[#FF6B00]'
           }`}
         >
           <LayoutDashboard className="w-3.5 h-3.5" />
@@ -1318,7 +1322,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           className={`px-4 py-2 rounded-full text-xs font-bold shrink-0 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 ${
             activeTab === 'notifications'
               ? 'bg-[#FF6B00] text-white shadow-xs'
-              : 'bg-[#F8FAFC] dark:bg-[#1E293B] text-slate-700 dark:text-slate-200 border border-[#E2E8F0] dark:border-slate-800 hover:border-slate-400'
+              : 'bg-[#F3F1EC] dark:bg-[#18181D] text-[#5A5854] dark:text-[#B5B0A8] border border-[#E6E2D8] dark:border-[#23232A] hover:border-[#FF6B00]'
           }`}
         >
           <BellRing className="w-3.5 h-3.5" />
@@ -1338,7 +1342,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           className={`px-4 py-2 rounded-full text-xs font-bold shrink-0 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 ${
             activeTab === 'payment_management'
               ? 'bg-[#FF6B00] text-white shadow-xs'
-              : 'bg-[#F8FAFC] dark:bg-[#1E293B] text-slate-700 dark:text-slate-200 border border-[#E2E8F0] dark:border-slate-800 hover:border-slate-400'
+              : 'bg-[#F3F1EC] dark:bg-[#18181D] text-[#5A5854] dark:text-[#B5B0A8] border border-[#E6E2D8] dark:border-[#23232A] hover:border-[#FF6B00]'
           }`}
         >
           <CreditCard className="w-3.5 h-3.5" />
@@ -1351,7 +1355,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           className={`px-4 py-2 rounded-full text-xs font-bold shrink-0 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 ${
             activeTab === 'account_security'
               ? 'bg-[#FF6B00] text-white shadow-xs'
-              : 'bg-[#F8FAFC] dark:bg-[#1E293B] text-slate-700 dark:text-slate-200 border border-[#E2E8F0] dark:border-slate-800 hover:border-slate-400'
+              : 'bg-[#F3F1EC] dark:bg-[#18181D] text-[#5A5854] dark:text-[#B5B0A8] border border-[#E6E2D8] dark:border-[#23232A] hover:border-[#FF6B00]'
           }`}
         >
           <KeyRound className="w-3.5 h-3.5" />
@@ -1364,7 +1368,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           className={`px-4 py-2 rounded-full text-xs font-bold shrink-0 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 ${
             activeTab === 'secret_control_room'
               ? 'bg-[#FF6B00] text-white shadow-xs'
-              : 'bg-[#F8FAFC] dark:bg-[#1E293B] text-slate-700 dark:text-slate-200 border border-[#E2E8F0] dark:border-slate-800 hover:border-slate-400'
+              : 'bg-[#F3F1EC] dark:bg-[#18181D] text-[#5A5854] dark:text-[#B5B0A8] border border-[#E6E2D8] dark:border-[#23232A] hover:border-[#FF6B00]'
           }`}
         >
           <ShieldCheck className="w-3.5 h-3.5" />
@@ -1377,7 +1381,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           className={`px-4 py-2 rounded-full text-xs font-bold shrink-0 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 ${
             activeTab === 'footer_info'
               ? 'bg-[#FF6B00] text-white shadow-xs'
-              : 'bg-[#F8FAFC] dark:bg-[#1E293B] text-slate-700 dark:text-slate-200 border border-[#E2E8F0] dark:border-slate-800 hover:border-slate-400'
+              : 'bg-[#F3F1EC] dark:bg-[#18181D] text-[#5A5854] dark:text-[#B5B0A8] border border-[#E6E2D8] dark:border-[#23232A] hover:border-[#FF6B00]'
           }`}
         >
           <FileText className="w-3.5 h-3.5" />
@@ -1390,7 +1394,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           className={`px-4 py-2 rounded-full text-xs font-bold shrink-0 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 ${
             activeTab === 'products'
               ? 'bg-[#FF6B00] text-white shadow-xs'
-              : 'bg-[#F8FAFC] dark:bg-[#1E293B] text-slate-700 dark:text-slate-200 border border-[#E2E8F0] dark:border-slate-800 hover:border-slate-400'
+              : 'bg-[#F3F1EC] dark:bg-[#18181D] text-[#5A5854] dark:text-[#B5B0A8] border border-[#E6E2D8] dark:border-[#23232A] hover:border-[#FF6B00]'
           }`}
         >
           <Package className="w-3.5 h-3.5" />
@@ -1403,7 +1407,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           className={`px-4 py-2 rounded-full text-xs font-bold shrink-0 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 ${
             activeTab === 'categories'
               ? 'bg-[#FF6B00] text-white shadow-xs'
-              : 'bg-[#F8FAFC] dark:bg-[#1E293B] text-slate-700 dark:text-slate-200 border border-[#E2E8F0] dark:border-slate-800 hover:border-slate-400'
+              : 'bg-[#F3F1EC] dark:bg-[#18181D] text-[#5A5854] dark:text-[#B5B0A8] border border-[#E6E2D8] dark:border-[#23232A] hover:border-[#FF6B00]'
           }`}
         >
           <Tag className="w-3.5 h-3.5" />
@@ -1416,7 +1420,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           className={`px-4 py-2 rounded-full text-xs font-bold shrink-0 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 ${
             activeTab === 'partners'
               ? 'bg-[#FF6B00] text-white shadow-xs'
-              : 'bg-[#F8FAFC] dark:bg-[#1E293B] text-slate-700 dark:text-slate-200 border border-[#E2E8F0] dark:border-slate-800 hover:border-slate-400'
+              : 'bg-[#F3F1EC] dark:bg-[#18181D] text-[#5A5854] dark:text-[#B5B0A8] border border-[#E6E2D8] dark:border-[#23232A] hover:border-[#FF6B00]'
           }`}
         >
           <Building2 className="w-3.5 h-3.5" />
@@ -1429,7 +1433,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           className={`px-4 py-2 rounded-full text-xs font-bold shrink-0 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 ${
             activeTab === 'banners'
               ? 'bg-[#FF6B00] text-white shadow-xs'
-              : 'bg-[#F8FAFC] dark:bg-[#1E293B] text-slate-700 dark:text-slate-200 border border-[#E2E8F0] dark:border-slate-800 hover:border-slate-400'
+              : 'bg-[#F3F1EC] dark:bg-[#18181D] text-[#5A5854] dark:text-[#B5B0A8] border border-[#E6E2D8] dark:border-[#23232A] hover:border-[#FF6B00]'
           }`}
         >
           <Sparkles className="w-3.5 h-3.5" />
@@ -1442,7 +1446,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           className={`px-4 py-2 rounded-full text-xs font-bold shrink-0 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 ${
             activeTab === 'orders'
               ? 'bg-[#FF6B00] text-white shadow-xs'
-              : 'bg-[#F8FAFC] dark:bg-[#1E293B] text-slate-700 dark:text-slate-200 border border-[#E2E8F0] dark:border-slate-800 hover:border-slate-400'
+              : 'bg-[#F3F1EC] dark:bg-[#18181D] text-[#5A5854] dark:text-[#B5B0A8] border border-[#E6E2D8] dark:border-[#23232A] hover:border-[#FF6B00]'
           }`}
         >
           <ShoppingBag className="w-3.5 h-3.5" />
@@ -1455,7 +1459,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           className={`px-4 py-2 rounded-full text-xs font-bold shrink-0 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 ${
             activeTab === 'support_chat'
               ? 'bg-[#FF6B00] text-white shadow-xs'
-              : 'bg-[#F8FAFC] dark:bg-[#1E293B] text-slate-700 dark:text-slate-200 border border-[#E2E8F0] dark:border-slate-800 hover:border-slate-400'
+              : 'bg-[#F3F1EC] dark:bg-[#18181D] text-[#5A5854] dark:text-[#B5B0A8] border border-[#E6E2D8] dark:border-[#23232A] hover:border-[#FF6B00]'
           }`}
         >
           <MessageCircle className="w-3.5 h-3.5" />
@@ -1469,7 +1473,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 text-xs font-bold shadow-xs ${
             liveNotifBanner.severity === 'critical'
               ? 'bg-red-50 dark:bg-red-950/30 border-red-300 dark:border-red-500/40 text-red-800 dark:text-red-300'
-              : 'bg-[#FF6B00]/10 border-[#FF6B00]/30 text-[#0F172A] dark:text-white'
+              : 'bg-[#FF6B00]/10 border-[#FF6B00]/30 text-[#111113] dark:text-[#F7F6F3]'
           }`}
         >
           <div className="flex items-center gap-2.5">
@@ -1511,7 +1515,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           <button
             type="button"
             onClick={() => setTabActionError('')}
-            className="text-slate-400 hover:text-slate-700 cursor-pointer"
+            className="text-[#7A756D] dark:text-[#8E8980] hover:text-[#111113] dark:hover:text-[#F7F6F3] cursor-pointer"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -1528,7 +1532,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
             <button
               type="button"
               onClick={() => setDeleteSuccessSummary(null)}
-              className="text-slate-400 hover:text-slate-700 cursor-pointer"
+              className="text-[#7A756D] dark:text-[#8E8980] hover:text-[#111113] dark:hover:text-[#F7F6F3] cursor-pointer"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -1541,7 +1545,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
             </ul>
           )}
           {deleteSuccessSummary.notes.length > 0 && (
-            <p className="text-[10px] text-slate-600 dark:text-slate-300 pt-1 border-t border-emerald-500/20">
+            <p className="text-[10px] text-[#5A5854] dark:text-[#B5B0A8] pt-1 border-t border-emerald-500/20">
               {deleteSuccessSummary.notes.join(' — ')}
             </p>
           )}
@@ -1598,7 +1602,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
             </div>
           )}
 
-          <div className="p-4 sm:p-6 bg-[#F8FAFC] dark:bg-[#1E293B] rounded-3xl border border-[#E2E8F0] dark:border-slate-800 space-y-4">
+          <div className="p-4 sm:p-6 bg-[#F3F1EC] dark:bg-[#18181D] rounded-3xl border border-[#E6E2D8] dark:border-[#23232A] space-y-4">
             <h3 className="text-sm font-black flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-[#FF6B00]" />
               <span>إجراءات سريعة ومختصرة للوحة التحكم</span>
@@ -1608,93 +1612,93 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
               <button
                 type="button"
                 onClick={() => setShowAddProdModal(true)}
-                className="p-3 bg-white dark:bg-[#0F172A] rounded-2xl border border-[#E2E8F0] dark:border-slate-700 hover:border-[#FF6B00] text-start transition-all cursor-pointer"
+                className="p-3 bg-white dark:bg-[#141418] rounded-2xl border border-[#E6E2D8] dark:border-[#32323C] hover:border-[#FF6B00] text-start transition-all cursor-pointer"
               >
                 <Package className="w-5 h-5 text-[#FF6B00] mb-1.5" />
                 <span className="text-xs font-bold block">+ إضافة منتج</span>
-                <span className="text-[10px] text-slate-400">إدراج معدة أو قطعة غيار</span>
+                <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980]">إدراج معدة أو قطعة غيار</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setShowAddManualOrderModal(true)}
-                className="p-3 bg-white dark:bg-[#0F172A] rounded-2xl border border-[#E2E8F0] dark:border-slate-700 hover:border-[#FF6B00] text-start transition-all cursor-pointer"
+                className="p-3 bg-white dark:bg-[#141418] rounded-2xl border border-[#E6E2D8] dark:border-[#32323C] hover:border-[#FF6B00] text-start transition-all cursor-pointer"
               >
                 <ShoppingBag className="w-5 h-5 text-emerald-500 mb-1.5" />
                 <span className="text-xs font-bold block">+ تسجيل طلب يدوي</span>
-                <span className="text-[10px] text-slate-400">للطلبات الواردة هاتفياً</span>
+                <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980]">للطلبات الواردة هاتفياً</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setShowAddCategoryModal(true)}
-                className="p-3 bg-white dark:bg-[#0F172A] rounded-2xl border border-[#E2E8F0] dark:border-slate-700 hover:border-[#FF6B00] text-start transition-all cursor-pointer"
+                className="p-3 bg-white dark:bg-[#141418] rounded-2xl border border-[#E6E2D8] dark:border-[#32323C] hover:border-[#FF6B00] text-start transition-all cursor-pointer"
               >
                 <Tag className="w-5 h-5 text-blue-500 mb-1.5" />
                 <span className="text-xs font-bold block">+ إضافة قسم جديد</span>
-                <span className="text-[10px] text-slate-400">يحدث شريط التصنيفات فوراً</span>
+                <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980]">يحدث شريط التصنيفات فوراً</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setShowAddPartnerModal(true)}
-                className="p-3 bg-white dark:bg-[#0F172A] rounded-2xl border border-[#E2E8F0] dark:border-slate-700 hover:border-[#FF6B00] text-start transition-all cursor-pointer"
+                className="p-3 bg-white dark:bg-[#141418] rounded-2xl border border-[#E6E2D8] dark:border-[#32323C] hover:border-[#FF6B00] text-start transition-all cursor-pointer"
               >
                 <Building2 className="w-5 h-5 text-purple-500 mb-1.5" />
                 <span className="text-xs font-bold block">+ إضافة شريك</span>
-                <span className="text-[10px] text-slate-400">علامة تجارية أو موزع</span>
+                <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980]">علامة تجارية أو موزع</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setShowAddBannerModal(true)}
-                className="p-3 bg-white dark:bg-[#0F172A] rounded-2xl border border-[#E2E8F0] dark:border-slate-700 hover:border-[#FF6B00] text-start transition-all cursor-pointer"
+                className="p-3 bg-white dark:bg-[#141418] rounded-2xl border border-[#E6E2D8] dark:border-[#32323C] hover:border-[#FF6B00] text-start transition-all cursor-pointer"
               >
                 <Sparkles className="w-5 h-5 text-amber-500 mb-1.5" />
                 <span className="text-xs font-bold block">+ إضافة بانر</span>
-                <span className="text-[10px] text-slate-400">عروض وتخفيضات المتجر</span>
+                <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980]">عروض وتخفيضات المتجر</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setActiveTab('footer_info')}
-                className="p-3 bg-white dark:bg-[#0F172A] rounded-2xl border border-[#E2E8F0] dark:border-slate-700 hover:border-[#FF6B00] text-start transition-all cursor-pointer"
+                className="p-3 bg-white dark:bg-[#141418] rounded-2xl border border-[#E6E2D8] dark:border-[#32323C] hover:border-[#FF6B00] text-start transition-all cursor-pointer"
               >
                 <FileText className="w-5 h-5 text-blue-500 mb-1.5" />
                 <span className="text-xs font-bold block">تذييل وتفاصيل المتجر</span>
-                <span className="text-[10px] text-slate-400">الوصف، الهاتف، العنوان</span>
+                <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980]">الوصف، الهاتف، العنوان</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setActiveTab('account_security')}
-                className="p-3 bg-white dark:bg-[#0F172A] rounded-2xl border border-[#E2E8F0] dark:border-slate-700 hover:border-[#FF6B00] text-start transition-all cursor-pointer"
+                className="p-3 bg-white dark:bg-[#141418] rounded-2xl border border-[#E6E2D8] dark:border-[#32323C] hover:border-[#FF6B00] text-start transition-all cursor-pointer"
               >
                 <KeyRound className="w-5 h-5 text-red-500 mb-1.5" />
                 <span className="text-xs font-bold block">إعدادات الأمان</span>
-                <span className="text-[10px] text-slate-400">تعديل الإيميل والرمز</span>
+                <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980]">تعديل الإيميل والرمز</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setActiveTab('payment_management')}
-                className="p-3 bg-white dark:bg-[#0F172A] rounded-2xl border border-[#E2E8F0] dark:border-slate-700 hover:border-[#FF6B00] text-start transition-all cursor-pointer"
+                className="p-3 bg-white dark:bg-[#141418] rounded-2xl border border-[#E6E2D8] dark:border-[#32323C] hover:border-[#FF6B00] text-start transition-all cursor-pointer"
               >
                 <CreditCard className="w-5 h-5 text-[#FF6B00] mb-1.5" />
                 <span className="text-xs font-bold block">{t.payments.sectionTitle}</span>
-                <span className="text-[10px] text-slate-400">البنك، البوابات، البائعين</span>
+                <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980]">البنك، البوابات، البائعين</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setActiveTab('notifications')}
-                className="p-3 bg-white dark:bg-[#0F172A] rounded-2xl border border-[#E2E8F0] dark:border-slate-700 hover:border-[#FF6B00] text-start transition-all cursor-pointer"
+                className="p-3 bg-white dark:bg-[#141418] rounded-2xl border border-[#E6E2D8] dark:border-[#32323C] hover:border-[#FF6B00] text-start transition-all cursor-pointer"
               >
                 <BellRing className="w-5 h-5 text-[#FF6B00] mb-1.5" />
                 <span className="text-xs font-bold block">
                   إشعارات الهاتف والتنبيهات {notifUnreadCount > 0 ? `(${notifUnreadCount})` : ''}
                 </span>
-                <span className="text-[10px] text-slate-400">الطلبات، الاختراق، نشاط التحكم</span>
+                <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980]">الطلبات، الاختراق، نشاط التحكم</span>
               </button>
             </div>
           </div>
@@ -1765,8 +1769,8 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           )}
 
           {/* Card 1: Email & Phone Settings */}
-          <div className="bg-[#F8FAFC] dark:bg-[#1E293B] rounded-3xl p-4 sm:p-6 border border-[#E2E8F0] dark:border-slate-800 space-y-4">
-            <div className="flex items-center gap-2 pb-3 border-b border-slate-200 dark:border-slate-700">
+          <div className="bg-[#F3F1EC] dark:bg-[#18181D] rounded-3xl p-4 sm:p-6 border border-[#E6E2D8] dark:border-[#23232A] space-y-4">
+            <div className="flex items-center gap-2 pb-3 border-b border-[#E6E2D8] dark:border-[#23232A]">
               <KeyRound className="w-4 h-4 text-[#FF6B00]" />
               <h3 className="text-sm font-black">بيانات الاعتماد السيادية لمركز التحكم</h3>
             </div>
@@ -1774,12 +1778,12 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               
               {/* Form 1: Modify Owner Email */}
-              <form onSubmit={handleSaveEmail} className="bg-white dark:bg-[#0F172A] p-4 rounded-2xl border border-[#E2E8F0] dark:border-slate-700 space-y-3">
+              <form onSubmit={handleSaveEmail} className="bg-white dark:bg-[#141418] p-4 rounded-2xl border border-[#E6E2D8] dark:border-[#32323C] space-y-3">
                 <label className="text-xs font-bold block">
                   البريد الإلكتروني المعتمد لمركز التحكم (Gmail):
                 </label>
                 <div className="relative">
-                  <Mail className="w-4 h-4 text-slate-400 absolute right-3 top-3" />
+                  <Mail className="w-4 h-4 text-[#8E8980] absolute right-3 top-3" />
                   <input
                     type="email"
                     value={editOwnerEmail}
@@ -1787,7 +1791,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                     dir="ltr"
                     required
                     placeholder="example@gmail.com"
-                    className="w-full text-xs py-2.5 pr-9 pl-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-transparent text-[#0F172A] dark:text-white font-mono focus:border-[#FF6B00] outline-none"
+                    className="w-full text-xs py-2.5 pr-9 pl-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent text-[#111113] dark:text-[#F7F6F3] font-mono focus:border-[#FF6B00] outline-none"
                   />
                 </div>
                 <div className="flex items-center justify-between pt-1">
@@ -1815,12 +1819,12 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
               </form>
 
               {/* Form 2: Modify Sovereign Phone */}
-              <form onSubmit={handleSavePhone} className="bg-white dark:bg-[#0F172A] p-4 rounded-2xl border border-[#E2E8F0] dark:border-slate-700 space-y-3">
+              <form onSubmit={handleSavePhone} className="bg-white dark:bg-[#141418] p-4 rounded-2xl border border-[#E6E2D8] dark:border-[#32323C] space-y-3">
                 <label className="text-xs font-bold block">
                   رقم الهاتف السيادي المعتمد:
                 </label>
                 <div className="relative">
-                  <Phone className="w-4 h-4 text-slate-400 absolute right-3 top-3" />
+                  <Phone className="w-4 h-4 text-[#8E8980] absolute right-3 top-3" />
                   <input
                     type="text"
                     value={editOwnerPhone}
@@ -1828,14 +1832,14 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                     dir="ltr"
                     required
                     placeholder="+21621511162"
-                    className="w-full text-xs py-2.5 pr-9 pl-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-transparent text-[#0F172A] dark:text-white font-mono focus:border-[#FF6B00] outline-none"
+                    className="w-full text-xs py-2.5 pr-9 pl-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent text-[#111113] dark:text-[#F7F6F3] font-mono focus:border-[#FF6B00] outline-none"
                   />
                 </div>
                 <div className="flex items-center justify-between pt-1">
                   <button
                     type="submit"
                     disabled={phoneSaving}
-                    className="px-4 py-2 rounded-xl bg-[#0F172A] dark:bg-slate-700 hover:bg-[#FF6B00] text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-60 active:scale-95"
+                    className="px-4 py-2 rounded-xl bg-[#111113] dark:bg-[#32323C] hover:bg-[#FF6B00] text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-60 active:scale-95"
                   >
                     <Save className="w-3.5 h-3.5" />
                     <span>{phoneSaving ? 'جارٍ الحفظ على الخادم...' : 'حفظ فوري للهاتف'}</span>
@@ -1859,13 +1863,13 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           </div>
 
           {/* Card 2: إدارة رمز الوصول السري (Access Code Management) */}
-          <div className="bg-[#F8FAFC] dark:bg-[#1E293B] rounded-3xl p-4 sm:p-6 border border-[#E2E8F0] dark:border-slate-800 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-700 gap-2">
+          <div className="bg-[#F3F1EC] dark:bg-[#18181D] rounded-3xl p-4 sm:p-6 border border-[#E6E2D8] dark:border-[#23232A] space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-[#E6E2D8] dark:border-[#23232A] gap-2">
               <div className="flex items-center gap-2">
                 <KeyRound className="w-5 h-5 text-[#FF6B00]" />
                 <div>
                   <h3 className="text-sm font-black">إدارة رمز الوصول السري (Access Code Management)</h3>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  <p className="text-[11px] text-[#7A756D] dark:text-[#8E8980]">
                     الرمز السري المكتوب في شريط البحث لاستدعاء بوابة PIN (يتم التحقق منه وتحديثه حصرياً على الخادم)
                   </p>
                 </div>
@@ -1886,7 +1890,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
 
             <form onSubmit={handleUpdateAccessCode} className="space-y-4">
               {accessCodeStep === 1 ? (
-                <div className="space-y-3 bg-white dark:bg-[#0F172A] p-4 rounded-2xl border border-slate-200 dark:border-slate-700">
+                <div className="space-y-3 bg-white dark:bg-[#141418] p-4 rounded-2xl border border-[#E6E2D8] dark:border-[#32323C]">
                   <label className="text-xs font-bold block">
                     الخطوة 1: أدخل رمز الوصول الحالي أو رمز PIN للتحقق من هويتك:
                   </label>
@@ -1896,21 +1900,21 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                     onChange={e => setAccessCodeCurrent(e.target.value)}
                     placeholder="رمز الوصول الحالي أو الـ PIN..."
                     required
-                    className="w-full text-xs py-2.5 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-transparent text-[#0F172A] dark:text-white outline-none focus:border-[#FF6B00] font-mono"
+                    className="w-full text-xs py-2.5 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent text-[#111113] dark:text-[#F7F6F3] outline-none focus:border-[#FF6B00] font-mono"
                   />
                   <div className="flex items-center justify-between pt-1">
                     <button
                       type="submit"
                       disabled={accessCodeLoading}
-                      className="px-4 py-2 rounded-xl bg-[#0F172A] dark:bg-slate-700 hover:bg-[#FF6B00] text-white text-xs font-bold cursor-pointer transition active:scale-95"
+                      className="px-4 py-2 rounded-xl bg-[#111113] dark:bg-[#32323C] hover:bg-[#FF6B00] text-white text-xs font-bold cursor-pointer transition active:scale-95"
                     >
                       {accessCodeLoading ? 'جارٍ التحقق...' : 'التحقق والمتابعة للرمز الجديد ←'}
                     </button>
-                    <span className="text-[11px] text-slate-400">حماية ضد التخمين (Rate Limiting)</span>
+                    <span className="text-[11px] text-[#7A756D] dark:text-[#8E8980]">حماية ضد التخمين (Rate Limiting)</span>
                   </div>
                 </div>
               ) : (
-                <div className="space-y-3 bg-white dark:bg-[#0F172A] p-4 rounded-2xl border border-slate-200 dark:border-slate-700">
+                <div className="space-y-3 bg-white dark:bg-[#141418] p-4 rounded-2xl border border-[#E6E2D8] dark:border-[#32323C]">
                   <div className="space-y-1">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-bold block">
@@ -1929,20 +1933,20 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                       type={showAccessCodePlain ? 'text' : 'password'}
                       value={accessCodeNew}
                       onChange={e => setAccessCodeNew(e.target.value)}
-                      placeholder="مثال: #echox_admin_2026 أو أي كلمة سرية..."
+                      placeholder="مثال: #niapolor_admin_2026 أو أي كلمة سرية..."
                       required
-                      className="w-full text-xs py-2.5 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-transparent text-[#0F172A] dark:text-white outline-none focus:border-[#FF6B00] font-mono"
+                      className="w-full text-xs py-2.5 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent text-[#111113] dark:text-[#F7F6F3] outline-none focus:border-[#FF6B00] font-mono"
                     />
                     {accessCodeNew.length > 0 && (
                       <div className="flex items-center gap-2 pt-1">
-                        <div className="h-1.5 flex-1 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                        <div className="h-1.5 flex-1 bg-[#EBE7DF] dark:bg-[#23232A] rounded-full overflow-hidden">
                           <div 
                             className={`h-full transition-all duration-300 ${
                               accessCodeNew.length >= 8 ? 'w-full bg-emerald-500' : accessCodeNew.length >= 5 ? 'w-2/3 bg-amber-500' : 'w-1/3 bg-red-500'
                             }`}
                           />
                         </div>
-                        <span className="text-[10px] font-bold text-slate-500">
+                        <span className="text-[10px] font-bold text-[#7A756D] dark:text-[#8E8980]">
                           {accessCodeNew.length >= 8 ? 'قوة الرمز: ممتازة' : accessCodeNew.length >= 5 ? 'قوة الرمز: متوسطة' : 'قصير'}
                         </span>
                       </div>
@@ -1959,7 +1963,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                       onChange={e => setAccessCodeConfirm(e.target.value)}
                       placeholder="أعد إدخال رمز الوصول للتأكيد..."
                       required
-                      className="w-full text-xs py-2.5 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-transparent text-[#0F172A] dark:text-white outline-none focus:border-[#FF6B00] font-mono"
+                      className="w-full text-xs py-2.5 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent text-[#111113] dark:text-[#F7F6F3] outline-none focus:border-[#FF6B00] font-mono"
                     />
                   </div>
 
@@ -1975,7 +1979,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                     <button
                       type="button"
                       onClick={() => setAccessCodeStep(1)}
-                      className="px-3 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-800 dark:hover:text-white"
+                      className="px-3 py-2 rounded-xl text-xs font-bold text-[#7A756D] dark:text-[#8E8980] hover:text-[#111113] dark:hover:text-[#F7F6F3] cursor-pointer"
                     >
                       إلغاء
                     </button>
@@ -2000,13 +2004,13 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           </div>
 
           {/* Card 3: إدارة رمز PIN (PIN Management) */}
-          <div className="bg-[#F8FAFC] dark:bg-[#1E293B] rounded-3xl p-4 sm:p-6 border border-[#E2E8F0] dark:border-slate-800 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-700 gap-2">
+          <div className="bg-[#F3F1EC] dark:bg-[#18181D] rounded-3xl p-4 sm:p-6 border border-[#E6E2D8] dark:border-[#23232A] space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-[#E6E2D8] dark:border-[#23232A] gap-2">
               <div className="flex items-center gap-2">
                 <Lock className="w-5 h-5 text-[#FF6B00]" />
                 <div>
-                  <h3 className="text-sm font-black">إدارة رمز الـ PIN (ECHOX VAULT PIN)</h3>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  <h3 className="text-sm font-black">إدارة رمز الـ PIN (NIAPOLOR VAULT PIN)</h3>
+                  <p className="text-[11px] text-[#7A756D] dark:text-[#8E8980]">
                     الرمز الرقمي المكون من 6 أرقام والمطلوب لفتح مركز التحكم بعد رمز الوصول
                   </p>
                 </div>
@@ -2020,7 +2024,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
 
             <form onSubmit={handleUpdatePin} className="space-y-4">
               {pinStep === 1 ? (
-                <div className="space-y-3 bg-white dark:bg-[#0F172A] p-4 rounded-2xl border border-slate-200 dark:border-slate-700">
+                <div className="space-y-3 bg-white dark:bg-[#141418] p-4 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A]">
                   <label className="text-xs font-bold block">
                     الخطوة 1: أدخل رمز الـ PIN الحالي للمتابعة:
                   </label>
@@ -2031,21 +2035,21 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                     onChange={e => setPinCurrent(e.target.value.replace(/\D/g, ''))}
                     placeholder="••••••"
                     required
-                    className="w-full text-center tracking-[0.5em] text-base py-2.5 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-transparent text-[#0F172A] dark:text-white outline-none focus:border-[#FF6B00] font-mono"
+                    className="w-full text-center tracking-[0.5em] text-base py-2.5 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent text-[#111113] dark:text-[#F7F6F3] outline-none focus:border-[#FF6B00] font-mono"
                   />
                   <div className="flex items-center justify-between pt-1">
                     <button
                       type="submit"
                       disabled={pinLoading}
-                      className="px-4 py-2 rounded-xl bg-[#0F172A] dark:bg-slate-700 hover:bg-[#FF6B00] text-white text-xs font-bold cursor-pointer transition active:scale-95"
+                      className="px-4 py-2 rounded-xl bg-[#111113] dark:bg-[#23232A] hover:bg-[#FF6B00] dark:hover:bg-[#FF6B00] text-white text-xs font-bold cursor-pointer transition active:scale-95"
                     >
                       {pinLoading ? 'جارٍ التحقق...' : 'التحقق والمتابعة للـ PIN الجديد ←'}
                     </button>
-                    <span className="text-[11px] text-slate-400">ميزة الحظر التلقائي عند 5 محاولات خاطئة</span>
+                    <span className="text-[11px] text-[#7A756D] dark:text-[#8E8980]">ميزة الحظر التلقائي عند 5 محاولات خاطئة</span>
                   </div>
                 </div>
               ) : (
-                <div className="space-y-3 bg-white dark:bg-[#0F172A] p-4 rounded-2xl border border-slate-200 dark:border-slate-700">
+                <div className="space-y-3 bg-white dark:bg-[#141418] p-4 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A]">
                   <div className="space-y-1">
                     <label className="text-xs font-bold block">
                       الخطوة 2: أدخل رمز الـ PIN الجديد (6 أرقام رقمية):
@@ -2057,7 +2061,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                       onChange={e => setPinNew(e.target.value.replace(/\D/g, ''))}
                       placeholder="6 أرقام جديدة..."
                       required
-                      className="w-full text-center tracking-[0.5em] text-base py-2.5 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-transparent text-[#0F172A] dark:text-white outline-none focus:border-[#FF6B00] font-mono"
+                      className="w-full text-center tracking-[0.5em] text-base py-2.5 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent text-[#111113] dark:text-[#F7F6F3] outline-none focus:border-[#FF6B00] font-mono"
                     />
                   </div>
 
@@ -2072,7 +2076,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                       onChange={e => setPinConfirm(e.target.value.replace(/\D/g, ''))}
                       placeholder="أعد إدخال الـ PIN للتأكيد..."
                       required
-                      className="w-full text-center tracking-[0.5em] text-base py-2.5 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-transparent text-[#0F172A] dark:text-white outline-none focus:border-[#FF6B00] font-mono"
+                      className="w-full text-center tracking-[0.5em] text-base py-2.5 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent text-[#111113] dark:text-[#F7F6F3] outline-none focus:border-[#FF6B00] font-mono"
                     />
                   </div>
 
@@ -2088,7 +2092,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                     <button
                       type="button"
                       onClick={() => setPinStep(1)}
-                      className="px-3 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-800 dark:hover:text-white"
+                      className="px-3 py-2 rounded-xl text-xs font-bold text-[#7A756D] dark:text-[#8E8980] hover:text-[#111113] dark:hover:text-[#F7F6F3] cursor-pointer"
                     >
                       إلغاء
                     </button>
@@ -2113,13 +2117,13 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           </div>
 
           {/* Card 4: إدارة الجلسات والأجهزة (Session Management) */}
-          <div className="bg-[#F8FAFC] dark:bg-[#1E293B] rounded-3xl p-4 sm:p-6 border border-[#E2E8F0] dark:border-slate-800 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-700 gap-2">
+          <div className="bg-[#F3F1EC] dark:bg-[#18181D] rounded-3xl p-4 sm:p-6 border border-[#E6E2D8] dark:border-[#23232A] space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-[#E6E2D8] dark:border-[#23232A] gap-2">
               <div className="flex items-center gap-2">
                 <Smartphone className="w-5 h-5 text-[#FF6B00]" />
                 <div>
                   <h3 className="text-sm font-black">إدارة الجلسات والأجهزة الموثوقة (Session Management)</h3>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  <p className="text-[11px] text-[#7A756D] dark:text-[#8E8980]">
                     مراقبة الجلسات المفتوحة مع توقيع خادمي HMAC-SHA256 وإمكانية إنهاء الجلسات فوراً
                   </p>
                 </div>
@@ -2147,13 +2151,13 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
             <div className="space-y-2">
               {activeSessionsList.length > 0 ? (
                 activeSessionsList.map((sess, idx) => (
-                  <div key={idx} className="p-3 rounded-2xl bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 flex items-center justify-between text-xs">
+                  <div key={idx} className="p-3 rounded-2xl bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#23232A] flex items-center justify-between text-xs">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-xl bg-[#FF6B00]/10 flex items-center justify-center text-[#FF6B00]">
                         <Smartphone className="w-4 h-4" />
                       </div>
                       <div>
-                        <div className="flex items-center gap-2 font-mono font-bold text-slate-800 dark:text-slate-200">
+                        <div className="flex items-center gap-2 font-mono font-bold text-[#111113] dark:text-[#F7F6F3]">
                           <span>{sess.id}</span>
                           {sess.isCurrent && (
                             <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500 text-white font-sans font-bold">
@@ -2161,14 +2165,14 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                             </span>
                           )}
                         </div>
-                        <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
+                        <div className="text-[11px] text-[#7A756D] dark:text-[#8E8980] flex items-center gap-2 mt-0.5">
                           <span>IP: {sess.ip}</span>
                           <span>•</span>
                           <span className="truncate max-w-[200px]">{sess.userAgent}</span>
                         </div>
                       </div>
                     </div>
-                    <span className="text-[11px] font-mono text-slate-400">
+                    <span className="text-[11px] font-mono text-[#7A756D] dark:text-[#8E8980]">
                       {new Date(sess.createdAt).toLocaleTimeString('ar-TN')}
                     </span>
                   </div>
@@ -2181,19 +2185,19 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   <button
                     type="button"
                     onClick={() => notifySessionExpired()}
-                    className="px-4 py-2 rounded-xl bg-[#FF6B00] hover:bg-[#EA580C] text-white text-xs font-bold cursor-pointer transition active:scale-95"
+                    className="px-4 py-2 rounded-xl bg-[#FF6B00] hover:bg-[#E05E00] text-white text-xs font-bold cursor-pointer transition active:scale-95"
                   >
                     تأكيد رمز الـ PIN وتجديد الجلسة الآن
                   </button>
                 </div>
               ) : (
-                <div className="p-4 rounded-2xl bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 text-center text-xs text-slate-400">
+                <div className="p-4 rounded-2xl bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#23232A] text-center text-xs text-[#7A756D] dark:text-[#8E8980]">
                   جلسة المتصفح الحالية نشطة ومؤمنة بتوقيع خادمي مشفر.
                 </div>
               )}
             </div>
 
-            <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-700 text-[11px] text-slate-500 dark:text-slate-400">
+            <div className="flex items-center justify-between pt-2 border-t border-[#E6E2D8] dark:border-[#23232A] text-[11px] text-[#7A756D] dark:text-[#8E8980]">
               <span>محرك التشفير النشط: <strong>Argon2id (Memory-Hard v=19)</strong></span>
               <span>توقيع الكوكيز: <strong>HMAC-SHA256 HttpOnly</strong></span>
             </div>
@@ -2219,21 +2223,21 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
       {activeTab === 'footer_info' && (
         <div className="space-y-6">
           {/* Header Card */}
-          <div className="bg-[#F8FAFC] dark:bg-[#1E293B] rounded-3xl p-5 sm:p-6 border border-[#E2E8F0] dark:border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="bg-[#F3F1EC] dark:bg-[#18181D] rounded-3xl p-5 sm:p-6 border border-[#E6E2D8] dark:border-[#23232A] flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <div className="w-11 h-11 rounded-2xl bg-[#FF6B00]/10 border border-[#FF6B00]/30 flex items-center justify-center text-[#FF6B00]">
                 <FileText className="w-6 h-6" />
               </div>
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h2 className="text-base sm:text-lg font-black text-[#0F172A] dark:text-white">
+                  <h2 className="text-base sm:text-lg font-black text-[#111113] dark:text-[#F7F6F3]">
                     إعدادات تذييل الصفحة وتفاصيل المتجر
                   </h2>
                   <span className="text-[10px] font-bold bg-[#FF6B00]/15 text-[#FF6B00] px-2 py-0.5 rounded-full border border-[#FF6B00]/25">
                     Footer & Store Info Settings
                   </span>
                 </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                <p className="text-xs text-[#7A756D] dark:text-[#8E8980] mt-0.5">
                   تحكم مباشر في النبذة التعريفية، أرقام الهاتف والواتساب، البريد والعنوان مع التحديث الفوري بجميع لغات المتجر.
                 </p>
               </div>
@@ -2243,7 +2247,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
               <button
                 type="button"
                 onClick={() => navigate('/')}
-                className="px-3.5 py-2 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-[#0F172A] dark:text-white text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                className="px-3.5 py-2 rounded-xl bg-[#EBE7DF] dark:bg-[#23232A] hover:bg-[#D6D0C4] dark:hover:bg-[#32323C] text-[#111113] dark:text-[#F7F6F3] text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
                 <span>معاينة المتجر الحقيقي</span>
@@ -2272,7 +2276,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           )}
 
           {/* Live Footer Preview Card */}
-          <div className="bg-[#0B0F17] rounded-3xl p-5 sm:p-6 border border-[#FF6B00]/30 text-white space-y-4 shadow-xl">
+          <div className="bg-[#0B0B0D] rounded-3xl p-5 sm:p-6 border border-[#FF6B00]/30 text-[#F7F6F3] space-y-4 shadow-xl">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-white/10">
               <div className="flex items-center gap-2">
                 <Globe className="w-4 h-4 text-[#FF6B00]" />
@@ -2290,7 +2294,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   type="button"
                   onClick={() => setPreviewFooterLang('ar')}
                   className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    previewFooterLang === 'ar' ? 'bg-[#FF6B00] text-white shadow-xs' : 'text-gray-400 hover:text-white'
+                    previewFooterLang === 'ar' ? 'bg-[#FF6B00] text-white shadow-xs' : 'text-[#8E8980] hover:text-white'
                   }`}
                 >
                   العربية
@@ -2299,7 +2303,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   type="button"
                   onClick={() => setPreviewFooterLang('fr')}
                   className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    previewFooterLang === 'fr' ? 'bg-[#FF6B00] text-white shadow-xs' : 'text-gray-400 hover:text-white'
+                    previewFooterLang === 'fr' ? 'bg-[#FF6B00] text-white shadow-xs' : 'text-[#8E8980] hover:text-white'
                   }`}
                 >
                   Français
@@ -2308,7 +2312,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   type="button"
                   onClick={() => setPreviewFooterLang('en')}
                   className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    previewFooterLang === 'en' ? 'bg-[#FF6B00] text-white shadow-xs' : 'text-gray-400 hover:text-white'
+                    previewFooterLang === 'en' ? 'bg-[#FF6B00] text-white shadow-xs' : 'text-[#8E8980] hover:text-white'
                   }`}
                 >
                   English
@@ -2317,22 +2321,22 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
             </div>
 
             {/* Rendered Live Mockup */}
-            <div className="bg-[#0F172A] rounded-2xl p-4 sm:p-5 border border-slate-800 space-y-4">
+            <div className="bg-[#141418] rounded-2xl p-4 sm:p-5 border border-[#23232A] space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
                 
                 {/* Brand & Dynamic Bio */}
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
                     <img 
-                      src="/assets/images/echox-logo.webp" 
+                      src="/assets/images/niapolor-emblem.webp" 
                       alt="Logo" 
                       className="w-6 h-6 rounded-full border border-[#FF6B00]/40 object-contain"
                     />
-                    <span className="font-black text-sm text-white">
-                      ECHOX <span className="text-[#FF6B00]">Store</span>
+                    <span className="font-black text-sm text-white tracking-[0.06em]" dir="ltr">
+                      NIAPOL<span className="text-[#FF6B00]">O</span>R
                     </span>
                   </div>
-                  <p className="text-[11px] text-slate-300 leading-relaxed italic bg-black/20 p-2 rounded-xl border border-white/5">
+                  <p className="text-[11px] text-[#B5B0A8] leading-relaxed italic bg-black/20 p-2 rounded-xl border border-white/5">
                     "{previewFooterLang === 'ar' 
                       ? (footerDescAr || 'متجر تونسي متخصص في المعدات الميكانيكية والكهربائية...') 
                       : previewFooterLang === 'fr' 
@@ -2346,9 +2350,9 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   <span className="font-bold text-[11px] text-[#FF6B00] block">
                     {previewFooterLang === 'ar' ? 'روابط سريعة' : previewFooterLang === 'fr' ? 'Liens rapides' : 'Quick Links'}
                   </span>
-                  <p className="text-[11px] text-slate-400">• {previewFooterLang === 'ar' ? 'المتجر' : previewFooterLang === 'fr' ? 'Boutique' : 'Store'}</p>
-                  <p className="text-[11px] text-slate-400">• {previewFooterLang === 'ar' ? 'الشركات الشريكة' : previewFooterLang === 'fr' ? 'Partenaires' : 'Partners'}</p>
-                  <p className="text-[11px] text-slate-400">• {previewFooterLang === 'ar' ? 'ميثاق الجودة' : previewFooterLang === 'fr' ? 'Engagement' : 'Promise'}</p>
+                  <p className="text-[11px] text-[#8E8980]">• {previewFooterLang === 'ar' ? 'المتجر' : previewFooterLang === 'fr' ? 'Boutique' : 'Store'}</p>
+                  <p className="text-[11px] text-[#8E8980]">• {previewFooterLang === 'ar' ? 'الشركات الشريكة' : previewFooterLang === 'fr' ? 'Partenaires' : 'Partners'}</p>
+                  <p className="text-[11px] text-[#8E8980]">• {previewFooterLang === 'ar' ? 'ميثاق الجودة' : previewFooterLang === 'fr' ? 'Engagement' : 'Promise'}</p>
                 </div>
 
                 {/* Direct Contact Live Preview */}
@@ -2356,7 +2360,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   <span className="font-bold text-[11px] text-[#FF6B00] block">
                     {previewFooterLang === 'ar' ? 'التواصل المباشر' : previewFooterLang === 'fr' ? 'Contact Direct' : 'Direct Contact'}
                   </span>
-                  <div className="space-y-1 text-[11px] text-slate-300 font-mono">
+                  <div className="space-y-1 text-[11px] text-[#B5B0A8] font-mono">
                     <p className="flex items-center gap-1.5">
                       <Phone className="w-3 h-3 text-[#FF6B00] shrink-0" />
                       <span dir="ltr">{footerSupportPhone || '+216 21 511 162'}</span>
@@ -2367,7 +2371,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                     </p>
                     <p className="flex items-center gap-1.5 truncate">
                       <Mail className="w-3 h-3 text-[#FF6B00] shrink-0" />
-                      <span dir="ltr" className="truncate">{footerEmail || 'contact@echox-store.tn'}</span>
+                      <span dir="ltr" className="truncate">{footerEmail || 'contact@niapolor.tn'}</span>
                     </p>
                   </div>
                 </div>
@@ -2377,7 +2381,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   <span className="font-bold text-[11px] text-[#FF6B00] block">
                     {previewFooterLang === 'ar' ? 'الموقع والعنوان' : previewFooterLang === 'fr' ? 'Localisation' : 'Location'}
                   </span>
-                  <p className="flex items-start gap-1.5 text-[11px] text-slate-300">
+                  <p className="flex items-start gap-1.5 text-[11px] text-[#B5B0A8]">
                     <MapPin className="w-3.5 h-3.5 text-[#FF6B00] shrink-0 mt-0.5" />
                     <span>
                       {previewFooterLang === 'ar' 
@@ -2391,7 +2395,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                       </strong>
                     </span>
                   </p>
-                  <p className="text-[10px] text-slate-400">
+                  <p className="text-[10px] text-[#8E8980]">
                     {previewFooterLang === 'ar' 
                       ? (footerWorkingHoursAr || 'من الإثنين إلى السبت: 08:30 إلى 18:30') 
                       : previewFooterLang === 'fr' 
@@ -2402,8 +2406,8 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
 
               </div>
 
-              <div className="pt-3 border-t border-slate-800 text-center text-[10px] text-slate-500">
-                © 2026 ECHOX Store — {previewFooterLang === 'ar' ? 'كافة الحقوق محفوظة. الجمهورية التونسية.' : previewFooterLang === 'fr' ? 'Tous droits réservés. République Tunisienne.' : 'All rights reserved. Republic of Tunisia.'}
+              <div className="pt-3 border-t border-[#23232A] text-center text-[10px] text-[#8E8980]">
+                © 2026 NIAPOLOR — {previewFooterLang === 'ar' ? 'كافة الحقوق محفوظة. الجمهورية التونسية.' : previewFooterLang === 'fr' ? 'Tous droits réservés. République Tunisienne.' : 'All rights reserved. Republic of Tunisia.'}
               </div>
             </div>
           </div>
@@ -2412,23 +2416,23 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           <form onSubmit={handleSaveFooterSettings} className="space-y-6">
             
             {/* Card 1: Store Description (Multilingual) */}
-            <div className="bg-[#F8FAFC] dark:bg-[#1E293B] rounded-3xl p-5 sm:p-6 border border-[#E2E8F0] dark:border-slate-800 space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-700">
+            <div className="bg-[#F3F1EC] dark:bg-[#18181D] rounded-3xl p-5 sm:p-6 border border-[#E6E2D8] dark:border-[#23232A] space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-[#E6E2D8] dark:border-[#23232A]">
                 <div className="flex items-center gap-2">
                   <FileText className="w-4 h-4 text-[#FF6B00]" />
-                  <h3 className="text-sm font-black text-[#0F172A] dark:text-white">
+                  <h3 className="text-sm font-black text-[#111113] dark:text-[#F7F6F3]">
                     1. وصف المتجر والنبذة التعريفية (Store Bio & Descriptions)
                   </h3>
                 </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#EBE7DF] dark:bg-[#23232A] text-[#5A5854] dark:text-[#B5B0A8]">
                   تظهر في تذييل الصفحة بجميع اللغات
                 </span>
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 {/* Arabic Bio */}
-                <div className="bg-white dark:bg-[#0F172A] p-4 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
-                  <label className="text-xs font-bold block flex items-center justify-between text-[#0F172A] dark:text-white">
+                <div className="bg-white dark:bg-[#141418] p-4 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-2">
+                  <label className="text-xs font-bold block flex items-center justify-between text-[#111113] dark:text-[#F7F6F3]">
                     <span>النبذة التعريفية (بالعربية):</span>
                     <span className="text-[10px] font-mono text-[#FF6B00] font-bold">AR</span>
                   </label>
@@ -2438,16 +2442,16 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                     value={footerDescAr}
                     onChange={e => setFooterDescAr(e.target.value)}
                     placeholder="متجر إلكتروني تونسي متخصص في توفير المعدات والأجهزة الصناعية وقطع الغيار الأصلية..."
-                    className="w-full text-xs p-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-transparent text-[#0F172A] dark:text-white focus:border-[#FF6B00] outline-none resize-none leading-relaxed"
+                    className="w-full text-xs p-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent text-[#111113] dark:text-[#F7F6F3] focus:border-[#FF6B00] outline-none resize-none leading-relaxed"
                   />
-                  <span className="text-[10px] text-slate-400 block text-end">
+                  <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980] block text-end">
                     {footerDescAr.length} حرفاً
                   </span>
                 </div>
 
                 {/* French Bio */}
-                <div className="bg-white dark:bg-[#0F172A] p-4 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
-                  <label className="text-xs font-bold block flex items-center justify-between text-[#0F172A] dark:text-white">
+                <div className="bg-white dark:bg-[#141418] p-4 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-2">
+                  <label className="text-xs font-bold block flex items-center justify-between text-[#111113] dark:text-[#F7F6F3]">
                     <span>النبذة التعريفية (بالفرنسية):</span>
                     <span className="text-[10px] font-mono text-[#FF6B00] font-bold">FR</span>
                   </label>
@@ -2456,17 +2460,17 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                     value={footerDescFr}
                     onChange={e => setFooterDescFr(e.target.value)}
                     placeholder="Boutique en ligne tunisienne spécialisée dans l’outillage, matériel électrique et pièces détachées..."
-                    className="w-full text-xs p-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-transparent text-[#0F172A] dark:text-white focus:border-[#FF6B00] outline-none resize-none leading-relaxed"
+                    className="w-full text-xs p-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent text-[#111113] dark:text-[#F7F6F3] focus:border-[#FF6B00] outline-none resize-none leading-relaxed"
                     dir="ltr"
                   />
-                  <span className="text-[10px] text-slate-400 block text-end font-mono">
+                  <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980] block text-end font-mono">
                     {footerDescFr.length} chars
                   </span>
                 </div>
 
                 {/* English Bio */}
-                <div className="bg-white dark:bg-[#0F172A] p-4 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
-                  <label className="text-xs font-bold block flex items-center justify-between text-[#0F172A] dark:text-white">
+                <div className="bg-white dark:bg-[#141418] p-4 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-2">
+                  <label className="text-xs font-bold block flex items-center justify-between text-[#111113] dark:text-[#F7F6F3]">
                     <span>النبذة التعريفية (بالإنجليزية):</span>
                     <span className="text-[10px] font-mono text-[#FF6B00] font-bold">EN</span>
                   </label>
@@ -2475,10 +2479,10 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                     value={footerDescEn}
                     onChange={e => setFooterDescEn(e.target.value)}
                     placeholder="Tunisian online store specializing in professional tools, electrical equipment, and genuine spare parts..."
-                    className="w-full text-xs p-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-transparent text-[#0F172A] dark:text-white focus:border-[#FF6B00] outline-none resize-none leading-relaxed"
+                    className="w-full text-xs p-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent text-[#111113] dark:text-[#F7F6F3] focus:border-[#FF6B00] outline-none resize-none leading-relaxed"
                     dir="ltr"
                   />
-                  <span className="text-[10px] text-slate-400 block text-end font-mono">
+                  <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980] block text-end font-mono">
                     {footerDescEn.length} chars
                   </span>
                 </div>
@@ -2486,11 +2490,11 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
             </div>
 
             {/* Card 2: Contact Numbers & Email */}
-            <div className="bg-[#F8FAFC] dark:bg-[#1E293B] rounded-3xl p-5 sm:p-6 border border-[#E2E8F0] dark:border-slate-800 space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-700">
+            <div className="bg-[#F3F1EC] dark:bg-[#18181D] rounded-3xl p-5 sm:p-6 border border-[#E6E2D8] dark:border-[#23232A] space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-[#E6E2D8] dark:border-[#23232A]">
                 <div className="flex items-center gap-2">
                   <Phone className="w-4 h-4 text-[#FF6B00]" />
-                  <h3 className="text-sm font-black text-[#0F172A] dark:text-white">
+                  <h3 className="text-sm font-black text-[#111113] dark:text-[#F7F6F3]">
                     2. أرقام الاتصال وقنوات التواصل الرسمية (Official Contact & Support Channels)
                   </h3>
                 </div>
@@ -2502,30 +2506,30 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 
                 {/* Support Phone */}
-                <div className="bg-white dark:bg-[#0F172A] p-4 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
-                  <label className="text-xs font-bold block text-[#0F172A] dark:text-white">
+                <div className="bg-white dark:bg-[#141418] p-4 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-2">
+                  <label className="text-xs font-bold block text-[#111113] dark:text-[#F7F6F3]">
                     رقم الهاتف الرسمي للدعم والمبيعات:
                   </label>
                   <div className="relative">
-                    <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                    <Phone className="w-4 h-4 text-[#7A756D] dark:text-[#8E8980] absolute left-3 top-3" />
                     <input
                       type="text"
                       required
                       value={footerSupportPhone}
                       onChange={e => setFooterSupportPhone(e.target.value)}
                       placeholder="+216 21 511 162"
-                      className="w-full text-xs py-2.5 pl-9 pr-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-transparent text-[#0F172A] dark:text-white font-mono focus:border-[#FF6B00] outline-none"
+                      className="w-full text-xs py-2.5 pl-9 pr-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent text-[#111113] dark:text-[#F7F6F3] font-mono focus:border-[#FF6B00] outline-none"
                       dir="ltr"
                     />
                   </div>
-                  <span className="text-[10px] text-slate-400 block">
+                  <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980] block">
                     يُفعّل زر الاتصال المباشر tel:{footerSupportPhone}
                   </span>
                 </div>
 
                 {/* WhatsApp Phone */}
-                <div className="bg-white dark:bg-[#0F172A] p-4 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
-                  <label className="text-xs font-bold block text-[#0F172A] dark:text-white">
+                <div className="bg-white dark:bg-[#141418] p-4 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-2">
+                  <label className="text-xs font-bold block text-[#111113] dark:text-[#F7F6F3]">
                     رقم الواتساب الرسمي (أرقام فقط):
                   </label>
                   <div className="relative">
@@ -2536,7 +2540,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                       value={footerWhatsappPhone}
                       onChange={e => setFooterWhatsappPhone(e.target.value)}
                       placeholder="21621511162"
-                      className="w-full text-xs py-2.5 pl-9 pr-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-transparent text-[#0F172A] dark:text-white font-mono focus:border-[#FF6B00] outline-none"
+                      className="w-full text-xs py-2.5 pl-9 pr-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent text-[#111113] dark:text-[#F7F6F3] font-mono focus:border-[#FF6B00] outline-none"
                       dir="ltr"
                     />
                   </div>
@@ -2546,23 +2550,23 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                 </div>
 
                 {/* Support Email */}
-                <div className="bg-white dark:bg-[#0F172A] p-4 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
-                  <label className="text-xs font-bold block text-[#0F172A] dark:text-white">
+                <div className="bg-white dark:bg-[#141418] p-4 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-2">
+                  <label className="text-xs font-bold block text-[#111113] dark:text-[#F7F6F3]">
                     بريد الدعم الفني والمراسلات:
                   </label>
                   <div className="relative">
-                    <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                    <Mail className="w-4 h-4 text-[#7A756D] dark:text-[#8E8980] absolute left-3 top-3" />
                     <input
                       type="email"
                       required
                       value={footerEmail}
                       onChange={e => setFooterEmail(e.target.value)}
-                      placeholder="contact@echox-store.tn"
-                      className="w-full text-xs py-2.5 pl-9 pr-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-transparent text-[#0F172A] dark:text-white font-mono focus:border-[#FF6B00] outline-none"
+                      placeholder="contact@niapolor.tn"
+                      className="w-full text-xs py-2.5 pl-9 pr-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent text-[#111113] dark:text-[#F7F6F3] font-mono focus:border-[#FF6B00] outline-none"
                       dir="ltr"
                     />
                   </div>
-                  <span className="text-[10px] text-slate-400 block">
+                  <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980] block">
                     يُفعّل إرسال البريد المباشر mailto:{footerEmail}
                   </span>
                 </div>
@@ -2571,11 +2575,11 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
             </div>
 
             {/* Card 3: Physical Address & Location */}
-            <div className="bg-[#F8FAFC] dark:bg-[#1E293B] rounded-3xl p-5 sm:p-6 border border-[#E2E8F0] dark:border-slate-800 space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-700">
+            <div className="bg-[#F3F1EC] dark:bg-[#18181D] rounded-3xl p-5 sm:p-6 border border-[#E6E2D8] dark:border-[#23232A] space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-[#E6E2D8] dark:border-[#23232A]">
                 <div className="flex items-center gap-2">
                   <MapPin className="w-4 h-4 text-[#FF6B00]" />
-                  <h3 className="text-sm font-black text-[#0F172A] dark:text-white">
+                  <h3 className="text-sm font-black text-[#111113] dark:text-[#F7F6F3]">
                     3. العنوان المكتوب والموقع الجغرافي (Store Physical Address & Location)
                   </h3>
                 </div>
@@ -2587,8 +2591,8 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 
                 {/* Arabic Address */}
-                <div className="bg-white dark:bg-[#0F172A] p-4 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
-                  <label className="text-xs font-bold block text-[#0F172A] dark:text-white">
+                <div className="bg-white dark:bg-[#141418] p-4 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-2">
+                  <label className="text-xs font-bold block text-[#111113] dark:text-[#F7F6F3]">
                     العنوان المكتوب (بالعربية):
                   </label>
                   <input
@@ -2597,14 +2601,14 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                     value={footerAddressAr}
                     onChange={e => setFooterAddressAr(e.target.value)}
                     placeholder="المركب التكنولوجي بالغزالة، أريانة / تونس"
-                    className="w-full text-xs py-2.5 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-transparent text-[#0F172A] dark:text-white focus:border-[#FF6B00] outline-none"
+                    className="w-full text-xs py-2.5 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent text-[#111113] dark:text-[#F7F6F3] focus:border-[#FF6B00] outline-none"
                   />
-                  <span className="text-[10px] text-slate-400 block">يظهر في واجهة المتجر العربية</span>
+                  <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980] block">يظهر في واجهة المتجر العربية</span>
                 </div>
 
                 {/* French Address */}
-                <div className="bg-white dark:bg-[#0F172A] p-4 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
-                  <label className="text-xs font-bold block text-[#0F172A] dark:text-white">
+                <div className="bg-white dark:bg-[#141418] p-4 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-2">
+                  <label className="text-xs font-bold block text-[#111113] dark:text-[#F7F6F3]">
                     العنوان بالفرنسية (FR):
                   </label>
                   <input
@@ -2612,15 +2616,15 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                     value={footerAddressFr}
                     onChange={e => setFooterAddressFr(e.target.value)}
                     placeholder="Pôle Technologique El Ghazala, Ariana"
-                    className="w-full text-xs py-2.5 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-transparent text-[#0F172A] dark:text-white focus:border-[#FF6B00] outline-none"
+                    className="w-full text-xs py-2.5 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent text-[#111113] dark:text-[#F7F6F3] focus:border-[#FF6B00] outline-none"
                     dir="ltr"
                   />
-                  <span className="text-[10px] text-slate-400 block">يظهر في النسخة الفرنسية</span>
+                  <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980] block">يظهر في النسخة الفرنسية</span>
                 </div>
 
                 {/* English Address */}
-                <div className="bg-white dark:bg-[#0F172A] p-4 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
-                  <label className="text-xs font-bold block text-[#0F172A] dark:text-white">
+                <div className="bg-white dark:bg-[#141418] p-4 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-2">
+                  <label className="text-xs font-bold block text-[#111113] dark:text-[#F7F6F3]">
                     العنوان بالإنجليزية (EN):
                   </label>
                   <input
@@ -2628,77 +2632,77 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                     value={footerAddressEn}
                     onChange={e => setFooterAddressEn(e.target.value)}
                     placeholder="El Ghazala Technopark, Ariana / Tunis"
-                    className="w-full text-xs py-2.5 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-transparent text-[#0F172A] dark:text-white focus:border-[#FF6B00] outline-none"
+                    className="w-full text-xs py-2.5 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent text-[#111113] dark:text-[#F7F6F3] focus:border-[#FF6B00] outline-none"
                     dir="ltr"
                   />
-                  <span className="text-[10px] text-slate-400 block">يظهر في النسخة الإنجليزية</span>
+                  <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980] block">يظهر في النسخة الإنجليزية</span>
                 </div>
 
                 {/* Governorate Select */}
-                <div className="bg-white dark:bg-[#0F172A] p-4 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
-                  <label className="text-xs font-bold block text-[#0F172A] dark:text-white">
+                <div className="bg-white dark:bg-[#141418] p-4 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-2">
+                  <label className="text-xs font-bold block text-[#111113] dark:text-[#F7F6F3]">
                     ولاية المقر التونسي الرئيسي:
                   </label>
                   <select
                     value={footerGov}
                     onChange={e => setFooterGov(e.target.value)}
-                    className="w-full text-xs py-2.5 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-transparent text-[#0F172A] dark:text-white focus:border-[#FF6B00] outline-none"
+                    className="w-full text-xs py-2.5 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418] text-[#111113] dark:text-[#F7F6F3] focus:border-[#FF6B00] outline-none"
                   >
                     {TUNISIAN_GOVERNORATES.map(gov => (
-                      <option key={gov.id} value={gov.id} className="dark:bg-[#0F172A] text-slate-900 dark:text-white">
+                      <option key={gov.id} value={gov.id} className="bg-white dark:bg-[#141418] text-[#111113] dark:text-[#F7F6F3]">
                         {gov.nameAr} ({gov.nameFr})
                       </option>
                     ))}
                   </select>
-                  <span className="text-[10px] text-slate-400 block">إحدى ولايات تونس الـ 24</span>
+                  <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980] block">إحدى ولايات تونس الـ 24</span>
                 </div>
 
               </div>
             </div>
 
             {/* Card 4: Working Hours */}
-            <div className="bg-[#F8FAFC] dark:bg-[#1E293B] rounded-3xl p-5 sm:p-6 border border-[#E2E8F0] dark:border-slate-800 space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-700">
+            <div className="bg-[#F3F1EC] dark:bg-[#18181D] rounded-3xl p-5 sm:p-6 border border-[#E6E2D8] dark:border-[#23232A] space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-[#E6E2D8] dark:border-[#23232A]">
                 <div className="flex items-center gap-2">
                   <Clock className="w-4 h-4 text-[#FF6B00]" />
-                  <h3 className="text-sm font-black text-[#0F172A] dark:text-white">
+                  <h3 className="text-sm font-black text-[#111113] dark:text-[#F7F6F3]">
                     4. أوقات العمل والدعم الفني (Support Working Hours)
                   </h3>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-white dark:bg-[#0F172A] p-4 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
-                  <label className="text-xs font-bold block text-[#0F172A] dark:text-white">أوقات العمل (بالعربية):</label>
+                <div className="bg-white dark:bg-[#141418] p-4 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-2">
+                  <label className="text-xs font-bold block text-[#111113] dark:text-[#F7F6F3]">أوقات العمل (بالعربية):</label>
                   <input
                     type="text"
                     value={footerWorkingHoursAr}
                     onChange={e => setFooterWorkingHoursAr(e.target.value)}
                     placeholder="من الإثنين إلى السبت: 08:30 إلى 18:30"
-                    className="w-full text-xs py-2.5 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-transparent text-[#0F172A] dark:text-white focus:border-[#FF6B00] outline-none"
+                    className="w-full text-xs py-2.5 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent text-[#111113] dark:text-[#F7F6F3] focus:border-[#FF6B00] outline-none"
                   />
                 </div>
 
-                <div className="bg-white dark:bg-[#0F172A] p-4 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
-                  <label className="text-xs font-bold block text-[#0F172A] dark:text-white">أوقات العمل (بالفرنسية):</label>
+                <div className="bg-white dark:bg-[#141418] p-4 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-2">
+                  <label className="text-xs font-bold block text-[#111113] dark:text-[#F7F6F3]">أوقات العمل (بالفرنسية):</label>
                   <input
                     type="text"
                     value={footerWorkingHoursFr}
                     onChange={e => setFooterWorkingHoursFr(e.target.value)}
                     placeholder="Du Lundi au Samedi : 08h30 à 18h30"
-                    className="w-full text-xs py-2.5 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-transparent text-[#0F172A] dark:text-white focus:border-[#FF6B00] outline-none"
+                    className="w-full text-xs py-2.5 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent text-[#111113] dark:text-[#F7F6F3] focus:border-[#FF6B00] outline-none"
                     dir="ltr"
                   />
                 </div>
 
-                <div className="bg-white dark:bg-[#0F172A] p-4 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
-                  <label className="text-xs font-bold block text-[#0F172A] dark:text-white">أوقات العمل (بالإنجليزية):</label>
+                <div className="bg-white dark:bg-[#141418] p-4 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-2">
+                  <label className="text-xs font-bold block text-[#111113] dark:text-[#F7F6F3]">أوقات العمل (بالإنجليزية):</label>
                   <input
                     type="text"
                     value={footerWorkingHoursEn}
                     onChange={e => setFooterWorkingHoursEn(e.target.value)}
                     placeholder="Monday to Saturday: 08:30 to 18:30"
-                    className="w-full text-xs py-2.5 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-transparent text-[#0F172A] dark:text-white focus:border-[#FF6B00] outline-none"
+                    className="w-full text-xs py-2.5 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent text-[#111113] dark:text-[#F7F6F3] focus:border-[#FF6B00] outline-none"
                     dir="ltr"
                   />
                 </div>
@@ -2706,7 +2710,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
             </div>
 
             {/* Bottom Actions Bar */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-4 bg-[#F8FAFC] dark:bg-[#1E293B] rounded-2xl border border-[#E2E8F0] dark:border-slate-800">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-4 bg-[#F3F1EC] dark:bg-[#18181D] rounded-2xl border border-[#E6E2D8] dark:border-[#23232A]">
               <div className="flex items-center gap-2">
                 <button
                   type="submit"
@@ -2734,7 +2738,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                     setFooterWorkingHoursFr(INITIAL_SITE_SETTINGS.workingHours.fr);
                     setFooterWorkingHoursEn(INITIAL_SITE_SETTINGS.workingHours.en);
                   }}
-                  className="px-4 py-3 rounded-xl bg-white dark:bg-[#0F172A] border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:text-[#0F172A] dark:hover:text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="px-4 py-3 rounded-xl bg-white dark:bg-[#141418] border border-[#D6D0C4] dark:border-[#32323C] text-[#5A5854] dark:text-[#B5B0A8] hover:text-[#111113] dark:hover:text-[#F7F6F3] text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
                   <span>استعادة القيم الافتراضية</span>
@@ -2758,13 +2762,13 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
             <div className="relative flex-1">
-              <Search className="w-4 h-4 text-slate-400 absolute right-3 top-3" />
+              <Search className="w-4 h-4 text-[#7A756D] dark:text-[#8E8980] absolute right-3 top-3" />
               <input
                 type="text"
                 placeholder="ابحث بالاسم أو الشركة..."
                 value={prodSearch}
                 onChange={e => setProdSearch(e.target.value)}
-                className="w-full text-xs py-2.5 pr-9 pl-3 rounded-2xl border border-[#E2E8F0] dark:border-slate-800 bg-[#F8FAFC] dark:bg-[#1E293B] text-[#0F172A] dark:text-white outline-none focus:border-[#FF6B00]"
+                className="w-full text-xs py-2.5 pr-9 pl-3 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] bg-[#F3F1EC] dark:bg-[#18181D] text-[#111113] dark:text-[#F7F6F3] outline-none focus:border-[#FF6B00]"
               />
             </div>
             <button
@@ -2798,22 +2802,22 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
               return (
                 <div 
                   key={p.id}
-                  className="p-3 rounded-2xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-800 flex items-center justify-between gap-3 shadow-2xs"
+                  className="p-3 rounded-2xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] flex items-center justify-between gap-3 shadow-2xs"
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <img 
-                      src={p.images[0] || '/assets/images/echox-logo.webp'}
+                      src={p.images[0] || '/assets/images/niapolor-badge.webp'}
                       alt={prodName}
                       referrerPolicy="no-referrer"
                       onError={handleStoreImageError}
                       onLoad={handleStoreImageLoad}
-                      className="w-14 h-14 rounded-xl object-contain bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 p-1 shrink-0"
+                      className="w-14 h-14 rounded-xl object-contain bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#23232A] p-1 shrink-0"
                     />
                     <div className="min-w-0">
-                      <h4 className="text-xs font-bold text-[#0F172A] dark:text-white truncate">
+                      <h4 className="text-xs font-bold text-[#111113] dark:text-[#F7F6F3] truncate">
                         {prodName}
                       </h4>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 block truncate">
+                      <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980] block truncate">
                         {p.companyName} • {p.stock > 0 ? `المخزون: ${p.stock}` : 'نفد المخزون'}
                       </span>
                       <div className="flex items-center gap-2 mt-0.5">
@@ -2821,7 +2825,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                           {p.price.toFixed(3)} د.ت
                         </span>
                         {p.originalPrice && p.originalPrice > p.price && (
-                          <span className="text-[10px] text-slate-400 line-through">
+                          <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980] line-through">
                             {p.originalPrice.toFixed(3)}
                           </span>
                         )}
@@ -2838,7 +2842,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                         if (!res.ok) setTabActionError(res.error || 'تعذر تحديث حالة المنتج على الخادم.');
                       }}
                       className={`p-1.5 rounded-lg border text-xs cursor-pointer ${
-                        p.active ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30' : 'bg-slate-200 dark:bg-slate-700 text-slate-500'
+                        p.active ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30' : 'bg-[#EBE7DF] dark:bg-[#23232A] text-[#7A756D] dark:text-[#8E8980] border-[#D6D0C4] dark:border-[#32323C]'
                       }`}
                       title={p.active ? 'نشط بالمتجر' : 'معطل'}
                     >
@@ -2883,7 +2887,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           <div className="flex items-center justify-between gap-2">
             <div>
               <h3 className="text-sm font-black">أقسام وتصنيفات المتجر</h3>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">التعديلات هنا تحدث شريط التصنيفات العلوي والشاشة فوراُ</p>
+              <p className="text-[11px] text-[#7A756D] dark:text-[#8E8980]">التعديلات هنا تحدث شريط التصنيفات العلوي والشاشة فوراُ</p>
             </div>
             <button
               type="button"
@@ -2904,15 +2908,15 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
               return (
                 <div
                   key={c.id}
-                  className="p-3 rounded-2xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-800 flex items-center justify-between gap-2"
+                  className="p-3 rounded-2xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] flex items-center justify-between gap-2"
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="text-xl w-8 h-8 rounded-xl bg-white dark:bg-[#0F172A] flex items-center justify-center border border-slate-200 dark:border-slate-700 shrink-0">
+                    <span className="text-xl w-8 h-8 rounded-xl bg-white dark:bg-[#141418] flex items-center justify-center border border-[#E6E2D8] dark:border-[#23232A] shrink-0">
                       {c.icon || '📦'}
                     </span>
                     <div className="min-w-0">
                       <span className="text-xs font-black block truncate">{c.label}</span>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 block truncate">
+                      <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980] block truncate">
                         {count} منتج مسجل
                       </span>
                     </div>
@@ -2931,7 +2935,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                           title: c.label,
                         });
                       }}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-500/10 cursor-pointer transition-colors"
+                      className="p-1.5 rounded-lg text-[#7A756D] dark:text-[#8E8980] hover:text-red-600 hover:bg-red-500/10 cursor-pointer transition-colors"
                       title="حذف هذا القسم نهائياً"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -2950,7 +2954,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           <div className="flex items-center justify-between gap-2">
             <div>
               <h3 className="text-sm font-black">الشركاء والموزعون والعلامات</h3>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">إدارة العلامات التجارية الشريكة لمتجر ECHOX</p>
+              <p className="text-[11px] text-[#7A756D] dark:text-[#8E8980]">إدارة العلامات التجارية الشريكة لمتجر NIAPOLOR</p>
             </div>
             <button
               type="button"
@@ -2966,25 +2970,25 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
             {companies.map(comp => (
               <div
                 key={comp.id}
-                className="p-3.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-800 flex items-center justify-between gap-3 shadow-2xs"
+                className="p-3.5 rounded-2xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] flex items-center justify-between gap-3 shadow-2xs"
               >
                 <div className="flex items-center gap-3 min-w-0">
                   <img
-                    src={comp.logo || '/assets/images/echox-logo.webp'}
+                    src={comp.logo || '/assets/images/niapolor-badge.webp'}
                     alt={comp.name}
                     referrerPolicy="no-referrer"
                     onError={handleStoreImageError}
                     onLoad={handleStoreImageLoad}
-                    className="w-12 h-12 rounded-xl object-contain bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 p-1 shrink-0"
+                    className="w-12 h-12 rounded-xl object-contain bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#23232A] p-1 shrink-0"
                   />
                   <div className="min-w-0">
-                    <h4 className="text-xs font-bold text-[#0F172A] dark:text-white truncate">
+                    <h4 className="text-xs font-bold text-[#111113] dark:text-[#F7F6F3] truncate">
                       {comp.name}
                     </h4>
-                    <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-mono">
+                    <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980] block font-mono">
                       {comp.phone} • {comp.governorate}
                     </span>
-                    <span className="text-[10px] text-slate-400 truncate block mt-0.5">
+                    <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980] truncate block mt-0.5">
                       {comp.email}
                     </span>
                   </div>
@@ -3019,7 +3023,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           <div className="flex items-center justify-between gap-2">
             <div>
               <h3 className="text-sm font-black">العروض والبانرات الإعلانية</h3>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">تظهر البانرات النشطة مباشرة في أعلى واجهة المتجر الرئيسية</p>
+              <p className="text-[11px] text-[#7A756D] dark:text-[#8E8980]">تظهر البانرات النشطة مباشرة في أعلى واجهة المتجر الرئيسية</p>
             </div>
             <button
               type="button"
@@ -3038,10 +3042,10 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
             {banners.map(b => (
               <div
                 key={b.id}
-                className="p-3.5 rounded-3xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-800 space-y-3"
+                className="p-3.5 rounded-3xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] space-y-3"
               >
                 {/* Banner Preview */}
-                <div className={`rounded-2xl bg-gradient-to-r ${b.bgGradient || 'from-[#FF6B00] via-[#F97316] to-[#EA580C]'} text-white p-3 shadow-xs flex items-center justify-between gap-2`}>
+                <div className={`rounded-2xl bg-gradient-to-r ${b.bgGradient || 'from-[#FF6B00] via-[#F97316] to-[#E05E00]'} text-white p-3 shadow-xs flex items-center justify-between gap-2`}>
                   <div className="flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-white" />
                     <div>
@@ -3067,7 +3071,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                         if (!res.ok) setTabActionError(res.error || 'تعذر تحديث حالة البانر على الخادم.');
                       }}
                       className={`px-3 py-1 rounded-full text-xs font-bold cursor-pointer transition-colors ${
-                        b.active ? 'bg-emerald-500/20 text-emerald-600' : 'bg-slate-200 dark:bg-slate-700 text-slate-500'
+                        b.active ? 'bg-emerald-500/20 text-emerald-600' : 'bg-[#EBE7DF] dark:bg-[#23232A] text-[#7A756D] dark:text-[#8E8980]'
                       }`}
                     >
                       {b.active ? 'نشط بالواجهة ✓' : 'معطل'}
@@ -3103,13 +3107,13 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
             <div className="relative flex-1">
-              <Search className="w-4 h-4 text-slate-400 absolute right-3 top-3" />
+              <Search className="w-4 h-4 text-[#7A756D] dark:text-[#8E8980] absolute right-3 top-3" />
               <input
                 type="text"
                 placeholder="ابحث برقم التتبع أو اسم الحريف أو الهاتف..."
                 value={orderSearch}
                 onChange={e => setOrderSearch(e.target.value)}
-                className="w-full text-xs py-2.5 pr-9 pl-3 rounded-2xl border border-[#E2E8F0] dark:border-slate-800 bg-[#F8FAFC] dark:bg-[#1E293B] text-[#0F172A] dark:text-white outline-none focus:border-[#FF6B00]"
+                className="w-full text-xs py-2.5 pr-9 pl-3 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] bg-[#F3F1EC] dark:bg-[#18181D] text-[#111113] dark:text-[#F7F6F3] outline-none focus:border-[#FF6B00]"
               />
             </div>
 
@@ -3118,7 +3122,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                 type="button"
                 onClick={() => void triggerOrdersSync(false)}
                 disabled={ordersSyncing}
-                className="px-3 py-2.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:border-[#FF6B00] text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60"
+                className="px-3 py-2.5 rounded-2xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] text-[#5A5854] dark:text-[#B5B0A8] hover:border-[#FF6B00] text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60"
                 title="تحديث الطلبات من الخادم"
               >
                 <RefreshCw className={`w-3.5 h-3.5 text-[#FF6B00] ${ordersSyncing ? 'animate-spin' : ''}`} />
@@ -3137,7 +3141,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
               <button
                 type="button"
                 onClick={exportOrdersCSV}
-                className="p-2.5 rounded-2xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-[#0F172A] dark:hover:text-white cursor-pointer"
+                className="p-2.5 rounded-2xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] text-[#5A5854] dark:text-[#B5B0A8] hover:text-[#111113] dark:hover:text-[#F7F6F3] cursor-pointer"
                 title="تصدير CSV"
               >
                 <Download className="w-4 h-4" />
@@ -3146,7 +3150,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           </div>
 
           {lastOrdersSyncAt && !ordersSyncError && (
-            <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 px-1">
+            <div className="flex items-center justify-between text-[11px] text-[#7A756D] dark:text-[#8E8980] px-1">
               <span>متزامن مع الخادم المركزي • آخر تحديث: <strong className="font-mono">{new Date(lastOrdersSyncAt).toLocaleTimeString('ar-TN')}</strong></span>
             </div>
           )}
@@ -3176,8 +3180,8 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                 onClick={() => setOrderStatusFilter(st)}
                 className={`px-3 py-1 rounded-full text-xs font-bold shrink-0 transition-all cursor-pointer ${
                   orderStatusFilter === st
-                    ? 'bg-[#0F172A] dark:bg-white text-white dark:text-[#0F172A]'
-                    : 'bg-[#F8FAFC] dark:bg-[#1E293B] text-slate-600 dark:text-slate-300 border border-[#E2E8F0] dark:border-slate-800'
+                    ? 'bg-[#111113] dark:bg-[#F7F6F3] text-white dark:text-[#111113]'
+                    : 'bg-[#F3F1EC] dark:bg-[#18181D] text-[#5A5854] dark:text-[#B5B0A8] border border-[#E6E2D8] dark:border-[#23232A]'
                 }`}
               >
                 {st === 'all' ? 'كافة الحالات' : st}
@@ -3194,7 +3198,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
               <button
                 type="button"
                 onClick={() => setOrderStatusError(null)}
-                className="text-slate-400 hover:text-slate-700 cursor-pointer"
+                className="text-[#7A756D] dark:text-[#8E8980] hover:text-[#111113] dark:hover:text-[#F7F6F3] cursor-pointer"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -3204,7 +3208,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           {/* Orders Cards */}
           <div className="space-y-3">
             {filteredOrders.length === 0 ? (
-              <div className="p-8 text-center bg-[#F8FAFC] dark:bg-[#1E293B] rounded-3xl border border-[#E2E8F0] dark:border-slate-800 text-xs text-slate-500">
+              <div className="p-8 text-center bg-[#F3F1EC] dark:bg-[#18181D] rounded-3xl border border-[#E6E2D8] dark:border-[#23232A] text-xs text-[#7A756D] dark:text-[#8E8980]">
                 لا توجد طلبات مطابقة للبحث أو الفلتر
               </div>
             ) : (
@@ -3213,17 +3217,17 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                 return (
                 <div
                   key={o.id}
-                  className="p-4 rounded-3xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-800 space-y-3 shadow-2xs"
+                  className="p-4 rounded-3xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] space-y-3 shadow-2xs"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs font-black font-mono bg-white dark:bg-[#0F172A] px-2.5 py-1 rounded-xl border border-slate-200 dark:border-slate-700">
+                      <span className="text-xs font-black font-mono bg-white dark:bg-[#141418] px-2.5 py-1 rounded-xl border border-[#E6E2D8] dark:border-[#23232A]">
                         {o.trackingNumber}
                       </span>
                       <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${getPaymentStatusTone(o.paymentStatus)}`}>
                         {(t.payments.statuses as Record<string, string>)[o.paymentStatus] || o.paymentStatus}
                       </span>
-                      <span className="text-[10px] text-slate-400 font-mono">
+                      <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980] font-mono">
                         {new Date(o.createdAt).toLocaleDateString('ar-TN')}
                       </span>
                     </div>
@@ -3244,7 +3248,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                             title: `الطلب ${o.trackingNumber} (${o.customerName})`,
                           });
                         }}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-500/10 cursor-pointer"
+                        className="p-1.5 rounded-lg text-[#7A756D] dark:text-[#8E8980] hover:text-red-600 hover:bg-red-500/10 cursor-pointer"
                         title="حذف هذا الطلب نهائياً"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -3259,7 +3263,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                         {o.customerPhone}
                       </a>
                     </div>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    <p className="text-[11px] text-[#7A756D] dark:text-[#8E8980]">
                       {o.shippingAddress?.governorate ? `ولاية ${getGovernorateName(o.shippingAddress.governorate, language)}` : ''}
                       {(o.shippingAddress?.delegation || o.shippingAddress?.city) ? ` • ${o.shippingAddress.delegation || o.shippingAddress.city}` : ''}
                       {o.shippingAddress?.street ? ` • ${o.shippingAddress.street}` : ''} • وسيلة الدفع: <strong className="font-mono">{o.paymentMethod}</strong>
@@ -3270,7 +3274,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                         {o.items.map((it, idx) => (
                           <span
                             key={`${o.id}_it_${idx}`}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 text-[11px] text-slate-700 dark:text-slate-200"
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#23232A] text-[11px] text-[#5A5854] dark:text-[#B5B0A8]"
                           >
                             <span className="font-bold text-[#FF6B00] font-mono">{it.quantity}×</span>
                             <span className="truncate max-w-[200px]">
@@ -3283,7 +3287,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                       </div>
                     )}
                     {o.notes && (
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 italic">
+                      <p className="text-[11px] text-[#7A756D] dark:text-[#8E8980] italic">
                         ملاحظة: {o.notes}
                       </p>
                     )}
@@ -3303,8 +3307,8 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   )}
 
                   {/* Status Selection */}
-                  <div className="pt-2 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2">
-                    <span className="text-[11px] font-bold text-slate-500">حالة الشحن:</span>
+                  <div className="pt-2 border-t border-[#E6E2D8] dark:border-[#23232A] flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold text-[#7A756D] dark:text-[#8E8980]">حالة الشحن:</span>
                     <select
                       value={o.status}
                       onChange={async e => {
@@ -3315,14 +3319,14 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                           setOrderStatusError(res.error || t.payments.shippingBlockedUnpaid);
                         }
                       }}
-                      className="text-xs py-1 px-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] font-bold text-[#0F172A] dark:text-white cursor-pointer"
+                      className="text-xs py-1 px-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418] font-bold text-[#111113] dark:text-[#F7F6F3] cursor-pointer"
                     >
-                      <option value="new">جديد (New)</option>
-                      <option value="under_confirmation">قيد التأكيد (Confirmation)</option>
-                      <option value="preparing" disabled={!shipAllowed}>قيد التجهيز (Preparing)</option>
-                      <option value="out_for_delivery" disabled={!shipAllowed}>خرج للتسليم (Out for delivery)</option>
-                      <option value="delivered" disabled={!shipAllowed}>تم التسليم (Delivered)</option>
-                      <option value="cancelled">ملغى (Cancelled)</option>
+                      <option value="new" className="bg-white dark:bg-[#141418] text-[#111113] dark:text-[#F7F6F3]">جديد (New)</option>
+                      <option value="under_confirmation" className="bg-white dark:bg-[#141418] text-[#111113] dark:text-[#F7F6F3]">قيد التأكيد (Confirmation)</option>
+                      <option value="preparing" disabled={!shipAllowed} className="bg-white dark:bg-[#141418] text-[#111113] dark:text-[#F7F6F3]">قيد التجهيز (Preparing)</option>
+                      <option value="out_for_delivery" disabled={!shipAllowed} className="bg-white dark:bg-[#141418] text-[#111113] dark:text-[#F7F6F3]">خرج للتسليم (Out for delivery)</option>
+                      <option value="delivered" disabled={!shipAllowed} className="bg-white dark:bg-[#141418] text-[#111113] dark:text-[#F7F6F3]">تم التسليم (Delivered)</option>
+                      <option value="cancelled" className="bg-white dark:bg-[#141418] text-[#111113] dark:text-[#F7F6F3]">ملغى (Cancelled)</option>
                     </select>
                   </div>
                 </div>
@@ -3342,13 +3346,32 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
 
       {/* Modal: Add/Edit Product */}
       {showAddProdModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs animate-fadeIn overflow-y-auto">
-          <div className="w-full max-w-lg bg-white dark:bg-[#1E293B] rounded-3xl p-5 border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4 my-auto max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700">
+        <div
+          onClick={() => {
+            if (!entitySaving) {
+              setEntityModalError('');
+              setShowAddProdModal(false);
+            }
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs animate-fadeIn overflow-y-auto"
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            className="w-full max-w-lg bg-white dark:bg-[#141418] rounded-3xl p-5 border border-[#E6E2D8] dark:border-[#23232A] shadow-2xl space-y-4 my-auto max-h-[90vh] overflow-y-auto"
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-[#E6E2D8] dark:border-[#23232A]">
               <h3 className="text-sm font-black">
                 {editingProd ? 'تعديل بيانات المنتج' : '+ إضافة منتج جديد للكاتالوج'}
               </h3>
-              <button onClick={() => setShowAddProdModal(false)} className="p-1 rounded-full text-slate-400 hover:text-slate-800 dark:hover:text-white">
+              <button
+                type="button"
+                disabled={entitySaving}
+                onClick={() => {
+                  setEntityModalError('');
+                  setShowAddProdModal(false);
+                }}
+                className="p-1 rounded-full text-[#7A756D] dark:text-[#8E8980] hover:text-[#111113] dark:hover:text-[#F7F6F3] cursor-pointer disabled:opacity-50"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -3362,7 +3385,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   value={prodNameAr}
                   onChange={e => setProdNameAr(e.target.value)}
                   placeholder="مثال: مثقاب احترافي لاسلكي 20V..."
-                  className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent"
+                  className="w-full text-xs p-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent outline-none focus:border-[#FF6B00]"
                 />
               </div>
 
@@ -3373,7 +3396,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   value={prodNameFr}
                   onChange={e => setProdNameFr(e.target.value)}
                   placeholder="Ex: Perceuse Sans Fil 20V..."
-                  className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent"
+                  className="w-full text-xs p-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent outline-none focus:border-[#FF6B00]"
                 />
               </div>
 
@@ -3387,7 +3410,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                     value={prodPrice}
                     onChange={e => setProdPrice(e.target.value)}
                     placeholder="345.000"
-                    className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent font-mono"
+                    className="w-full text-xs p-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent font-mono outline-none focus:border-[#FF6B00]"
                   />
                 </div>
 
@@ -3399,7 +3422,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                     value={prodOriginalPrice}
                     onChange={e => setProdOriginalPrice(e.target.value)}
                     placeholder="420.000"
-                    className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent font-mono"
+                    className="w-full text-xs p-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent font-mono outline-none focus:border-[#FF6B00]"
                   />
                 </div>
               </div>
@@ -3410,10 +3433,10 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   <select
                     value={prodCategory}
                     onChange={e => setProdCategory(e.target.value)}
-                    className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent font-bold"
+                    className="w-full text-xs p-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418] text-[#111113] dark:text-[#F7F6F3] font-bold outline-none focus:border-[#FF6B00]"
                   >
                     {categories.filter(c => c.id !== 'all').map(c => (
-                      <option key={c.id} value={c.id} className="text-[#0F172A]">{c.label}</option>
+                      <option key={c.id} value={c.id} className="bg-white dark:bg-[#141418] text-[#111113] dark:text-[#F7F6F3]">{c.label}</option>
                     ))}
                   </select>
                 </div>
@@ -3424,7 +3447,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                     type="number"
                     value={prodStock}
                     onChange={e => setProdStock(e.target.value)}
-                    className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent font-mono"
+                    className="w-full text-xs p-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent font-mono outline-none focus:border-[#FF6B00]"
                   />
                 </div>
               </div>
@@ -3434,10 +3457,10 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                 <select
                   value={prodCompanyId}
                   onChange={e => setProdCompanyId(e.target.value)}
-                  className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent font-bold"
+                  className="w-full text-xs p-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418] text-[#111113] dark:text-[#F7F6F3] font-bold outline-none focus:border-[#FF6B00]"
                 >
                   {companies.map(c => (
-                    <option key={c.id} value={c.id} className="text-[#0F172A]">{c.name}</option>
+                    <option key={c.id} value={c.id} className="bg-white dark:bg-[#141418] text-[#111113] dark:text-[#F7F6F3]">{c.name}</option>
                   ))}
                 </select>
               </div>
@@ -3450,7 +3473,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                       type="button"
                       disabled={prodImgInspecting || !prodImagesText.trim()}
                       onClick={handleInspectProductImages}
-                      className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-[#FF6B00]/15 text-[11px] font-bold text-[#0F172A] dark:text-slate-200 border border-slate-200 dark:border-slate-700 cursor-pointer disabled:opacity-50"
+                      className="px-2.5 py-1 rounded-lg bg-[#F3F1EC] dark:bg-[#18181D] hover:bg-[#FF6B00]/15 text-[11px] font-bold text-[#111113] dark:text-[#B5B0A8] border border-[#E6E2D8] dark:border-[#23232A] cursor-pointer disabled:opacity-50"
                     >
                       {prodImgInspecting ? 'جارٍ الفحص...' : 'فحص الروابط'}
                     </button>
@@ -3475,7 +3498,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                         ? 'bg-red-500/5 border-red-500/30 text-red-700 dark:text-red-300'
                         : prodImgUploadStage === 'done'
                         ? 'bg-emerald-500/5 border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
-                        : 'bg-[#FF6B00]/5 border-[#FF6B00]/30 text-[#0F172A] dark:text-slate-200'
+                        : 'bg-[#FF6B00]/5 border-[#FF6B00]/30 text-[#111113] dark:text-[#F7F6F3]'
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
@@ -3496,7 +3519,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                     </div>
 
                     {!prodImgUploadError && (
-                      <div className="w-full h-1.5 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                      <div className="w-full h-1.5 rounded-full bg-[#EBE7DF] dark:bg-[#23232A] overflow-hidden">
                         <div
                           className={`h-full transition-all duration-200 ${
                             prodImgUploadStage === 'done' ? 'bg-emerald-500' : 'bg-[#FF6B00]'
@@ -3527,7 +3550,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   }}
                   placeholder="https://example.com/product.webp&#10;https://..."
                   dir="ltr"
-                  className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent font-mono"
+                  className="w-full text-xs p-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent font-mono outline-none focus:border-[#FF6B00]"
                 />
 
                 {prodImagesText.split('\n').map(s => s.trim()).filter(Boolean).length > 0 && (
@@ -3544,16 +3567,16 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                           className={`p-2 rounded-xl border text-[11px] flex items-center gap-2.5 ${
                             hasProblem
                               ? 'bg-red-500/5 border-red-500/30 text-red-700 dark:text-red-300'
-                              : 'bg-slate-50 dark:bg-[#0F172A] border-slate-200 dark:border-slate-700'
+                              : 'bg-[#F3F1EC] dark:bg-[#18181D] border-[#E6E2D8] dark:border-[#23232A]'
                           }`}
                         >
                           <img
-                            src={!norm.issue ? previewUrl : '/assets/images/echox-logo.webp'}
+                            src={!norm.issue ? previewUrl : '/assets/images/niapolor-badge.webp'}
                             alt={`معاينة صورة ${idx + 1}`}
                             referrerPolicy="no-referrer"
                             onLoad={(ev) => {
                               handleStoreImageLoad(ev);
-                              if (!norm.issue && ev.currentTarget.getAttribute('src') !== '/assets/images/echox-logo.webp') {
+                              if (!norm.issue && ev.currentTarget.getAttribute('src') !== '/assets/images/niapolor-badge.webp') {
                                 setProdImgDomStatus(prev => (prev[previewUrl] === 'ok' ? prev : { ...prev, [previewUrl]: 'ok' }));
                               }
                             }}
@@ -3561,7 +3584,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                               handleStoreImageError(ev);
                               setProdImgDomStatus(prev => (prev[previewUrl] === 'error' ? prev : { ...prev, [previewUrl]: 'error' }));
                             }}
-                            className="w-11 h-11 rounded-lg object-contain bg-white border border-slate-200 dark:border-slate-700 shrink-0 p-0.5"
+                            className="w-11 h-11 rounded-lg object-contain bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#23232A] shrink-0 p-0.5"
                           />
                           <div className="min-w-0 flex-1 space-y-1">
                             <p className="font-mono text-[10px] truncate opacity-80" dir="ltr">
@@ -3602,7 +3625,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                               <button
                                 type="button"
                                 onClick={() => replaceProdImageLine(rawLine, srvInfo.httpsUpgradeUrl!)}
-                                className="px-2 py-0.5 rounded-md bg-[#FF6B00] hover:bg-[#e05e00] text-white text-[10px] font-bold cursor-pointer"
+                                className="px-2 py-0.5 rounded-md bg-[#FF6B00] hover:bg-[#E05E00] text-white text-[10px] font-bold cursor-pointer"
                               >
                                 ترقية الرابط إلى HTTPS
                               </button>
@@ -3622,7 +3645,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   value={prodDescAr}
                   onChange={e => setProdDescAr(e.target.value)}
                   placeholder="أدخل تفاصيل ومميزات المنتج والضمان..."
-                  className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent"
+                  className="w-full text-xs p-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent outline-none focus:border-[#FF6B00]"
                 />
               </div>
 
@@ -3641,7 +3664,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                     setEntityModalError('');
                     setShowAddProdModal(false);
                   }}
-                  className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800 dark:hover:text-white disabled:opacity-50"
+                  className="px-4 py-2 text-xs font-bold text-[#7A756D] dark:text-[#8E8980] hover:text-[#111113] dark:hover:text-[#F7F6F3] disabled:opacity-50 cursor-pointer"
                 >
                   إلغاء
                 </button>
@@ -3660,11 +3683,22 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
 
       {/* Modal: Add Category */}
       {showAddCategoryModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs animate-fadeIn">
-          <div className="w-full max-w-sm bg-white dark:bg-[#1E293B] rounded-3xl p-5 border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700">
+        <div
+          onClick={() => { if (!entitySaving) { setEntityModalError(''); setShowAddCategoryModal(false); } }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs animate-fadeIn"
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            className="w-full max-w-sm bg-white dark:bg-[#141418] rounded-3xl p-5 border border-[#E6E2D8] dark:border-[#23232A] shadow-2xl space-y-4"
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-[#E6E2D8] dark:border-[#23232A]">
               <h3 className="text-sm font-black">+ إضافة قسم جديد</h3>
-              <button onClick={() => { setEntityModalError(''); setShowAddCategoryModal(false); }} className="p-1 rounded-full text-slate-400">
+              <button
+                type="button"
+                disabled={entitySaving}
+                onClick={() => { setEntityModalError(''); setShowAddCategoryModal(false); }}
+                className="p-1 rounded-full text-[#7A756D] dark:text-[#8E8980] hover:text-[#111113] dark:hover:text-[#F7F6F3] cursor-pointer disabled:opacity-50"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -3678,7 +3712,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   value={catLabel}
                   onChange={e => setCatLabel(e.target.value)}
                   placeholder="مثال: مضخات ومحركات هيدروليكية..."
-                  className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent"
+                  className="w-full text-xs p-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent outline-none focus:border-[#FF6B00]"
                 />
               </div>
 
@@ -3689,7 +3723,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   value={catIcon}
                   onChange={e => setCatIcon(e.target.value)}
                   placeholder="🔧"
-                  className="w-full text-sm p-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent text-center"
+                  className="w-full text-sm p-2 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent text-center outline-none focus:border-[#FF6B00]"
                 />
               </div>
 
@@ -3700,7 +3734,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   value={catDesc}
                   onChange={e => setCatDesc(e.target.value)}
                   placeholder="مضخات ضغط عالي معتمدة..."
-                  className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent"
+                  className="w-full text-xs p-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent outline-none focus:border-[#FF6B00]"
                 />
               </div>
 
@@ -3716,7 +3750,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   type="button"
                   disabled={entitySaving}
                   onClick={() => { setEntityModalError(''); setShowAddCategoryModal(false); }}
-                  className="px-3 py-2 text-xs font-bold text-slate-500 disabled:opacity-50"
+                  className="px-3 py-2 text-xs font-bold text-[#7A756D] dark:text-[#8E8980] hover:text-[#111113] dark:hover:text-[#F7F6F3] disabled:opacity-50 cursor-pointer"
                 >
                   إلغاء
                 </button>
@@ -3735,11 +3769,22 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
 
       {/* Modal: Add Partner */}
       {showAddPartnerModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs animate-fadeIn">
-          <div className="w-full max-w-sm bg-white dark:bg-[#1E293B] rounded-3xl p-5 border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700">
+        <div
+          onClick={() => { if (!entitySaving) { setEntityModalError(''); setShowAddPartnerModal(false); } }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs animate-fadeIn"
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            className="w-full max-w-sm bg-white dark:bg-[#141418] rounded-3xl p-5 border border-[#E6E2D8] dark:border-[#23232A] shadow-2xl space-y-4"
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-[#E6E2D8] dark:border-[#23232A]">
               <h3 className="text-sm font-black">+ إضافة شريك / علامة تجارية</h3>
-              <button onClick={() => { setEntityModalError(''); setShowAddPartnerModal(false); }} className="p-1 rounded-full text-slate-400">
+              <button
+                type="button"
+                disabled={entitySaving}
+                onClick={() => { setEntityModalError(''); setShowAddPartnerModal(false); }}
+                className="p-1 rounded-full text-[#7A756D] dark:text-[#8E8980] hover:text-[#111113] dark:hover:text-[#F7F6F3] cursor-pointer disabled:opacity-50"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -3753,7 +3798,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   value={partnerName}
                   onChange={e => setPartnerName(e.target.value)}
                   placeholder="مثال: Tunis Outillage Pro..."
-                  className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent"
+                  className="w-full text-xs p-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent outline-none focus:border-[#FF6B00]"
                 />
               </div>
 
@@ -3765,7 +3810,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   value={partnerPhone}
                   onChange={e => setPartnerPhone(e.target.value)}
                   placeholder="+216 71 000 000"
-                  className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent font-mono"
+                  className="w-full text-xs p-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent font-mono outline-none focus:border-[#FF6B00]"
                 />
               </div>
 
@@ -3776,7 +3821,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   value={partnerEmail}
                   onChange={e => setPartnerEmail(e.target.value)}
                   placeholder="contact@company.tn"
-                  className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent font-mono"
+                  className="w-full text-xs p-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent font-mono outline-none focus:border-[#FF6B00]"
                 />
               </div>
 
@@ -3787,7 +3832,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   value={partnerLogo}
                   onChange={e => setPartnerLogo(e.target.value)}
                   placeholder="https://..."
-                  className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent font-mono"
+                  className="w-full text-xs p-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent font-mono outline-none focus:border-[#FF6B00]"
                 />
               </div>
 
@@ -3803,7 +3848,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   type="button"
                   disabled={entitySaving}
                   onClick={() => { setEntityModalError(''); setShowAddPartnerModal(false); }}
-                  className="px-3 py-2 text-xs font-bold text-slate-500 disabled:opacity-50"
+                  className="px-3 py-2 text-xs font-bold text-[#7A756D] dark:text-[#8E8980] hover:text-[#111113] dark:hover:text-[#F7F6F3] disabled:opacity-50 cursor-pointer"
                 >
                   إلغاء
                 </button>
@@ -3822,11 +3867,22 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
 
       {/* Modal: Add Banner */}
       {showAddBannerModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs animate-fadeIn">
-          <div className="w-full max-w-sm bg-white dark:bg-[#1E293B] rounded-3xl p-5 border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700">
+        <div
+          onClick={() => { if (!entitySaving) { setEntityModalError(''); setShowAddBannerModal(false); } }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs animate-fadeIn"
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            className="w-full max-w-sm bg-white dark:bg-[#141418] rounded-3xl p-5 border border-[#E6E2D8] dark:border-[#23232A] shadow-2xl space-y-4"
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-[#E6E2D8] dark:border-[#23232A]">
               <h3 className="text-sm font-black">+ إضافة بانر ترويجي</h3>
-              <button onClick={() => { setEntityModalError(''); setShowAddBannerModal(false); }} className="p-1 rounded-full text-slate-400">
+              <button
+                type="button"
+                disabled={entitySaving}
+                onClick={() => { setEntityModalError(''); setShowAddBannerModal(false); }}
+                className="p-1 rounded-full text-[#7A756D] dark:text-[#8E8980] hover:text-[#111113] dark:hover:text-[#F7F6F3] cursor-pointer disabled:opacity-50"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -3839,7 +3895,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   value={bannerTag}
                   onChange={e => setBannerTag(e.target.value)}
                   placeholder="عروض حصرية / تخفيضات الموسم..."
-                  className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent"
+                  className="w-full text-xs p-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent outline-none focus:border-[#FF6B00]"
                 />
               </div>
 
@@ -3851,7 +3907,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   value={bannerTitle}
                   onChange={e => setBannerTitle(e.target.value)}
                   placeholder="تخفيضات خاصة على معدات الورشات..."
-                  className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent"
+                  className="w-full text-xs p-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent outline-none focus:border-[#FF6B00]"
                 />
               </div>
 
@@ -3862,7 +3918,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   value={bannerSubtitle}
                   onChange={e => setBannerSubtitle(e.target.value)}
                   placeholder="شحن سريع لكافة الـ24 ولاية والدفع عند الاستلام..."
-                  className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent"
+                  className="w-full text-xs p-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent outline-none focus:border-[#FF6B00]"
                 />
               </div>
 
@@ -3878,7 +3934,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   type="button"
                   disabled={entitySaving}
                   onClick={() => { setEntityModalError(''); setShowAddBannerModal(false); }}
-                  className="px-3 py-2 text-xs font-bold text-slate-500 disabled:opacity-50"
+                  className="px-3 py-2 text-xs font-bold text-[#7A756D] dark:text-[#8E8980] hover:text-[#111113] dark:hover:text-[#F7F6F3] disabled:opacity-50 cursor-pointer"
                 >
                   إلغاء
                 </button>
@@ -3897,11 +3953,22 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
 
       {/* Modal: Add Manual Order */}
       {showAddManualOrderModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs animate-fadeIn">
-          <div className="w-full max-w-sm bg-white dark:bg-[#1E293B] rounded-3xl p-5 border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700">
+        <div
+          onClick={() => { if (!entitySaving) { setEntityModalError(''); setShowAddManualOrderModal(false); } }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs animate-fadeIn"
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            className="w-full max-w-sm bg-white dark:bg-[#141418] rounded-3xl p-5 border border-[#E6E2D8] dark:border-[#23232A] shadow-2xl space-y-4"
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-[#E6E2D8] dark:border-[#23232A]">
               <h3 className="text-sm font-black">+ تسجيل طلب يدوي (هاتف / واتساب)</h3>
-              <button onClick={() => { setEntityModalError(''); setShowAddManualOrderModal(false); }} className="p-1 rounded-full text-slate-400">
+              <button
+                type="button"
+                disabled={entitySaving}
+                onClick={() => { setEntityModalError(''); setShowAddManualOrderModal(false); }}
+                className="p-1 rounded-full text-[#7A756D] dark:text-[#8E8980] hover:text-[#111113] dark:hover:text-[#F7F6F3] cursor-pointer disabled:opacity-50"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -3915,7 +3982,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   value={manualCustName}
                   onChange={e => setManualCustName(e.target.value)}
                   placeholder="مثال: منير الطرابلسي..."
-                  className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent"
+                  className="w-full text-xs p-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent outline-none focus:border-[#FF6B00]"
                 />
               </div>
 
@@ -3927,7 +3994,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   value={manualCustPhone}
                   onChange={e => setManualCustPhone(e.target.value)}
                   placeholder="+216 98 000 000"
-                  className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent font-mono"
+                  className="w-full text-xs p-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent font-mono outline-none focus:border-[#FF6B00]"
                 />
               </div>
 
@@ -3941,10 +4008,10 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                       setManualGov(nextGov);
                       setManualCity(getDelegationsForGovernorate(nextGov)[0] || '');
                     }}
-                    className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent font-bold"
+                    className="w-full text-xs p-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418] text-[#111113] dark:text-[#F7F6F3] font-bold outline-none focus:border-[#FF6B00]"
                   >
                     {TUNISIAN_GOVERNORATES.map(g => (
-                      <option key={g.id} value={g.id} className="text-[#0F172A]">{g.nameAr}</option>
+                      <option key={g.id} value={g.id} className="bg-white dark:bg-[#141418] text-[#111113] dark:text-[#F7F6F3]">{g.nameAr}</option>
                     ))}
                   </select>
                 </div>
@@ -3954,10 +4021,10 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   <select
                     value={manualCity}
                     onChange={e => setManualCity(e.target.value)}
-                    className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent font-bold"
+                    className="w-full text-xs p-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418] text-[#111113] dark:text-[#F7F6F3] font-bold outline-none focus:border-[#FF6B00]"
                   >
                     {getDelegationsForGovernorate(manualGov).map(del => (
-                      <option key={del} value={del} className="text-[#0F172A]">{del}</option>
+                      <option key={del} value={del} className="bg-white dark:bg-[#141418] text-[#111113] dark:text-[#F7F6F3]">{del}</option>
                     ))}
                   </select>
                 </div>
@@ -3972,7 +4039,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   value={manualAmount}
                   onChange={e => setManualAmount(e.target.value)}
                   placeholder="120.000"
-                  className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent font-mono"
+                  className="w-full text-xs p-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent font-mono outline-none focus:border-[#FF6B00]"
                 />
               </div>
 
@@ -3983,7 +4050,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   value={manualNotes}
                   onChange={e => setManualNotes(e.target.value)}
                   placeholder="طلب عبر اتصال واتساب..."
-                  className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent"
+                  className="w-full text-xs p-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent outline-none focus:border-[#FF6B00]"
                 />
               </div>
 
@@ -3999,7 +4066,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   type="button"
                   disabled={entitySaving}
                   onClick={() => { setEntityModalError(''); setShowAddManualOrderModal(false); }}
-                  className="px-3 py-2 text-xs font-bold text-slate-500 disabled:opacity-50"
+                  className="px-3 py-2 text-xs font-bold text-[#7A756D] dark:text-[#8E8980] hover:text-[#111113] dark:hover:text-[#F7F6F3] disabled:opacity-50 cursor-pointer"
                 >
                   إلغاء
                 </button>
@@ -4018,9 +4085,18 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
 
       {/* Double Confirmation Hard Delete Dialog (Steps 1 & 2) */}
       {deleteConfirmModal.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-fadeIn">
+        <div
+          onClick={() => {
+            if (!deleteBusy) {
+              setDeleteError('');
+              setDeleteConfirmModal({ isOpen: false, step: 1, type: 'product', id: '', title: '' });
+            }
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-fadeIn"
+        >
           <div
-            className={`w-full max-w-md bg-white dark:bg-[#1E293B] rounded-3xl p-5 shadow-2xl space-y-4 border ${
+            onClick={e => e.stopPropagation()}
+            className={`w-full max-w-md bg-white dark:bg-[#141418] rounded-3xl p-5 shadow-2xl space-y-4 border ${
               deleteConfirmModal.step === 2 ? 'border-red-600/60' : 'border-amber-500/40'
             }`}
           >
@@ -4036,19 +4112,19 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   </span>
                 </div>
 
-                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                <p className="text-xs text-[#5A5854] dark:text-[#B5B0A8] leading-relaxed">
                   هل تريد بالفعل حذف <strong className="text-red-600 dark:text-red-400">{deleteConfirmModal.title}</strong>؟
                   عند المتابعة ستنتقل إلى رسالة التأكيد النهائية قبل تنفيذ أي حذف على الخادم.
                 </p>
 
-                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E6E2D8] dark:border-[#23232A]">
                   <button
                     type="button"
                     onClick={() => {
                       setDeleteError('');
                       setDeleteConfirmModal({ isOpen: false, step: 1, type: 'product', id: '', title: '' });
                     }}
-                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-[#7A756D] dark:text-[#8E8980] hover:bg-[#EBE7DF] dark:hover:bg-[#1C1C22] cursor-pointer"
                   >
                     إلغاء
                   </button>
@@ -4099,7 +4175,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   </div>
                 )}
 
-                <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+                <div className="flex items-center justify-between gap-2 pt-2 border-t border-[#E6E2D8] dark:border-[#23232A]">
                   <button
                     type="button"
                     disabled={deleteBusy}
@@ -4107,7 +4183,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                       setDeleteError('');
                       setDeleteConfirmModal(prev => ({ ...prev, step: 1 }));
                     }}
-                    className="px-3 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 cursor-pointer"
+                    className="px-3 py-2 rounded-xl text-xs font-bold text-[#5A5854] dark:text-[#B5B0A8] hover:bg-[#EBE7DF] dark:hover:bg-[#1C1C22] disabled:opacity-50 cursor-pointer"
                   >
                     رجوع
                   </button>
@@ -4119,7 +4195,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                         setDeleteError('');
                         setDeleteConfirmModal({ isOpen: false, step: 1, type: 'product', id: '', title: '' });
                       }}
-                      className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 cursor-pointer"
+                      className="px-3.5 py-2 rounded-xl text-xs font-bold text-[#7A756D] dark:text-[#8E8980] hover:bg-[#EBE7DF] dark:hover:bg-[#1C1C22] disabled:opacity-50 cursor-pointer"
                     >
                       إلغاء
                     </button>

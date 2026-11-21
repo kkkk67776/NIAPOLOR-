@@ -167,7 +167,7 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
     setBannerSuccess('');
     try {
       const result = await runSafeBackupAndDownload({ mode: 'storefront-readonly' });
-      setBannerSuccess(`تم إنشاء وتنزيل نسخة ECHOX SAFE BACKUP v5.3 المنقاة بنجاح (${result.fileName}).`);
+      setBannerSuccess(`تم إنشاء وتنزيل نسخة NIAPOLOR SAFE BACKUP v5.3 المنقاة بنجاح (${result.fileName}).`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'تعذر إنشاء النسخة المحلية المنقاة.';
       setBannerError(msg);
@@ -286,7 +286,7 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `echox-security-audit-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `niapolor-security-audit-${new Date().toISOString().slice(0, 10)}.json`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -380,16 +380,16 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
   return (
     <div className="space-y-6" dir="rtl">
       {/* Unified Header */}
-      <div className="bg-white dark:bg-[#0F172A] rounded-2xl border border-[#E2E8F0] dark:border-slate-800 p-5 sm:p-6 space-y-4">
+      <div className="bg-white dark:bg-[#141418] rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] p-5 sm:p-6 space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2.5">
               <Lock className="w-5 h-5 text-[#FF6B00] shrink-0" />
-              <h2 className="text-lg font-black text-[#0F172A] dark:text-white tracking-tight">
+              <h2 className="text-lg font-black text-[#111113] dark:text-[#F7F6F3] tracking-tight">
                 غرفة التحكم السرية والحماية والاستعادة
               </h2>
             </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+            <p className="text-xs text-[#7A756D] dark:text-[#8E8980]">
               فحص السلامة البنيوية · النسخ الاحتياطي الموقّع HMAC · المعاينة قبل الاستعادة (Dry-Run) · الحجر الأمني · سلسلة التدقيق SHA-256
             </p>
           </div>
@@ -399,7 +399,7 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
               type="button"
               onClick={() => loadRoomData()}
               disabled={loading}
-              className="px-3.5 py-2 rounded-xl border border-[#E2E8F0] dark:border-slate-700 bg-[#F8FAFC] dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-bold text-[#0F172A] dark:text-white flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-60"
+              className="px-3.5 py-2 rounded-xl border border-[#E6E2D8] dark:border-[#32323C] bg-[#F3F1EC] dark:bg-[#18181D] hover:bg-[#EBE7DF] dark:hover:bg-[#1C1C22] text-xs font-bold text-[#111113] dark:text-[#F7F6F3] flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-60"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
               <span>تحديث الفحص الأمني</span>
@@ -441,9 +441,9 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
         )}
 
         {/* High-Signal Architectural Telemetry Row */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 pt-4 border-t border-[#E2E8F0] dark:border-slate-800 text-xs">
-          <div className="p-3 rounded-xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-800 space-y-1">
-            <span className="text-[11px] text-slate-500 dark:text-slate-400 block">حالة النظام العامة</span>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 pt-4 border-t border-[#E6E2D8] dark:border-[#23232A] text-xs">
+          <div className="p-3 rounded-xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] space-y-1">
+            <span className="text-[11px] text-[#7A756D] dark:text-[#8E8980] block">حالة النظام العامة</span>
             <div className="flex items-center gap-1.5 font-black">
               {integrityReport?.overallStatus === 'healthy' ? (
                 <>
@@ -466,8 +466,8 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
             </div>
           </div>
 
-          <div className="p-3 rounded-xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-800 space-y-1">
-            <span className="text-[11px] text-slate-500 dark:text-slate-400 block">سلسلة التدقيق SHA-256</span>
+          <div className="p-3 rounded-xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] space-y-1">
+            <span className="text-[11px] text-[#7A756D] dark:text-[#8E8980] block">سلسلة التدقيق SHA-256</span>
             <div className="flex items-center gap-1.5 font-black tabular-nums">
               {auditChainIntact ? (
                 <span className="text-emerald-700 dark:text-emerald-400">
@@ -481,16 +481,16 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
             </div>
           </div>
 
-          <div className="p-3 rounded-xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-800 space-y-1">
-            <span className="text-[11px] text-slate-500 dark:text-slate-400 block">عناصر الحجر النشطة</span>
-            <span className={`font-black tabular-nums block ${activeQuarantineCount > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-[#0F172A] dark:text-white'}`}>
+          <div className="p-3 rounded-xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] space-y-1">
+            <span className="text-[11px] text-[#7A756D] dark:text-[#8E8980] block">عناصر الحجر النشطة</span>
+            <span className={`font-black tabular-nums block ${activeQuarantineCount > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-[#111113] dark:text-[#F7F6F3]'}`}>
               {activeQuarantineCount} ملف محجور
             </span>
           </div>
 
-          <div className="p-3 rounded-xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-800 space-y-1">
-            <span className="text-[11px] text-slate-500 dark:text-slate-400 block">اللقطات الاحتياطية الموقعة</span>
-            <span className="font-black tabular-nums text-[#0F172A] dark:text-white block">
+          <div className="p-3 rounded-xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] space-y-1">
+            <span className="text-[11px] text-[#7A756D] dark:text-[#8E8980] block">اللقطات الاحتياطية الموقعة</span>
+            <span className="font-black tabular-nums text-[#111113] dark:text-[#F7F6F3] block">
               {snapshots.length} لقطة
             </span>
           </div>
@@ -515,8 +515,8 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
                 onClick={() => setSection(item.id)}
                 className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors border ${
                   active
-                    ? 'bg-[#0F172A] dark:bg-[#FF6B00] text-white border-[#0F172A] dark:border-[#FF6B00]'
-                    : 'bg-[#F8FAFC] dark:bg-[#1E293B] text-slate-700 dark:text-slate-200 border-[#E2E8F0] dark:border-slate-700 hover:border-slate-400'
+                    ? 'bg-[#111113] dark:bg-[#FF6B00] text-white border-[#111113] dark:border-[#FF6B00]'
+                    : 'bg-[#F3F1EC] dark:bg-[#18181D] text-[#5A5854] dark:text-[#B5B0A8] border-[#E6E2D8] dark:border-[#32323C] hover:border-[#FF6B00]'
                 }`}
               >
                 <Icon className="w-3.5 h-3.5" />
@@ -543,13 +543,13 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
 
       {/* SECTION 1: SYSTEM INTEGRITY AUDIT */}
       {section === 'integrity' && (
-        <div className="bg-white dark:bg-[#0F172A] rounded-2xl border border-[#E2E8F0] dark:border-slate-800 p-5 sm:p-6 space-y-4">
+        <div className="bg-white dark:bg-[#141418] rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] p-5 sm:p-6 space-y-4">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h3 className="text-sm font-black text-[#0F172A] dark:text-white">
+              <h3 className="text-sm font-black text-[#111113] dark:text-[#F7F6F3]">
                 تقرير فحص السلامة البنيوية والأمنية
               </h3>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums mt-0.5">
+              <p className="text-[11px] text-[#7A756D] dark:text-[#8E8980] tabular-nums mt-0.5">
                 آخر فحص: {formatDateTimeAr(integrityReport?.checkedAt)}
                 {persistenceStatus && typeof persistenceStatus.storageMode === 'string'
                   ? ` · وضع التخزين: ${persistenceStatus.storageMode}`
@@ -559,15 +559,15 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
           </div>
 
           {!integrityReport ? (
-            <div className="p-6 text-center text-xs text-slate-500 border border-dashed border-[#E2E8F0] dark:border-slate-700 rounded-xl">
+            <div className="p-6 text-center text-xs text-[#7A756D] dark:text-[#8E8980] border border-dashed border-[#E6E2D8] dark:border-[#32323C] rounded-xl">
               {loading ? 'جاري تشغيل فحص السلامة...' : 'لا تتوفر بيانات فحص حالياً.'}
             </div>
           ) : (
-            <div className="divide-y divide-[#E2E8F0] dark:divide-slate-800 border border-[#E2E8F0] dark:border-slate-800 rounded-xl overflow-hidden">
+            <div className="divide-y divide-[#E6E2D8] dark:divide-[#23232A] border border-[#E6E2D8] dark:border-[#23232A] rounded-xl overflow-hidden">
               {integrityReport.checks.map((chk) => (
                 <div
                   key={chk.id}
-                  className="p-4 bg-[#F8FAFC]/60 dark:bg-[#1E293B]/40 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                  className="p-4 bg-[#F3F1EC]/60 dark:bg-[#18181D]/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
                 >
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
@@ -578,11 +578,11 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
                       ) : (
                         <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
                       )}
-                      <span className="text-xs font-black text-[#0F172A] dark:text-white">
+                      <span className="text-xs font-black text-[#111113] dark:text-[#F7F6F3]">
                         {chk.label}
                       </span>
                     </div>
-                    <p className="text-[11px] text-slate-600 dark:text-slate-300 pr-6">
+                    <p className="text-[11px] text-[#5A5854] dark:text-[#B5B0A8] ps-6">
                       {chk.detail}
                     </p>
                   </div>
@@ -609,19 +609,19 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
       {section === 'recovery' && (
         <div className="space-y-6">
           {/* Backup Creation & Export Bar */}
-          <div className="bg-white dark:bg-[#0F172A] rounded-2xl border border-[#E2E8F0] dark:border-slate-800 p-5 sm:p-6 space-y-4">
-            <h3 className="text-sm font-black text-[#0F172A] dark:text-white">
+          <div className="bg-white dark:bg-[#141418] rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] p-5 sm:p-6 space-y-4">
+            <h3 className="text-sm font-black text-[#111113] dark:text-[#F7F6F3]">
               إنشاء نسخة احتياطية أو لقطة استعادة موقعة (Signed Snapshots)
             </h3>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {/* Server HMAC Signed Snapshot */}
-              <div className="p-4 rounded-xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-700 space-y-3">
+              <div className="p-4 rounded-xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#32323C] space-y-3">
                 <div className="space-y-1">
-                  <p className="text-xs font-black text-[#0F172A] dark:text-white">
+                  <p className="text-xs font-black text-[#111113] dark:text-[#F7F6F3]">
                     1. لقطة خادم موقّعة HMAC (مع تصفية الأسرار)
                   </p>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  <p className="text-[11px] text-[#7A756D] dark:text-[#8E8980]">
                     تحفظ المنتجات والشركات والتصنيفات والبانرات والطلبات موقّعة ضد التلاعب على الخادم وتطلب PIN للتأكيد.
                   </p>
                 </div>
@@ -631,12 +631,12 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
                     value={backupLabel}
                     onChange={(e) => setBackupLabel(e.target.value)}
                     placeholder="تسمية اختيارية (مثال: قبل تحديث الأسعار)"
-                    className="flex-1 bg-white dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-[#0F172A] dark:text-white outline-none focus:border-[#FF6B00]"
+                    className="flex-1 bg-white dark:bg-[#141418] border border-[#D6D0C4] dark:border-[#32323C] rounded-xl px-3 py-2 text-xs text-[#111113] dark:text-[#F7F6F3] outline-none focus:border-[#FF6B00]"
                   />
                   <button
                     type="button"
                     onClick={() => openStepUpModal({ type: 'create_backup', label: backupLabel.trim() })}
-                    className="px-4 py-2 rounded-xl bg-[#FF6B00] hover:bg-[#EA580C] text-white text-xs font-bold cursor-pointer transition-colors shrink-0"
+                    className="px-4 py-2 rounded-xl bg-[#FF6B00] hover:bg-[#E05E00] text-white text-xs font-bold cursor-pointer transition-colors shrink-0"
                   >
                     إنشاء لقطة موقّعة (PIN)
                   </button>
@@ -644,12 +644,12 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
               </div>
 
               {/* Safe Backup v5.3 Local Sanitized Export */}
-              <div className="p-4 rounded-xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-700 space-y-3 flex flex-col justify-between">
+              <div className="p-4 rounded-xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#32323C] space-y-3 flex flex-col justify-between">
                 <div className="space-y-1">
-                  <p className="text-xs font-black text-[#0F172A] dark:text-white">
-                    2. تنزيل حزمة ECHOX SAFE BACKUP v5.3 المحلية
+                  <p className="text-xs font-black text-[#111113] dark:text-[#F7F6F3]">
+                    2. تنزيل حزمة NIAPOLOR SAFE BACKUP v5.3 المحلية
                   </p>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  <p className="text-[11px] text-[#7A756D] dark:text-[#8E8980]">
                     للقراءة فقط ومنقاة تماماً من البيانات الشخصية والأسرار، ومتوافقة مع المعاينة المبدئية للاستعادة.
                   </p>
                 </div>
@@ -658,7 +658,7 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
                     type="button"
                     disabled={localBackupRunning}
                     onClick={handleLocalSafeBackupDownload}
-                    className="px-4 py-2 rounded-xl border border-[#E2E8F0] dark:border-slate-600 bg-white dark:bg-[#0F172A] hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-bold text-[#0F172A] dark:text-white flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-60"
+                    className="px-4 py-2 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418] hover:bg-[#EBE7DF] dark:hover:bg-[#1C1C22] text-xs font-bold text-[#111113] dark:text-[#F7F6F3] flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-60"
                   >
                     <Download className="w-3.5 h-3.5" />
                     <span>{localBackupRunning ? 'جاري التجهيز...' : 'تنزيل Safe Backup v5.3'}</span>
@@ -682,17 +682,17 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
           </div>
 
           {/* Dry-Run & Restore Workbench */}
-          <div className="bg-white dark:bg-[#0F172A] rounded-2xl border border-[#E2E8F0] dark:border-slate-800 p-5 sm:p-6 space-y-4">
+          <div className="bg-white dark:bg-[#141418] rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] p-5 sm:p-6 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <h3 className="text-sm font-black text-[#0F172A] dark:text-white">
+                <h3 className="text-sm font-black text-[#111113] dark:text-[#F7F6F3]">
                   المعاينة المبدئية (Dry-Run Diff) وتطبيق الاستعادة الآمنة
                 </h3>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                <p className="text-[11px] text-[#7A756D] dark:text-[#8E8980]">
                   يُنشئ النظام تلقائياً لقطة تراجع (Pre-Restore Snapshot) قبل كتابة أي بيانات، مع الحفاظ على مفاتيح بوابات الدفع الحية.
                 </p>
               </div>
-              <label className="px-3.5 py-2 rounded-xl border border-[#E2E8F0] dark:border-slate-700 bg-[#F8FAFC] dark:bg-[#1E293B] hover:border-[#FF6B00] text-xs font-bold text-[#0F172A] dark:text-white flex items-center gap-1.5 cursor-pointer transition-colors shrink-0">
+              <label className="px-3.5 py-2 rounded-xl border border-[#E6E2D8] dark:border-[#32323C] bg-[#F3F1EC] dark:bg-[#18181D] hover:border-[#FF6B00] text-xs font-bold text-[#111113] dark:text-[#F7F6F3] flex items-center gap-1.5 cursor-pointer transition-colors shrink-0">
                 <Upload className="w-3.5 h-3.5" />
                 <span>فحص ملف JSON خارجي</span>
                 <input
@@ -705,19 +705,19 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
             </div>
 
             {busyAction && (
-              <div className="p-4 text-xs text-slate-500 text-center">
+              <div className="p-4 text-xs text-[#7A756D] dark:text-[#8E8980] text-center">
                 جاري حساب الفروقات والتحقق من التوقيع والمخطط...
               </div>
             )}
 
             {dryRunResult && (
-              <div className="border border-[#E2E8F0] dark:border-slate-700 rounded-xl p-4 bg-[#F8FAFC] dark:bg-[#1E293B] space-y-4">
+              <div className="border border-[#E6E2D8] dark:border-[#32323C] rounded-xl p-4 bg-[#F3F1EC] dark:bg-[#18181D] space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
                   <div className="space-y-0.5">
-                    <span className="font-black text-[#0F172A] dark:text-white block">
+                    <span className="font-black text-[#111113] dark:text-[#F7F6F3] block">
                       نتيجة المعاينة: {dryRunTargetLabel}
                     </span>
-                    <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
+                    <span className="text-[11px] text-[#7A756D] dark:text-[#8E8980] block">
                       توقيع HMAC: {dryRunResult.signatureValid ? 'سليم ومطابق' : 'غير موقع خادمياً'}
                       {' · '}
                       إعدادات المتجر: {dryRunResult.diff.siteSettingsChanged ? 'ستتغير' : 'مطابقة'}
@@ -733,7 +733,7 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
                       setUploadedFileName('');
                       setSelectedSnapshotId('');
                     }}
-                    className="text-slate-400 hover:text-[#0F172A] dark:hover:text-white p-1 cursor-pointer"
+                    className="text-[#8E8980] hover:text-[#111113] dark:hover:text-[#F7F6F3] p-1 cursor-pointer"
                     aria-label="إغلاق المعاينة"
                   >
                     <X className="w-4 h-4" />
@@ -756,9 +756,9 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
                   </div>
                 )}
 
-                <div className="overflow-x-auto border border-[#E2E8F0] dark:border-slate-700 rounded-xl bg-white dark:bg-[#0F172A]">
+                <div className="overflow-x-auto border border-[#E6E2D8] dark:border-[#32323C] rounded-xl bg-white dark:bg-[#141418]">
                   <table className="w-full text-xs text-right tabular-nums">
-                    <thead className="bg-[#F8FAFC] dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 border-b border-[#E2E8F0] dark:border-slate-700">
+                    <thead className="bg-[#F3F1EC] dark:bg-[#18181D] text-[#5A5854] dark:text-[#B5B0A8] border-b border-[#E6E2D8] dark:border-[#32323C]">
                       <tr>
                         <th className="p-2.5 font-bold">القسم</th>
                         <th className="p-2.5 font-bold">الحالي</th>
@@ -768,10 +768,10 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
                         <th className="p-2.5 font-bold text-red-600 dark:text-red-400">حذف (-)</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-[#E2E8F0] dark:divide-slate-800">
+                    <tbody className="divide-y divide-[#E6E2D8] dark:divide-[#23232A]">
                       {dryRunRows.map((row) => (
                         <tr key={row.key}>
-                          <td className="p-2.5 font-bold text-[#0F172A] dark:text-white">{row.label}</td>
+                          <td className="p-2.5 font-bold text-[#111113] dark:text-[#F7F6F3]">{row.label}</td>
                           <td className="p-2.5">{row.data.currentCount}</td>
                           <td className="p-2.5">{row.data.incomingCount}</td>
                           <td className="p-2.5 text-emerald-700 dark:text-emerald-400">+{row.data.added}</td>
@@ -791,7 +791,7 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
                           type="checkbox"
                           checked={allowUnsignedConfirm}
                           onChange={(e) => setAllowUnsignedConfirm(e.target.checked)}
-                          className="rounded border-slate-300"
+                          className="rounded border-[#D6D0C4] dark:border-[#32323C]"
                         />
                         <span>أوافق على استعادة هذه النسخة المحلية غير الموقعة بعد مراجعة الفروقات</span>
                       </label>
@@ -812,7 +812,7 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
                           allowUnsigned: !dryRunResult.signatureValid && allowUnsignedConfirm,
                         })
                       }
-                      className="px-4 py-2 rounded-xl bg-[#FF6B00] hover:bg-[#EA580C] disabled:opacity-50 text-white text-xs font-bold cursor-pointer transition-colors shrink-0"
+                      className="px-4 py-2 rounded-xl bg-[#FF6B00] hover:bg-[#E05E00] disabled:opacity-50 text-white text-xs font-bold cursor-pointer transition-colors shrink-0"
                     >
                       تطبيق الاستعادة الآمنة (Step-Up PIN)
                     </button>
@@ -823,17 +823,17 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
 
             {/* Stored Snapshots Table */}
             <div className="space-y-2">
-              <h4 className="text-xs font-black text-slate-600 dark:text-slate-300">
+              <h4 className="text-xs font-black text-[#5A5854] dark:text-[#B5B0A8]">
                 اللقطات المخزنة على الخادم ({snapshots.length})
               </h4>
               {snapshots.length === 0 ? (
-                <div className="p-6 text-center text-xs text-slate-500 border border-dashed border-[#E2E8F0] dark:border-slate-700 rounded-xl">
+                <div className="p-6 text-center text-xs text-[#7A756D] dark:text-[#8E8980] border border-dashed border-[#E6E2D8] dark:border-[#32323C] rounded-xl">
                   لا توجد لقطات مخزنة بعد. أنشئ أول لقطة موقّعة لحفظ حالة المتجر والطلبات.
                 </div>
               ) : (
-                <div className="overflow-x-auto border border-[#E2E8F0] dark:border-slate-800 rounded-xl">
+                <div className="overflow-x-auto border border-[#E6E2D8] dark:border-[#23232A] rounded-xl">
                   <table className="w-full text-xs text-right">
-                    <thead className="bg-[#F8FAFC] dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 border-b border-[#E2E8F0] dark:border-slate-800">
+                    <thead className="bg-[#F3F1EC] dark:bg-[#18181D] text-[#5A5854] dark:text-[#B5B0A8] border-b border-[#E6E2D8] dark:border-[#23232A]">
                       <tr>
                         <th className="p-3 font-bold">المعرّف</th>
                         <th className="p-3 font-bold">التسمية والنوع</th>
@@ -843,27 +843,27 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
                         <th className="p-3 font-bold">إجراءات</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-[#E2E8F0] dark:divide-slate-800 tabular-nums">
+                    <tbody className="divide-y divide-[#E6E2D8] dark:divide-[#23232A] tabular-nums">
                       {snapshots.map((snap) => (
-                        <tr key={snap.snapshotId} className="hover:bg-[#F8FAFC] dark:hover:bg-slate-800/40">
-                          <td className="p-3 font-mono text-[11px] text-slate-600 dark:text-slate-300">
+                        <tr key={snap.snapshotId} className="hover:bg-[#F3F1EC]/70 dark:hover:bg-[#18181D]">
+                          <td className="p-3 font-mono text-[11px] text-[#5A5854] dark:text-[#B5B0A8]">
                             {snap.snapshotId}
                           </td>
                           <td className="p-3 space-y-0.5">
-                            <span className="font-bold text-[#0F172A] dark:text-white block">
+                            <span className="font-bold text-[#111113] dark:text-[#F7F6F3] block">
                               {snap.label}
                             </span>
-                            <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                            <span className="text-[11px] text-[#7A756D] dark:text-[#8E8980]">
                               {snap.kind === 'pre_restore' ? 'تلقائية قبل الاستعادة' : 'يدوية'}
                             </span>
                           </td>
-                          <td className="p-3 text-[11px] text-slate-500 dark:text-slate-400">
+                          <td className="p-3 text-[11px] text-[#7A756D] dark:text-[#8E8980]">
                             {formatDateTimeAr(snap.createdAt)}
                           </td>
-                          <td className="p-3 text-[11px] text-slate-600 dark:text-slate-300">
+                          <td className="p-3 text-[11px] text-[#5A5854] dark:text-[#B5B0A8]">
                             {snap.productsCount} منتج · {snap.companiesCount} شركة · {snap.ordersCount} طلب
                           </td>
-                          <td className="p-3 font-mono text-[11px] text-slate-500">
+                          <td className="p-3 font-mono text-[11px] text-[#7A756D] dark:text-[#8E8980]">
                             {snap.payloadSha256.slice(0, 12)}…
                           </td>
                           <td className="p-3">
@@ -871,7 +871,7 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
                               <button
                                 type="button"
                                 onClick={() => handleDryRunSnapshot(snap.snapshotId, snap.label)}
-                                className="px-2.5 py-1.5 rounded-lg border border-[#E2E8F0] dark:border-slate-700 hover:border-[#FF6B00] text-[11px] font-bold text-[#0F172A] dark:text-white flex items-center gap-1 cursor-pointer"
+                                className="px-2.5 py-1.5 rounded-lg border border-[#E6E2D8] dark:border-[#32323C] hover:border-[#FF6B00] text-[11px] font-bold text-[#111113] dark:text-[#F7F6F3] flex items-center gap-1 cursor-pointer"
                               >
                                 <FileSearch className="w-3 h-3" />
                                 <span>معاينة Dry-Run</span>
@@ -896,7 +896,7 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
               )}
             </div>
             {uploadedFileName && !dryRunResult && !busyAction && (
-              <p className="text-[11px] text-slate-500">آخر ملف محدد: {uploadedFileName}</p>
+              <p className="text-[11px] text-[#7A756D] dark:text-[#8E8980]">آخر ملف محدد: {uploadedFileName}</p>
             )}
           </div>
         </div>
@@ -904,36 +904,36 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
 
       {/* SECTION 3: QUARANTINE VAULT */}
       {section === 'quarantine' && (
-        <div className="bg-white dark:bg-[#0F172A] rounded-2xl border border-[#E2E8F0] dark:border-slate-800 p-5 sm:p-6 space-y-4">
+        <div className="bg-white dark:bg-[#141418] rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] p-5 sm:p-6 space-y-4">
           <div>
-            <h3 className="text-sm font-black text-[#0F172A] dark:text-white">
+            <h3 className="text-sm font-black text-[#111113] dark:text-[#F7F6F3]">
               خزينة الحجر الأمني للملفات والطلبات المشبوهة
             </h3>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+            <p className="text-[11px] text-[#7A756D] dark:text-[#8E8980]">
               يتم عزل أي وصل مزيف التوقيع الثنائي (Magic Bytes) أو يحتوي على شيفرة قابلة للتنفيذ قبل وصوله إلى مخزن المتجر.
             </p>
           </div>
 
           {inspectedItem && (
-            <div className="p-4 rounded-xl bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-700 space-y-2">
+            <div className="p-4 rounded-xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#32323C] space-y-2">
               <div className="flex items-center justify-between text-xs">
-                <span className="font-black text-[#0F172A] dark:text-white">
+                <span className="font-black text-[#111113] dark:text-[#F7F6F3]">
                   معاينة العينة المعزولة (نص آمن معطل التنفيذ): {inspectedItem.id}
                 </span>
                 <button
                   type="button"
                   onClick={() => setInspectedItem(null)}
-                  className="text-slate-400 hover:text-[#0F172A] dark:hover:text-white cursor-pointer"
+                  className="text-[#8E8980] hover:text-[#111113] dark:hover:text-[#F7F6F3] cursor-pointer"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              <p className="text-[11px] text-slate-600 dark:text-slate-300 font-mono break-all">
+              <p className="text-[11px] text-[#5A5854] dark:text-[#B5B0A8] font-mono break-all">
                 Hash: {inspectedItem.payloadHash} · Declared: {inspectedItem.mimeDeclared}
               </p>
               <pre
                 dir="ltr"
-                className="p-3 rounded-lg bg-white dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-slate-800 text-[11px] font-mono text-slate-700 dark:text-slate-300 overflow-x-auto whitespace-pre-wrap break-all"
+                className="p-3 rounded-lg bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#23232A] text-[11px] font-mono text-[#5A5854] dark:text-[#B5B0A8] overflow-x-auto whitespace-pre-wrap break-all"
               >
                 {inspectedItem.payloadPreview || 'لا يتوفر مقتطف نصي للعينة.'}
               </pre>
@@ -941,13 +941,13 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
           )}
 
           {quarantineItems.length === 0 ? (
-            <div className="p-8 text-center text-xs text-slate-500 border border-dashed border-[#E2E8F0] dark:border-slate-700 rounded-xl">
+            <div className="p-8 text-center text-xs text-[#7A756D] dark:text-[#8E8980] border border-dashed border-[#E6E2D8] dark:border-[#32323C] rounded-xl">
               خزينة الحجر فارغة — لم يتم تسجيل ملفات مشبوهة حتى الآن.
             </div>
           ) : (
-            <div className="overflow-x-auto border border-[#E2E8F0] dark:border-slate-800 rounded-xl">
+            <div className="overflow-x-auto border border-[#E6E2D8] dark:border-[#23232A] rounded-xl">
               <table className="w-full text-xs text-right tabular-nums">
-                <thead className="bg-[#F8FAFC] dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 border-b border-[#E2E8F0] dark:border-slate-800">
+                <thead className="bg-[#F3F1EC] dark:bg-[#18181D] text-[#5A5854] dark:text-[#B5B0A8] border-b border-[#E6E2D8] dark:border-[#23232A]">
                   <tr>
                     <th className="p-3 font-bold">التوقيت</th>
                     <th className="p-3 font-bold">المصدر</th>
@@ -957,17 +957,17 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
                     <th className="p-3 font-bold">إجراءات</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#E2E8F0] dark:divide-slate-800">
+                <tbody className="divide-y divide-[#E6E2D8] dark:divide-[#23232A]">
                   {quarantineItems.map((item) => (
-                    <tr key={item.id} className="hover:bg-[#F8FAFC] dark:hover:bg-slate-800/40">
-                      <td className="p-3 text-[11px] text-slate-500">{formatDateTimeAr(item.createdAt)}</td>
+                    <tr key={item.id} className="hover:bg-[#F3F1EC]/70 dark:hover:bg-[#18181D]">
+                      <td className="p-3 text-[11px] text-[#7A756D] dark:text-[#8E8980]">{formatDateTimeAr(item.createdAt)}</td>
                       <td className="p-3 font-mono text-[11px]">{item.source}</td>
-                      <td className="p-3 text-slate-700 dark:text-slate-200 max-w-xs">{item.reason}</td>
-                      <td className="p-3 font-mono text-[11px] text-slate-500">
+                      <td className="p-3 text-[#5A5854] dark:text-[#B5B0A8] max-w-xs">{item.reason}</td>
+                      <td className="p-3 font-mono text-[11px] text-[#7A756D] dark:text-[#8E8980]">
                         {item.actorIp || '—'} · {item.payloadHash.slice(0, 12)}…
                       </td>
                       <td className="p-3 font-bold">
-                        <span className={item.status === 'quarantined' ? 'text-amber-700 dark:text-amber-400' : 'text-slate-500'}>
+                        <span className={item.status === 'quarantined' ? 'text-amber-700 dark:text-amber-400' : 'text-[#7A756D] dark:text-[#8E8980]'}>
                           {item.status === 'quarantined' ? 'معزول' : 'تم الإتلاف'}
                         </span>
                       </td>
@@ -976,7 +976,7 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
                           <button
                             type="button"
                             onClick={() => handleQuarantineAction(item.id, 'inspect')}
-                            className="px-2.5 py-1.5 rounded-lg border border-[#E2E8F0] dark:border-slate-700 text-[11px] font-bold flex items-center gap-1 cursor-pointer hover:border-[#FF6B00]"
+                            className="px-2.5 py-1.5 rounded-lg border border-[#E6E2D8] dark:border-[#32323C] text-[11px] font-bold flex items-center gap-1 cursor-pointer hover:border-[#FF6B00]"
                           >
                             <Eye className="w-3 h-3" />
                             <span>معاينة</span>
@@ -1004,13 +1004,13 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
 
       {/* SECTION 4: HASH-CHAINED AUDIT LOGS */}
       {section === 'audit' && (
-        <div className="bg-white dark:bg-[#0F172A] rounded-2xl border border-[#E2E8F0] dark:border-slate-800 p-5 sm:p-6 space-y-4">
+        <div className="bg-white dark:bg-[#141418] rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] p-5 sm:p-6 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <h3 className="text-sm font-black text-[#0F172A] dark:text-white">
+              <h3 className="text-sm font-black text-[#111113] dark:text-[#F7F6F3]">
                 سجل التدقيق الأمني المترابط بالتشفير (Hash-Chained Audit Log)
               </h3>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
+              <p className="text-[11px] text-[#7A756D] dark:text-[#8E8980] tabular-nums">
                 {auditChainIntact
                   ? `السلسلة سليمة بالكامل (${auditTotalEntries} سجل، كل حدث مربوط بـ SHA-256 للحدث السابق).`
                   : `تحذير: تم رصد خلل في تسلسل التشفير عند التسلسل ${auditBrokenAtSeq ?? 0}.`}
@@ -1032,8 +1032,8 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
                   onClick={() => handleSeverityChange(f.id)}
                   className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer border ${
                     severityFilter === f.id
-                      ? 'bg-[#0F172A] dark:bg-[#FF6B00] text-white border-[#0F172A] dark:border-[#FF6B00]'
-                      : 'bg-[#F8FAFC] dark:bg-[#1E293B] text-slate-600 dark:text-slate-300 border-[#E2E8F0] dark:border-slate-700'
+                      ? 'bg-[#111113] dark:bg-[#FF6B00] text-white border-[#111113] dark:border-[#FF6B00]'
+                      : 'bg-[#F3F1EC] dark:bg-[#18181D] text-[#5A5854] dark:text-[#B5B0A8] border-[#E6E2D8] dark:border-[#32323C]'
                   }`}
                 >
                   {f.label}
@@ -1042,7 +1042,7 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
               <button
                 type="button"
                 onClick={handleExportAuditReport}
-                className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer border border-[#E2E8F0] dark:border-slate-700 bg-white dark:bg-[#0F172A] text-[#0F172A] dark:text-white hover:border-[#FF6B00] flex items-center gap-1"
+                className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer border border-[#E6E2D8] dark:border-[#32323C] bg-white dark:bg-[#141418] text-[#111113] dark:text-[#F7F6F3] hover:border-[#FF6B00] flex items-center gap-1"
               >
                 <Download className="w-3 h-3" />
                 <span>تصدير التقرير</span>
@@ -1051,13 +1051,13 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
           </div>
 
           {auditEntries.length === 0 ? (
-            <div className="p-8 text-center text-xs text-slate-500 border border-dashed border-[#E2E8F0] dark:border-slate-700 rounded-xl">
+            <div className="p-8 text-center text-xs text-[#7A756D] dark:text-[#8E8980] border border-dashed border-[#E6E2D8] dark:border-[#32323C] rounded-xl">
               لا توجد سجلات مطابقة للفلتر المحدد.
             </div>
           ) : (
-            <div className="overflow-x-auto border border-[#E2E8F0] dark:border-slate-800 rounded-xl">
+            <div className="overflow-x-auto border border-[#E6E2D8] dark:border-[#23232A] rounded-xl">
               <table className="w-full text-xs text-right tabular-nums">
-                <thead className="bg-[#F8FAFC] dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 border-b border-[#E2E8F0] dark:border-slate-800">
+                <thead className="bg-[#F3F1EC] dark:bg-[#18181D] text-[#5A5854] dark:text-[#B5B0A8] border-b border-[#E6E2D8] dark:border-[#23232A]">
                   <tr>
                     <th className="p-3 font-bold">#</th>
                     <th className="p-3 font-bold">التوقيت</th>
@@ -1068,14 +1068,14 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
                     <th className="p-3 font-bold">توقيع السلسلة</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#E2E8F0] dark:divide-slate-800">
+                <tbody className="divide-y divide-[#E6E2D8] dark:divide-[#23232A]">
                   {auditEntries.map((log) => (
-                    <tr key={log.id} className="hover:bg-[#F8FAFC] dark:hover:bg-slate-800/40">
-                      <td className="p-3 font-mono text-[11px] text-slate-400">{log.seq}</td>
-                      <td className="p-3 text-[11px] text-slate-500 whitespace-nowrap">
+                    <tr key={log.id} className="hover:bg-[#F3F1EC]/70 dark:hover:bg-[#18181D]">
+                      <td className="p-3 font-mono text-[11px] text-[#7A756D] dark:text-[#8E8980]">{log.seq}</td>
+                      <td className="p-3 text-[11px] text-[#7A756D] dark:text-[#8E8980] whitespace-nowrap">
                         {formatDateTimeAr(log.timestamp)}
                       </td>
-                      <td className="p-3 font-mono text-[11px] text-[#0F172A] dark:text-white">
+                      <td className="p-3 font-mono text-[11px] text-[#111113] dark:text-[#F7F6F3]">
                         {log.event}
                       </td>
                       <td className="p-3 font-bold text-[11px]">
@@ -1095,13 +1095,13 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
                             : 'معلومات'}
                         </span>
                       </td>
-                      <td className="p-3 text-[11px] font-mono text-slate-500">
+                      <td className="p-3 text-[11px] font-mono text-[#7A756D] dark:text-[#8E8980]">
                         {log.actor} {log.ip ? `· ${log.ip}` : ''}
                       </td>
-                      <td className="p-3 text-slate-700 dark:text-slate-200 max-w-md">
+                      <td className="p-3 text-[#5A5854] dark:text-[#B5B0A8] max-w-md">
                         {log.summary}
                       </td>
-                      <td className="p-3 font-mono text-[11px] text-slate-400">
+                      <td className="p-3 font-mono text-[11px] text-[#7A756D] dark:text-[#8E8980]">
                         {log.entryHash.slice(0, 12)}…
                       </td>
                     </tr>
@@ -1115,28 +1115,33 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
 
       {/* Step-Up PIN Verification Modal */}
       {pendingAction && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => !stepUpBusy && setPendingAction(null)}
+        >
           <form
             onSubmit={executeStepUpAction}
-            className="w-full max-w-md bg-white dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-slate-700 rounded-2xl p-6 space-y-4 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#32323C] rounded-2xl p-6 space-y-4 shadow-xl"
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Lock className="w-4 h-4 text-[#FF6B00]" />
-                <h4 className="text-sm font-black text-[#0F172A] dark:text-white">
+                <h4 className="text-sm font-black text-[#111113] dark:text-[#F7F6F3]">
                   تأكيد الهوية (Step-Up PIN)
                 </h4>
               </div>
               <button
                 type="button"
+                disabled={stepUpBusy}
                 onClick={() => setPendingAction(null)}
-                className="text-slate-400 hover:text-[#0F172A] dark:hover:text-white cursor-pointer"
+                className="text-[#8E8980] hover:text-[#111113] dark:hover:text-[#F7F6F3] cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+            <p className="text-xs text-[#5A5854] dark:text-[#B5B0A8] leading-relaxed">
               {pendingAction.type === 'create_backup' &&
                 'يتطلب إنشاء لقطة احتياطية موقعة HMAC تأكيد رمز الـ PIN الإداري.'}
               {pendingAction.type === 'apply_restore' &&
@@ -1146,7 +1151,7 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
             </p>
 
             <div>
-              <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1.5">
+              <label className="text-[11px] font-bold text-[#7A756D] dark:text-[#8E8980] block mb-1.5">
                 رمز الـ PIN الإداري (6 أرقام)
               </label>
               <input
@@ -1157,7 +1162,7 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
                 value={stepUpPin}
                 onChange={(e) => setStepUpPin(e.target.value)}
                 placeholder="••••••"
-                className="w-full bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono text-center tracking-widest text-[#0F172A] dark:text-white outline-none focus:border-[#FF6B00]"
+                className="w-full bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#32323C] rounded-xl px-3.5 py-2.5 text-sm font-mono text-center tracking-widest text-[#111113] dark:text-[#F7F6F3] outline-none focus:border-[#FF6B00]"
               />
             </div>
 
@@ -1168,15 +1173,16 @@ export const SecretControlRoom: React.FC<SecretControlRoomProps> = ({ onCatalogR
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 type="button"
+                disabled={stepUpBusy}
                 onClick={() => setPendingAction(null)}
-                className="px-4 py-2 rounded-xl border border-[#E2E8F0] dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer"
+                className="px-4 py-2 rounded-xl border border-[#E6E2D8] dark:border-[#32323C] text-xs font-bold text-[#5A5854] dark:text-[#B5B0A8] cursor-pointer"
               >
                 إلغاء
               </button>
               <button
                 type="submit"
                 disabled={stepUpBusy}
-                className="px-4 py-2 rounded-xl bg-[#FF6B00] hover:bg-[#EA580C] text-white text-xs font-bold cursor-pointer disabled:opacity-60"
+                className="px-4 py-2 rounded-xl bg-[#FF6B00] hover:bg-[#E05E00] text-white text-xs font-bold cursor-pointer disabled:opacity-60"
               >
                 {stepUpBusy ? 'جاري التنفيذ...' : 'تأكيد وتنفيذ'}
               </button>

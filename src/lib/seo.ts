@@ -30,19 +30,19 @@ const PAGES: Record<string, PageMeta> = {
     index: true,
     meta: {
       ar: {
-        title: 'ECHOX STORE — متجر تونسي للأدوات والمعدات وقطع الغيار الأصلية',
+        title: 'NIAPOLOR — المتجر التونسي الفاخر للمنتجات والمعدات الأصلية',
         description:
-          'متجر ECHOX STORE التونسي للأدوات والمعدات الكهربائية والميكانيكية وقطع الغيار الأصلية، مع الدفع عند الاستلام أو التحويل البنكي والتوصيل لكافة ولايات تونس الـ24.',
+          'متجر NIAPOLOR التونسي للأجهزة والمعدات والسلع الفاخرة وقطع الغيار الأصلية، مع الدفع عند الاستلام أو التحويل البنكي والتوصيل لكافة ولايات تونس الـ24.',
       },
       fr: {
-        title: 'ECHOX STORE — Outillage, Équipements & Pièces d’Origine en Tunisie',
+        title: 'NIAPOLOR — Boutique de Luxe, Équipements & Pièces d’Origine en Tunisie',
         description:
-          'Boutique tunisienne ECHOX STORE : outillage industriel, appareils de mesure et pièces détachées certifiées avec paiement à la livraison ou virement bancaire dans les 24 gouvernorats.',
+          'Boutique tunisienne NIAPOLOR : outillage, articles premium et pièces détachées certifiées avec paiement à la livraison ou virement dans les 24 gouvernorats.',
       },
       en: {
-        title: 'ECHOX STORE — Genuine Tools, Equipment & Spare Parts in Tunisia',
+        title: 'NIAPOLOR — Luxury Storefront, Genuine Tools & Hardware in Tunisia',
         description:
-          'ECHOX STORE Tunisia offers certified industrial tools, automotive spare parts, and precision electronics with Cash on Delivery or Bank Transfer across all 24 governorates.',
+          'NIAPOLOR Tunisia offers luxury curated goods, certified tools, and precision electronics with Cash on Delivery or online payment across all 24 governorates.',
       },
     },
   },
@@ -51,19 +51,19 @@ const PAGES: Record<string, PageMeta> = {
     index: true,
     meta: {
       ar: {
-        title: 'وعدنا وضمان الجودة | ECHOX STORE تونس',
+        title: 'وعدنا وضمان الجودة | NIAPOLOR تونس',
         description:
-          'تعرّف على ميثاق ضمان ECHOX STORE: منتجات أصلية 100%، دفع آمن عند المعاينة أو بالتحويل البنكي، وتوصيل سريع لكافة ولايات تونس.',
+          'تعرّف على ميثاق ضمان NIAPOLOR: منتجات أصلية 100%، دفع آمن عند المعاينة أو بالتحويل، وتوصيل سريع لكافة ولايات تونس.',
       },
       fr: {
-        title: 'Notre Engagement Qualité & Garantie | ECHOX STORE Tunisie',
+        title: 'Notre Engagement Qualité & Garantie | NIAPOLOR Tunisie',
         description:
-          'Découvrez la garantie ECHOX STORE : pièces certifiées 100% d’origine, contrôle avant paiement et livraison express sur toute la Tunisie.',
+          'Découvrez la garantie NIAPOLOR : pièces et articles certifiés 100% d’origine, contrôle avant paiement et livraison express sur toute la Tunisie.',
       },
       en: {
-        title: 'Our Quality Promise & Warranty | ECHOX STORE Tunisia',
+        title: 'Our Quality Promise & Warranty | NIAPOLOR Tunisia',
         description:
-          'Learn about the ECHOX STORE guarantee: 100% genuine certified equipment, secure payment options, and fast delivery across Tunisia.',
+          'Learn about the NIAPOLOR guarantee: 100% genuine certified products, secure payment options, and fast delivery across Tunisia.',
       },
     },
   },
@@ -72,19 +72,19 @@ const PAGES: Record<string, PageMeta> = {
     index: true,
     meta: {
       ar: {
-        title: 'الشركات والعلامات الشريكة | ECHOX STORE تونس',
+        title: 'الشركات والعلامات الشريكة | NIAPOLOR تونس',
         description:
-          'استعرض الشركات والموزعين المعتمدين لدى متجر ECHOX STORE في تونس للأدوات الصناعية، قطع غيار السيارات، وأجهزة القياس الدقيقة.',
+          'استعرض الشركات والموزعين المعتمدين لدى متجر NIAPOLOR في تونس للأجهزة والمعدات والقطع الأصلية.',
       },
       fr: {
-        title: 'Partenaires & Distributeurs Agréés | ECHOX STORE Tunisie',
+        title: 'Partenaires & Distributeurs Agréés | NIAPOLOR Tunisie',
         description:
-          'Découvrez les marques et distributeurs officiels partenaires d’ECHOX STORE en Tunisie pour l’outillage, les pièces auto et l’électronique.',
+          'Découvrez les marques et distributeurs officiels partenaires de NIAPOLOR en Tunisie.',
       },
       en: {
-        title: 'Authorized Partners & Brands | ECHOX STORE Tunisia',
+        title: 'Authorized Partners & Brands | NIAPOLOR Tunisia',
         description:
-          'Explore verified partner distributors and brands on ECHOX STORE Tunisia across power tools, automotive parts, and industrial electronics.',
+          'Explore verified partner distributors and luxury brands on NIAPOLOR Tunisia.',
       },
     },
   },
@@ -93,19 +93,19 @@ const PAGES: Record<string, PageMeta> = {
     index: true,
     meta: {
       ar: {
-        title: 'اتصل بنا والدعم الفني | ECHOX STORE تونس',
+        title: 'اتصل بنا والدعم الفني | NIAPOLOR تونس',
         description:
-          'تواصل مع فريق ECHOX STORE تونس عبر الهاتف أو واتساب أو البريد الإلكتروني. دعم سريع واستشارات فنية من الإثنين إلى السبت.',
+          'تواصل مع فريق NIAPOLOR تونس عبر الهاتف أو واتساب أو البريد الإلكتروني. دعم سريع واستشارات من الإثنين إلى السبت.',
       },
       fr: {
-        title: 'Contact & Assistance Technique | ECHOX STORE Tunisie',
+        title: 'Contact & Assistance Technique | NIAPOLOR Tunisie',
         description:
-          'Contactez l’équipe ECHOX STORE Tunisie par téléphone, WhatsApp ou e-mail pour toute demande de pièce ou suivi.',
+          'Contactez l’équipe NIAPOLOR Tunisie par téléphone, WhatsApp ou e-mail pour toute demande.',
       },
       en: {
-        title: 'Contact & Technical Support | ECHOX STORE Tunisia',
+        title: 'Contact & Customer Concierge | NIAPOLOR Tunisia',
         description:
-          'Reach ECHOX STORE Tunisia via phone, WhatsApp, or email for genuine hardware advice and customer support.',
+          'Reach NIAPOLOR Tunisia via phone, WhatsApp, or email for genuine product advice and dedicated support.',
       },
     },
   },
@@ -114,16 +114,16 @@ const PAGES: Record<string, PageMeta> = {
     index: false,
     meta: {
       ar: {
-        title: 'تتبع طلبك | ECHOX STORE',
-        description: 'متابعة حالة الطلب والدفع في ECHOX STORE.',
+        title: 'تتبع طلبك | NIAPOLOR',
+        description: 'متابعة حالة الطلب والدفع في NIAPOLOR.',
       },
       fr: {
-        title: 'Suivi de Commande | ECHOX STORE',
-        description: 'Suivez l’état de votre commande et paiement sur ECHOX STORE.',
+        title: 'Suivi de Commande | NIAPOLOR',
+        description: 'Suivez l’état de votre commande et paiement sur NIAPOLOR.',
       },
       en: {
-        title: 'Track Your Order | ECHOX STORE',
-        description: 'Track your order delivery and payment status on ECHOX STORE.',
+        title: 'Track Your Order | NIAPOLOR',
+        description: 'Track your order delivery and payment status on NIAPOLOR.',
       },
     },
   },
@@ -132,16 +132,16 @@ const PAGES: Record<string, PageMeta> = {
     index: false,
     meta: {
       ar: {
-        title: 'حسابي | ECHOX STORE',
-        description: 'بوابة الحساب والعناوين والمفضلة في ECHOX STORE.',
+        title: 'حسابي | NIAPOLOR',
+        description: 'بوابة الحساب والعناوين والمفضلة في NIAPOLOR.',
       },
       fr: {
-        title: 'Mon Compte | ECHOX STORE',
-        description: 'Gérez vos adresses et commandes sur ECHOX STORE.',
+        title: 'Mon Compte | NIAPOLOR',
+        description: 'Gérez vos adresses et commandes sur NIAPOLOR.',
       },
       en: {
-        title: 'My Account | ECHOX STORE',
-        description: 'Manage your addresses and orders on ECHOX STORE.',
+        title: 'My Account | NIAPOLOR',
+        description: 'Manage your addresses and orders on NIAPOLOR.',
       },
     },
   },
@@ -171,7 +171,7 @@ function setHreflangLink(hreflang: string, href: string) {
 }
 
 function toAbsoluteUrl(origin: string, urlOrPath?: string): string {
-  if (!urlOrPath) return `${origin}/assets/images/hero_echox_tunisia_store.webp`;
+  if (!urlOrPath) return `${origin}/assets/images/niapolor-logo-full.webp`;
   if (urlOrPath.startsWith('http://') || urlOrPath.startsWith('https://')) return urlOrPath;
   return `${origin}${urlOrPath.startsWith('/') ? '' : '/'}${urlOrPath}`;
 }
@@ -185,7 +185,7 @@ function updateProductJsonLd(origin: string, product: Product | null, lang: Lang
 
   const productUrl = `${origin}/?product=${encodeURIComponent(product.id)}`;
   const productImage = toAbsoluteUrl(origin, product.images?.[0]);
-  const productName = product.name?.[lang] || product.name?.ar || 'ECHOX Product';
+  const productName = product.name?.[lang] || product.name?.ar || 'NIAPOLOR Product';
   const productDesc = product.description?.[lang] || product.description?.ar || '';
 
   const schema: Record<string, any> = {
@@ -197,7 +197,7 @@ function updateProductJsonLd(origin: string, product: Product | null, lang: Lang
     sku: product.id,
     brand: {
       '@type': 'Brand',
-      name: product.companyName || 'ECHOX STORE',
+      name: product.companyName || 'NIAPOLOR',
     },
     offers: {
       '@type': 'Offer',
@@ -248,7 +248,7 @@ export function applySeo(
   }
 
   if (activeProduct && !isOwner) {
-    const productTitle = `${activeProduct.name?.[lang] || activeProduct.name?.ar} | ECHOX STORE`;
+    const productTitle = `${activeProduct.name?.[lang] || activeProduct.name?.ar} | NIAPOLOR`;
     const productDesc = (
       activeProduct.description?.[lang] ||
       activeProduct.description?.ar ||
@@ -296,16 +296,16 @@ export function applySeo(
           path: '/owner/dashboard',
           index: false,
           meta: {
-            ar: { title: 'مركز التحكم | ECHOX STORE', description: 'إدارة المتجر والمدفوعات.' },
-            fr: { title: "Panneau d'administration | ECHOX STORE", description: 'Gestion ECHOX STORE.' },
-            en: { title: 'Admin Panel | ECHOX STORE', description: 'ECHOX STORE Admin Panel.' },
+            ar: { title: 'مركز التحكم | NIAPOLOR', description: 'إدارة المتجر والمدفوعات.' },
+            fr: { title: "Panneau d'administration | NIAPOLOR", description: 'Gestion NIAPOLOR.' },
+            en: { title: 'Admin Panel | NIAPOLOR', description: 'NIAPOLOR Admin Panel.' },
           },
         }
       : PAGES.store);
 
   const metaForLang = page.meta[lang] || page.meta.ar;
   const url = `${origin}${page.path}`;
-  const defaultHeroImage = `${origin}/assets/images/hero_echox_tunisia_store.webp`;
+  const defaultHeroImage = `${origin}/assets/images/niapolor-logo-full.webp`;
 
   document.title = metaForLang.title;
   setMeta('name', 'description', metaForLang.description);

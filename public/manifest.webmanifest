@@ -1,15 +1,15 @@
 {
   "id": "/",
-  "name": "ECHOX STORE — متجر المعدات وقطع الغيار الأصلية",
-  "short_name": "ECHOX Store",
-  "description": "متجر ECHOX STORE التونسي للأدوات والمعدات الكهربائية والميكانيكية وقطع الغيار الأصلية مع إشعارات فورية.",
+  "name": "NIAPOLOR — المتجر التونسي الفاخر للمنتجات والمعدات الأصلية",
+  "short_name": "NIAPOLOR",
+  "description": "متجر NIAPOLOR التونسي الرسمي للأجهزة والمعدات والسلع الفاخرة الأصلية مع إشعارات فورية.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "dir": "rtl",
   "lang": "ar",
   "theme_color": "#FF6B00",
-  "background_color": "#12161B",
+  "background_color": "#0B0B0D",
   "icons": [
     {
       "src": "/pwa-any-192-v2.png",

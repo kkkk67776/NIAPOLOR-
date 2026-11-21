@@ -16,14 +16,14 @@ import { getAdminAuthHeaders, notifySessionExpired } from './security';
 export const DEFAULT_CHAT_CONFIG: SupportChatConfig = {
   autoReplyEnabled: true,
   welcomeMessage: {
-    ar: 'مرحباً بك في ECHOX Store! اسألني عن أي منتج أو سعر، مصاريف التوصيل لولايتك، طرق الدفع، أو أرسل رقم تتبع طلبيتك (مثل ECH-TN-...).',
-    fr: 'Bienvenue chez ECHOX Store ! Posez-moi vos questions sur nos produits, prix, livraison (24 gouvernorats), paiement ou suivi de commande (ECH-TN-...).',
-    en: 'Welcome to ECHOX Store! Ask me about any product or price, shipping across Tunisia’s 24 governorates, payment methods, or send your tracking code (e.g. ECH-TN-...).',
+    ar: 'مرحباً بك في NIAPOLOR! اسألني عن أي منتج أو سعر، مصاريف التوصيل لولايتك، طرق الدفع، أو أرسل رقم تتبع طلبيتك (مثل ECH-TN-...).',
+    fr: 'Bienvenue chez NIAPOLOR ! Posez-moi vos questions sur nos produits, prix, livraison (24 gouvernorats), paiement ou suivi de commande (ECH-TN-...).',
+    en: 'Welcome to NIAPOLOR! Ask me about any product or price, shipping across Tunisia’s 24 governorates, payment methods, or send your tracking code (e.g. ECH-TN-...).',
   },
   fallbackMessage: {
-    ar: 'تم استلام رسالتك وإشعار فريق ECHOX للرد عليك هنا مباشرة. يمكنك أيضاً ذكر اسم القطعة أو كتابة رقم الطلب (ECH-TN-...) أو التواصل الفوري على الرقم +216 21 511 162.',
-    fr: 'Votre message a bien été transmis à l’équipe ECHOX qui vous répondra ici. Vous pouvez aussi préciser le nom d’un article, votre numéro de suivi (ECH-TN-...) ou appeler le +216 21 511 162.',
-    en: 'Your message has been sent to the ECHOX team to reply directly here. You can also mention a product name, share an order tracking code (ECH-TN-...), or call +216 21 511 162.',
+    ar: 'تم استلام رسالتك وإشعار فريق NIAPOLOR للرد عليك هنا مباشرة. يمكنك أيضاً ذكر اسم القطعة أو كتابة رقم الطلب (ECH-TN-...) أو التواصل الفوري على الرقم +216 21 511 162.',
+    fr: 'Votre message a bien été transmis à l’équipe NIAPOLOR qui vous répondra ici. Vous pouvez aussi préciser le nom d’un article, votre numéro de suivi (ECH-TN-...) ou appeler le +216 21 511 162.',
+    en: 'Your message has been sent to the NIAPOLOR team to reply directly here. You can also mention a product name, share an order tracking code (ECH-TN-...), or call +216 21 511 162.',
   },
   customRules: [],
   updatedAt: '',
@@ -226,7 +226,7 @@ export function generateSmartStoreReply(params: {
       };
     }
     return {
-      text: `وسائل الدفع المتاحة حالياً في ECHOX Store:\n• ${methods.join('\n• ')}`,
+      text: `وسائل الدفع المتاحة حالياً في NIAPOLOR:\n• ${methods.join('\n• ')}`,
     };
   }
 
@@ -242,18 +242,18 @@ export function generateSmartStoreReply(params: {
 
     if (language === 'fr') {
       return {
-        text: `Utilisez le code promo ECHOX2026 dans le panier pour obtenir -10% de remise !\n${discounted.length > 0 ? 'Voici nos meilleures offres en cours :' : ''}`,
+        text: `Utilisez le code promo NIAPOLOR2026 dans le panier pour obtenir -10% de remise !\n${discounted.length > 0 ? 'Voici nos meilleures offres en cours :' : ''}`,
         suggestedProducts,
       };
     }
     if (language === 'en') {
       return {
-        text: `Use promo code ECHOX2026 in your cart for 10% off your order!\n${discounted.length > 0 ? 'Check out these current deals:' : ''}`,
+        text: `Use promo code NIAPOLOR2026 in your cart for 10% off your order!\n${discounted.length > 0 ? 'Check out these current deals:' : ''}`,
         suggestedProducts,
       };
     }
     return {
-      text: `يمكنك استخدام كود الخصم ECHOX2026 داخل السلة للحصول على تخفيض فوري بنسبة 10%!\n${discounted.length > 0 ? 'وهذه أبرز المنتجات المخفضة حالياً:' : ''}`,
+      text: `يمكنك استخدام كود الخصم NIAPOLOR2026 داخل السلة للحصول على تخفيض فوري بنسبة 10%!\n${discounted.length > 0 ? 'وهذه أبرز المنتجات المخفضة حالياً:' : ''}`,
       suggestedProducts,
     };
   }
@@ -268,7 +268,7 @@ export function generateSmartStoreReply(params: {
     }
     if (language === 'en') {
       return {
-        text: 'All items in ECHOX Store are 100% genuine with an official warranty. You have the right to inspect your parcel before paying, backed by our fair return & exchange policy.',
+        text: 'All items in NIAPOLOR are 100% genuine with an official warranty. You have the right to inspect your parcel before paying, backed by our fair return & exchange policy.',
         actionView: 'promise',
       };
     }
@@ -307,18 +307,18 @@ export function generateSmartStoreReply(params: {
       (siteSettings.workingHours && (siteSettings.workingHours[language] || siteSettings.workingHours.ar)) || '';
     if (language === 'fr') {
       return {
-        text: `Coordonnées directes ECHOX Store :\n• Téléphone : ${siteSettings.supportPhone}\n• Email : ${siteSettings.officialEmail}\n• Adresse : ${addr}${hours ? `\n• Horaires : ${hours}` : ''}`,
+        text: `Coordonnées directes NIAPOLOR :\n• Téléphone : ${siteSettings.supportPhone}\n• Email : ${siteSettings.officialEmail}\n• Adresse : ${addr}${hours ? `\n• Horaires : ${hours}` : ''}`,
         actionView: 'contact',
       };
     }
     if (language === 'en') {
       return {
-        text: `ECHOX Store direct contact details:\n• Phone: ${siteSettings.supportPhone}\n• Email: ${siteSettings.officialEmail}\n• Address: ${addr}${hours ? `\n• Hours: ${hours}` : ''}`,
+        text: `NIAPOLOR direct contact details:\n• Phone: ${siteSettings.supportPhone}\n• Email: ${siteSettings.officialEmail}\n• Address: ${addr}${hours ? `\n• Hours: ${hours}` : ''}`,
         actionView: 'contact',
       };
     }
     return {
-      text: `بيانات التواصل المباشر مع ECHOX Store:\n• الهاتف: ${siteSettings.supportPhone}\n• البريد: ${siteSettings.officialEmail}\n• المقر: ${addr}${hours ? `\n• أوقات العمل: ${hours}` : ''}`,
+      text: `بيانات التواصل المباشر مع NIAPOLOR:\n• الهاتف: ${siteSettings.supportPhone}\n• البريد: ${siteSettings.officialEmail}\n• المقر: ${addr}${hours ? `\n• أوقات العمل: ${hours}` : ''}`,
       actionView: 'contact',
     };
   }
@@ -401,9 +401,9 @@ export function generateSmartStoreReply(params: {
       return {
         text:
           language === 'fr'
-            ? `${matchedComp.name} est un partenaire certifié ECHOX Store (${matchedComp.phone}).`
+            ? `${matchedComp.name} est un partenaire certifié NIAPOLOR (${matchedComp.phone}).`
             : language === 'en'
-            ? `${matchedComp.name} is an authorized ECHOX Store partner (${matchedComp.phone}).`
+            ? `${matchedComp.name} is an authorized NIAPOLOR partner (${matchedComp.phone}).`
             : `${matchedComp.name} من الشركات الشريكة المعتمدة لدينا (${matchedComp.phone}).`,
         actionView: 'companies',
       };

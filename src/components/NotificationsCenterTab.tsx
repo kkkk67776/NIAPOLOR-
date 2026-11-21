@@ -273,7 +273,7 @@ export const NotificationsCenterTab: React.FC<NotificationsCenterTabProps> = ({
       };
     }
     return {
-      border: 'border-[#E2E8F0] dark:border-slate-700 bg-white dark:bg-[#0F172A]',
+      border: 'border-[#E6E2D8] dark:border-[#32323C] bg-white dark:bg-[#141418]',
       icon: <Info className="w-4 h-4 text-blue-500 shrink-0" />,
     };
   };
@@ -281,7 +281,7 @@ export const NotificationsCenterTab: React.FC<NotificationsCenterTabProps> = ({
   return (
     <div className="space-y-4">
       {/* Card 1: Mobile Web Push Activation for Owner Control Room */}
-      <div className="bg-[#0B0F17] text-white rounded-3xl p-4 sm:p-6 border border-slate-800 shadow-lg space-y-4">
+      <div className="bg-[#0B0B0D] text-[#F7F6F3] rounded-3xl p-4 sm:p-6 border border-[#23232A] shadow-lg space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="space-y-1">
             <div className="flex items-center gap-2 flex-wrap">
@@ -293,13 +293,13 @@ export const NotificationsCenterTab: React.FC<NotificationsCenterTabProps> = ({
                 className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
                   deviceSubscribed
                     ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                    : 'bg-slate-800 text-slate-300 border-slate-700'
+                    : 'bg-[#18181D] text-[#B5B0A8] border-[#32323C]'
                 }`}
               >
                 {deviceSubscribed ? 'مفعّل على هذا الهاتف ✓' : 'غير مفعّل على هذا الجهاز'}
               </span>
             </div>
-            <p className="text-xs text-slate-400 leading-relaxed">
+            <p className="text-xs text-[#8E8980] leading-relaxed">
               فعّل الإشعارات ليصلك تنبيه فوري على شاشة الهاتف لأي طلب جديد، أي محاولة اختراق أو رمز خاطئ، وأي إضافة أو تعديل داخل مركز التحكم حتى عند إغلاق المتصفح.
             </p>
           </div>
@@ -363,15 +363,15 @@ export const NotificationsCenterTab: React.FC<NotificationsCenterTabProps> = ({
           </div>
         )}
 
-        <div className="pt-2 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400">
+        <div className="pt-2 border-t border-[#23232A] flex flex-wrap items-center justify-between gap-2 text-[11px] text-[#8E8980]">
           <div className="flex items-center gap-2">
             <Smartphone className="w-3.5 h-3.5 text-[#FF6B00]" />
-            <span>الأجهزة المربوطة بإشعارات مركز التحكم: <strong className="text-white font-mono">{subscriptionsCount}</strong></span>
+            <span>الأجهزة المربوطة بإشعارات مركز التحكم: <strong className="text-[#F7F6F3] font-mono">{subscriptionsCount}</strong></span>
           </div>
           {subscriptions.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5">
               {subscriptions.slice(0, 4).map((d) => (
-                <span key={d.id} className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 text-[10px]">
+                <span key={d.id} className="px-2 py-0.5 rounded-full bg-[#18181D] text-[#B5B0A8] text-[10px]">
                   {d.deviceLabel}
                 </span>
               ))}
@@ -381,8 +381,8 @@ export const NotificationsCenterTab: React.FC<NotificationsCenterTabProps> = ({
       </div>
 
       {/* Card 2: Category Switches */}
-      <div className="bg-[#F8FAFC] dark:bg-[#1E293B] rounded-3xl p-4 sm:p-6 border border-[#E2E8F0] dark:border-slate-800 space-y-3">
-        <h4 className="text-xs sm:text-sm font-black text-[#0F172A] dark:text-white">
+      <div className="bg-[#F3F1EC] dark:bg-[#18181D] rounded-3xl p-4 sm:p-6 border border-[#E6E2D8] dark:border-[#23232A] space-y-3">
+        <h4 className="text-xs sm:text-sm font-black text-[#111113] dark:text-[#F7F6F3]">
           تخصيص أنواع التنبيهات المرسلة لهاتفك
         </h4>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
@@ -396,22 +396,22 @@ export const NotificationsCenterTab: React.FC<NotificationsCenterTabProps> = ({
                 onClick={() => handleToggleSetting(item.key)}
                 className={`p-3 rounded-2xl border text-start flex items-start justify-between gap-3 transition-all cursor-pointer ${
                   enabled
-                    ? 'bg-white dark:bg-[#0F172A] border-[#FF6B00]/40'
-                    : 'bg-slate-100/70 dark:bg-slate-900/50 border-[#E2E8F0] dark:border-slate-800 opacity-75'
+                    ? 'bg-white dark:bg-[#141418] border-[#FF6B00]/40'
+                    : 'bg-[#EBE7DF]/70 dark:bg-[#141418]/60 border-[#E6E2D8] dark:border-[#23232A] opacity-75'
                 }`}
               >
                 <div className="flex items-start gap-2.5">
                   <div className="mt-0.5 shrink-0">{item.icon}</div>
                   <div>
-                    <div className="text-xs font-black text-[#0F172A] dark:text-white">{item.title}</div>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">{item.desc}</p>
+                    <div className="text-xs font-black text-[#111113] dark:text-[#F7F6F3]">{item.title}</div>
+                    <p className="text-[11px] text-[#7A756D] dark:text-[#8E8980] mt-0.5 leading-snug">{item.desc}</p>
                   </div>
                 </div>
                 <span
                   className={`px-2.5 py-1 rounded-full text-[10px] font-black shrink-0 ${
                     enabled
                       ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-                      : 'bg-slate-200 dark:bg-slate-800 text-slate-500'
+                      : 'bg-[#EBE7DF] dark:bg-[#23232A] text-[#7A756D] dark:text-[#8E8980]'
                   }`}
                 >
                   {enabled ? 'مفعّل' : 'متوقف'}
@@ -423,10 +423,10 @@ export const NotificationsCenterTab: React.FC<NotificationsCenterTabProps> = ({
       </div>
 
       {/* Card 3: Live Control Room Feed */}
-      <div className="bg-[#F8FAFC] dark:bg-[#1E293B] rounded-3xl p-4 sm:p-6 border border-[#E2E8F0] dark:border-slate-800 space-y-4">
+      <div className="bg-[#F3F1EC] dark:bg-[#18181D] rounded-3xl p-4 sm:p-6 border border-[#E6E2D8] dark:border-[#23232A] space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <h4 className="text-sm font-black text-[#0F172A] dark:text-white">
+            <h4 className="text-sm font-black text-[#111113] dark:text-[#F7F6F3]">
               سجل تنبيهات مركز التحكم المباشر
             </h4>
             {unreadCount > 0 && (
@@ -441,7 +441,7 @@ export const NotificationsCenterTab: React.FC<NotificationsCenterTabProps> = ({
               type="button"
               onClick={() => void onRefresh()}
               disabled={loading}
-              className="px-3 py-1.5 rounded-xl bg-white dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-slate-700 text-xs font-bold flex items-center gap-1.5 cursor-pointer hover:border-[#FF6B00]"
+              className="px-3 py-1.5 rounded-xl bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#32323C] text-xs font-bold flex items-center gap-1.5 cursor-pointer hover:border-[#FF6B00]"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-[#FF6B00]' : ''}`} />
               <span>تحديث</span>
@@ -471,7 +471,7 @@ export const NotificationsCenterTab: React.FC<NotificationsCenterTabProps> = ({
                   <button
                     type="button"
                     onClick={() => setConfirmClear(false)}
-                    className="px-2.5 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-700 text-[11px] font-bold cursor-pointer"
+                    className="px-2.5 py-1.5 rounded-xl bg-[#EBE7DF] dark:bg-[#23232A] text-[11px] font-bold cursor-pointer"
                   >
                     إلغاء
                   </button>
@@ -506,7 +506,7 @@ export const NotificationsCenterTab: React.FC<NotificationsCenterTabProps> = ({
               className={`px-3 py-1.5 rounded-full text-[11px] font-bold shrink-0 transition-colors cursor-pointer ${
                 filter === f.id
                   ? 'bg-[#FF6B00] text-white'
-                  : 'bg-white dark:bg-[#0F172A] text-slate-600 dark:text-slate-300 border border-[#E2E8F0] dark:border-slate-700'
+                  : 'bg-white dark:bg-[#141418] text-[#5A5854] dark:text-[#B5B0A8] border border-[#E6E2D8] dark:border-[#32323C]'
               }`}
             >
               {f.label}
@@ -516,14 +516,14 @@ export const NotificationsCenterTab: React.FC<NotificationsCenterTabProps> = ({
 
         {/* Feed Items */}
         {filteredEvents.length === 0 ? (
-          <div className="p-8 text-center rounded-2xl bg-white dark:bg-[#0F172A] border border-dashed border-[#E2E8F0] dark:border-slate-700 space-y-2">
-            <BellRing className="w-8 h-8 text-slate-300 dark:text-slate-600 mx-auto" />
-            <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
+          <div className="p-8 text-center rounded-2xl bg-white dark:bg-[#141418] border border-dashed border-[#E6E2D8] dark:border-[#32323C] space-y-2">
+            <BellRing className="w-8 h-8 text-[#D6D0C4] dark:text-[#32323C] mx-auto" />
+            <p className="text-xs font-bold text-[#7A756D] dark:text-[#8E8980]">
               لا توجد تنبيهات مسجلة في هذا التصنيف حالياً.
             </p>
           </div>
         ) : (
-          <div className="space-y-2 max-h-[520px] overflow-y-auto pr-0.5">
+          <div className="space-y-2 max-h-[520px] overflow-y-auto pe-0.5">
             {filteredEvents.map((ev) => {
               const catBadge = getCategoryBadge(ev.category);
               const sevStyle = getSeverityStyle(ev.severity);
@@ -548,14 +548,14 @@ export const NotificationsCenterTab: React.FC<NotificationsCenterTabProps> = ({
                               جديد
                             </span>
                           )}
-                          <span className="text-[10px] text-slate-400 font-mono">
+                          <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980] font-mono">
                             {new Date(ev.createdAt).toLocaleString('ar-TN')}
                           </span>
                         </div>
-                        <h5 className="text-xs sm:text-sm font-black text-[#0F172A] dark:text-white leading-snug">
+                        <h5 className="text-xs sm:text-sm font-black text-[#111113] dark:text-[#F7F6F3] leading-snug">
                           {ev.title}
                         </h5>
-                        <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                        <p className="text-xs text-[#5A5854] dark:text-[#B5B0A8] leading-relaxed">
                           {ev.body}
                         </p>
                       </div>

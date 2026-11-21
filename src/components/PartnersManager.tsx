@@ -58,11 +58,11 @@ export default function PartnersManager() {
     } else {
       const defaultPartner: Partner[] = [{
         id: 1,
-        name: 'ECHOX Distribution Tunisie',
+        name: 'NIAPOLOR Distribution Tunisie',
         phone: '+216 21 511 162',
         email: 'abdelkaderbahri570@gmail.com',
         location: 'أريانة',
-        description: 'الموزع الرسمي لقطع وأجهزة ECHOX المعتمدة في تونس والمغرب العربي.',
+        description: 'الموزع الرسمي لقطع وأجهزة NIAPOLOR المعتمدة في تونس والمغرب العربي.',
         logo: ''
       }];
       setPartners(defaultPartner);
@@ -134,7 +134,7 @@ export default function PartnersManager() {
             <Building2 className="w-5 h-5 text-[#F59E0B]" />
             <span>الشركات التونسية الشريكة والموزعون</span>
           </h2>
-          <p className="text-xs text-gray-400 mt-1">إدارة حسابات الشركات والمصانع المسجلة في منصة ECHOX</p>
+          <p className="text-xs text-gray-400 mt-1">إدارة حسابات الشركات والمصانع المسجلة في منصة NIAPOLOR</p>
         </div>
 
         <button

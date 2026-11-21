@@ -1,4 +1,4 @@
-/* ECHOX STORE Service Worker v3 — Offline PWA App Shell, Versioned Asset Caching & Web Push Alerts */
+/* NIAPOLOR Service Worker v3 — Offline PWA App Shell, Versioned Asset Caching & Web Push Alerts */
 const SW_FALLBACK_VERSION = 'echox-v3-fallback';
 const STATIC_PREFIX = 'echox-static-';
 const META_CACHE = 'echox-meta-v3';
@@ -33,6 +33,11 @@ const FALLBACK_SHELL_URLS = [
   '/',
   '/index.html',
   '/manifest.webmanifest',
+  '/assets/images/niapolor-emblem.webp',
+  '/assets/images/niapolor-badge.webp',
+  '/assets/images/niapolor-logo-full.webp',
+  '/assets/images/hero-niapolor-dark.webp',
+  '/assets/images/hero-niapolor-light.webp',
   '/assets/images/echox-logo.webp',
   '/assets/aistudio/file_000000003d20821088780f690ee97fed_f8e408f8.png',
   '/assets/images/hero_echox_tunisia_store.webp',
@@ -307,7 +312,7 @@ async function handleNavigationRequest(request) {
   }
 
   return new Response(
-    `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ECHOX STORE — وضع عدم الاتصال</title><style>body{margin:0;font-family:system-ui,sans-serif;background:#0B0F17;color:#F8FAFC;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px;text-align:center}.card{max-width:420px;background:#111827;border:1px solid #1E293B;border-radius:20px;padding:28px}h1{font-size:20px;margin:0 0 10px;color:#FF6B00}p{font-size:14px;line-height:1.6;color:#CBD5E1;margin:0 0 18px}button{background:#FF6B00;color:#fff;border:0;border-radius:12px;padding:12px 22px;font-weight:700;cursor:pointer}</style></head><body><div class="card"><h1>ECHOX STORE</h1><p>أنت غير متصل بالإنترنت حالياً ولم يتم العثور على نسخة محفوظة من الواجهة. أعد الاتصال ثم أعد المحاولة.</p><button onclick="location.reload()">إعادة المحاولة</button></div></body></html>`,
+    `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>NIAPOLOR — وضع عدم الاتصال</title><style>body{margin:0;font-family:system-ui,sans-serif;background:#0B0B0D;color:#F8FAFC;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px;text-align:center}.card{max-width:420px;background:#141418;border:1px solid #23232A;border-radius:20px;padding:28px}h1{font-size:20px;margin:0 0 10px;color:#FF6B00;letter-spacing:0.12em}p{font-size:14px;line-height:1.6;color:#CBD5E1;margin:0 0 18px}button{background:#FF6B00;color:#fff;border:0;border-radius:12px;padding:12px 22px;font-weight:700;cursor:pointer}</style></head><body><div class="card"><h1>NIAPOLOR</h1><p>أنت غير متصل بالإنترنت حالياً ولم يتم العثور على نسخة محفوظة من الواجهة. أعد الاتصال ثم أعد المحاولة.</p><button onclick="location.reload()">إعادة المحاولة</button></div></body></html>`,
     {
       status: 503,
       headers: { 'Content-Type': 'text/html; charset=utf-8' },
@@ -548,7 +553,7 @@ self.addEventListener('fetch', (event) => {
 
 self.addEventListener('push', (event) => {
   let payload = {
-    title: 'ECHOX Store',
+    title: 'NIAPOLOR',
     body: 'لديك إشعار جديد في المتجر.',
     icon: '/pwa-any-192-v2.png',
     badge: '/pwa-any-192-v2.png',
@@ -577,7 +582,7 @@ self.addEventListener('push', (event) => {
   const vibrate = isCritical ? [300, 120, 300, 120, 300] : [200, 100, 200];
 
   event.waitUntil(
-    self.registration.showNotification(payload.title || 'ECHOX Store', {
+    self.registration.showNotification(payload.title || 'NIAPOLOR', {
       body: payload.body || '',
       icon: payload.icon || '/pwa-any-192-v2.png',
       badge: payload.badge || '/pwa-any-192-v2.png',

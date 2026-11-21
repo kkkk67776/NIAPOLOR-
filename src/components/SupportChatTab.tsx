@@ -185,13 +185,13 @@ export const SupportChatTab: React.FC = () => {
       )}
 
       {/* 1. صندوق المحادثات المباشرة مع الحرفاء */}
-      <div className="bg-[#F8FAFC] dark:bg-[#1E293B] rounded-3xl border border-[#E2E8F0] dark:border-slate-800 p-4 sm:p-5 space-y-4">
+      <div className="bg-[#F3F1EC] dark:bg-[#18181D] rounded-3xl border border-[#E6E2D8] dark:border-[#23232A] p-4 sm:p-5 space-y-4">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2">
             <MessageSquare className="w-5 h-5 text-[#FF6B00]" />
             <div>
               <h3 className="text-sm font-black">محادثات شات الدعم الفوري المباشر</h3>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              <p className="text-[11px] text-[#7A756D] dark:text-[#8E8980]">
                 تظهر هنا جميع رسائل الزوار مباشرة ويمكنك الرد عليهم لحظياً داخل نفس النافذة.
               </p>
             </div>
@@ -200,7 +200,7 @@ export const SupportChatTab: React.FC = () => {
           <button
             type="button"
             onClick={() => loadData()}
-            className="px-3 py-1.5 rounded-xl bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 text-xs font-bold flex items-center gap-1.5 cursor-pointer hover:border-[#FF6B00]"
+            className="px-3 py-1.5 rounded-xl bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#32323C] text-xs font-bold flex items-center gap-1.5 cursor-pointer hover:border-[#FF6B00]"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             <span>تحديث</span>
@@ -209,9 +209,9 @@ export const SupportChatTab: React.FC = () => {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Threads Sidebar */}
-          <div className="bg-white dark:bg-[#0F172A] rounded-2xl border border-slate-200 dark:border-slate-800 p-2.5 max-h-96 overflow-y-auto space-y-1.5">
+          <div className="bg-white dark:bg-[#141418] rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] p-2.5 max-h-96 overflow-y-auto space-y-1.5">
             {threads.length === 0 ? (
-              <div className="py-10 text-center text-xs text-slate-500">
+              <div className="py-10 text-center text-xs text-[#7A756D] dark:text-[#8E8980]">
                 لا توجد محادثات واردة بعد. عندما يرسل أي زائر رسالة في الشات ستظهر هنا فوراً.
               </div>
             ) : (
@@ -225,14 +225,14 @@ export const SupportChatTab: React.FC = () => {
                     className={`p-2.5 rounded-xl border cursor-pointer transition-all ${
                       isSelected
                         ? 'bg-[#FF6B00]/10 border-[#FF6B00]'
-                        : 'bg-slate-50 dark:bg-[#1E293B] border-transparent hover:border-slate-300 dark:hover:border-slate-700'
+                        : 'bg-[#F3F1EC] dark:bg-[#18181D] border-transparent hover:border-[#D6D0C4] dark:hover:border-[#32323C]'
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-black flex items-center gap-1.5">
                         <User className="w-3.5 h-3.5 text-[#FF6B00]" />
                         <span>{th.customerLabel}</span>
-                        <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200">
+                        <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-[#EBE7DF] dark:bg-[#23232A] text-[#5A5854] dark:text-[#B5B0A8]">
                           {th.language}
                         </span>
                       </span>
@@ -253,14 +253,14 @@ export const SupportChatTab: React.FC = () => {
                             });
                           }}
                           title="حذف المحادثة نهائياً"
-                          className="text-slate-400 hover:text-red-500 p-0.5 cursor-pointer"
+                          className="text-[#7A756D] dark:text-[#8E8980] hover:text-red-500 p-0.5 cursor-pointer"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </div>
                     {lastMsg && (
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-1">
+                      <p className="text-[11px] text-[#7A756D] dark:text-[#8E8980] truncate mt-1">
                         {lastMsg.text}
                       </p>
                     )}
@@ -271,19 +271,19 @@ export const SupportChatTab: React.FC = () => {
           </div>
 
           {/* Active Conversation Window */}
-          <div className="lg:col-span-2 bg-white dark:bg-[#0F172A] rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col h-96 overflow-hidden">
+          <div className="lg:col-span-2 bg-white dark:bg-[#141418] rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] flex flex-col h-96 overflow-hidden">
             {activeThread ? (
               <>
-                <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs">
+                <div className="p-3 border-b border-[#E6E2D8] dark:border-[#23232A] flex items-center justify-between text-xs">
                   <span className="font-black">
                     محادثة: {activeThread.customerLabel}
                   </span>
-                  <span className="text-[10px] text-slate-400 font-mono">
+                  <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980] font-mono">
                     {new Date(activeThread.lastMessageAt).toLocaleString('ar-TN')}
                   </span>
                 </div>
 
-                <div className="flex-1 p-3 overflow-y-auto space-y-2.5 bg-[#F8FAFC] dark:bg-[#0B0F17] text-xs">
+                <div className="flex-1 p-3 overflow-y-auto space-y-2.5 bg-[#FAF9F7] dark:bg-[#0B0B0D] text-xs">
                   {activeThread.messages.map((m) => (
                     <div
                       key={m.id}
@@ -291,7 +291,7 @@ export const SupportChatTab: React.FC = () => {
                         m.sender === 'owner' ? 'items-end' : 'items-start'
                       }`}
                     >
-                      <span className="text-[9px] text-slate-400 px-1 mb-0.5">
+                      <span className="text-[9px] text-[#7A756D] dark:text-[#8E8980] px-1 mb-0.5">
                         {m.sender === 'customer'
                           ? 'الحريف'
                           : m.source === 'auto'
@@ -302,9 +302,9 @@ export const SupportChatTab: React.FC = () => {
                         className={`max-w-[85%] p-2.5 rounded-2xl whitespace-pre-line ${
                           m.sender === 'owner'
                             ? m.source === 'auto'
-                              ? 'bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
+                              ? 'bg-[#EBE7DF] dark:bg-[#23232A] text-[#111113] dark:text-[#F7F6F3]'
                               : 'bg-[#FF6B00] text-white'
-                            : 'bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white'
+                            : 'bg-white dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#32323C] text-[#111113] dark:text-[#F7F6F3]'
                         }`}
                       >
                         {m.text}
@@ -315,14 +315,14 @@ export const SupportChatTab: React.FC = () => {
 
                 <form
                   onSubmit={handleSendAdminReply}
-                  className="p-2.5 border-t border-slate-200 dark:border-slate-800 flex gap-2"
+                  className="p-2.5 border-t border-[#E6E2D8] dark:border-[#23232A] flex gap-2"
                 >
                   <input
                     type="text"
                     value={replyText}
                     onChange={(e) => setReplyText(e.target.value)}
                     placeholder="اكتب ردك المباشر للحريف ليظهر في شات المتجر فوراً..."
-                    className="flex-1 text-xs py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent focus:outline-none focus:border-[#FF6B00]"
+                    className="flex-1 text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent focus:outline-none focus:border-[#FF6B00]"
                   />
                   <button
                     type="submit"
@@ -335,7 +335,7 @@ export const SupportChatTab: React.FC = () => {
                 </form>
               </>
             ) : (
-              <div className="flex-1 flex items-center justify-center text-xs text-slate-500">
+              <div className="flex-1 flex items-center justify-center text-xs text-[#7A756D] dark:text-[#8E8980]">
                 اختر محادثة من القائمة لقراءتها والرد عليها.
               </div>
             )}
@@ -346,20 +346,20 @@ export const SupportChatTab: React.FC = () => {
       {/* 2. تخصيص كيفية إجابة شات الدعم الفوري */}
       <form
         onSubmit={handleSaveConfig}
-        className="bg-[#F8FAFC] dark:bg-[#1E293B] rounded-3xl border border-[#E2E8F0] dark:border-slate-800 p-4 sm:p-5 space-y-5"
+        className="bg-[#F3F1EC] dark:bg-[#18181D] rounded-3xl border border-[#E6E2D8] dark:border-[#23232A] p-4 sm:p-5 space-y-5"
       >
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
             <Bot className="w-5 h-5 text-[#FF6B00]" />
             <div>
               <h3 className="text-sm font-black">تخصيص ردود شات الدعم الفوري</h3>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              <p className="text-[11px] text-[#7A756D] dark:text-[#8E8980]">
                 حدّد رسالة الترحيب والردود التلقائية على أسئلة المنتجات والأسعار والتوصيل وأضف كلماتك المفتاحية الخاصة.
               </p>
             </div>
           </div>
 
-          <label className="flex items-center gap-2 text-xs font-bold cursor-pointer bg-white dark:bg-[#0F172A] px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700">
+          <label className="flex items-center gap-2 text-xs font-bold cursor-pointer bg-white dark:bg-[#141418] px-3 py-2 rounded-xl border border-[#E6E2D8] dark:border-[#32323C]">
             <input
               type="checkbox"
               checked={config.autoReplyEnabled}
@@ -385,7 +385,7 @@ export const SupportChatTab: React.FC = () => {
                   welcomeMessage: { ...prev.welcomeMessage, ar: e.target.value },
                 }))
               }
-              className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A]"
+              className="w-full text-xs p-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418]"
             />
           </div>
           <div>
@@ -400,7 +400,7 @@ export const SupportChatTab: React.FC = () => {
                   welcomeMessage: { ...prev.welcomeMessage, fr: e.target.value },
                 }))
               }
-              className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A]"
+              className="w-full text-xs p-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418]"
             />
           </div>
           <div>
@@ -415,7 +415,7 @@ export const SupportChatTab: React.FC = () => {
                   welcomeMessage: { ...prev.welcomeMessage, en: e.target.value },
                 }))
               }
-              className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A]"
+              className="w-full text-xs p-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418]"
             />
           </div>
         </div>
@@ -433,7 +433,7 @@ export const SupportChatTab: React.FC = () => {
                   fallbackMessage: { ...prev.fallbackMessage, ar: e.target.value },
                 }))
               }
-              className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A]"
+              className="w-full text-xs p-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418]"
             />
           </div>
           <div>
@@ -448,7 +448,7 @@ export const SupportChatTab: React.FC = () => {
                   fallbackMessage: { ...prev.fallbackMessage, fr: e.target.value },
                 }))
               }
-              className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A]"
+              className="w-full text-xs p-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418]"
             />
           </div>
           <div>
@@ -463,15 +463,15 @@ export const SupportChatTab: React.FC = () => {
                   fallbackMessage: { ...prev.fallbackMessage, en: e.target.value },
                 }))
               }
-              className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A]"
+              className="w-full text-xs p-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418]"
             />
           </div>
         </div>
 
         {/* Custom Keyword Rules */}
-        <div className="p-3.5 rounded-2xl bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 space-y-3">
+        <div className="p-3.5 rounded-2xl bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#32323C] space-y-3">
           <h4 className="text-xs font-black">إضافة ردود مخصصة بكلمات مفتاحية</h4>
-          <p className="text-[10px] text-slate-500">
+          <p className="text-[10px] text-[#7A756D] dark:text-[#8E8980]">
             مثال: إذا كتب الحريف كلمة مثل «جملة» أو «ضمان» أو «تخفيض»، سيرد الشات فوراً بالنص الذي تحدده أنت (افصل الكلمات بفاصلة).
           </p>
 
@@ -481,14 +481,14 @@ export const SupportChatTab: React.FC = () => {
               value={newKeyword}
               onChange={(e) => setNewKeyword(e.target.value)}
               placeholder="الكلمات المفتاحية (مثلاً: جملة, gros)"
-              className="text-xs p-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent"
+              className="text-xs p-2 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent"
             />
             <input
               type="text"
               value={newReplyAr}
               onChange={(e) => setNewReplyAr(e.target.value)}
               placeholder="الرد بالعربية..."
-              className="text-xs p-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent"
+              className="text-xs p-2 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent"
             />
             <input
               type="text"
@@ -496,7 +496,7 @@ export const SupportChatTab: React.FC = () => {
               value={newReplyFr}
               onChange={(e) => setNewReplyFr(e.target.value)}
               placeholder="Réponse en français (optionnel)..."
-              className="text-xs p-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent"
+              className="text-xs p-2 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent"
             />
             <div className="flex gap-2">
               <input
@@ -505,12 +505,12 @@ export const SupportChatTab: React.FC = () => {
                 value={newReplyEn}
                 onChange={(e) => setNewReplyEn(e.target.value)}
                 placeholder="English reply (optional)..."
-                className="flex-1 text-xs p-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-transparent"
+                className="flex-1 text-xs p-2 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent"
               />
               <button
                 type="button"
                 onClick={handleAddRule}
-                className="px-3 py-2 rounded-xl bg-slate-900 dark:bg-slate-700 hover:bg-[#FF6B00] text-white text-xs font-bold flex items-center gap-1 shrink-0 cursor-pointer"
+                className="px-3 py-2 rounded-xl bg-[#111113] dark:bg-[#23232A] hover:bg-[#FF6B00] text-white text-xs font-bold flex items-center gap-1 shrink-0 cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>أضف</span>
@@ -523,11 +523,11 @@ export const SupportChatTab: React.FC = () => {
               {config.customRules.map((rule) => (
                 <div
                   key={rule.id}
-                  className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#1E293B] border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-3 text-xs"
+                  className="p-2.5 rounded-xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#32323C] flex items-center justify-between gap-3 text-xs"
                 >
                   <div className="min-w-0">
                     <span className="font-black text-[#FF6B00] block">{rule.keyword}</span>
-                    <span className="text-[11px] text-slate-600 dark:text-slate-300 block truncate">
+                    <span className="text-[11px] text-[#5A5854] dark:text-[#B5B0A8] block truncate">
                       {rule.replyAr}
                     </span>
                   </div>
@@ -558,23 +558,29 @@ export const SupportChatTab: React.FC = () => {
 
       {/* Double Confirmation Hard Delete Modal for Chat Threads */}
       {pendingDeleteThread && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-fadeIn">
-          <div className="w-full max-w-md bg-white dark:bg-[#1E293B] rounded-3xl p-5 border border-red-500/40 shadow-2xl space-y-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-fadeIn"
+          onClick={() => !deletingThread && setPendingDeleteThread(null)}
+        >
+          <div
+            className="w-full max-w-md bg-white dark:bg-[#141418] rounded-3xl p-5 border border-red-500/40 shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
             {pendingDeleteThread.step === 1 ? (
               <>
                 <div className="flex items-center gap-2.5 text-amber-600 dark:text-amber-400">
                   <AlertTriangle className="w-5 h-5 shrink-0" />
                   <h3 className="text-sm font-black">تأكيد حذف المحادثة (الخطوة 1 من 2)</h3>
                 </div>
-                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                <p className="text-xs text-[#5A5854] dark:text-[#B5B0A8] leading-relaxed">
                   هل تريد حذف محادثة الحريف <strong className="text-red-600">{pendingDeleteThread.label}</strong>؟
                   ستظهر لك رسالة التأكيد النهائية في الخطوة التالية.
                 </p>
-                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E6E2D8] dark:border-[#32323C]">
                   <button
                     type="button"
                     onClick={() => setPendingDeleteThread(null)}
-                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-[#7A756D] dark:text-[#8E8980] hover:bg-[#F3F1EC] dark:hover:bg-[#1C1C22] cursor-pointer"
                   >
                     إلغاء
                   </button>
@@ -599,14 +605,14 @@ export const SupportChatTab: React.FC = () => {
                   سيتم مسح سجل المحادثة <strong>{pendingDeleteThread.label}</strong> نهائياً من قاعدة البيانات
                   ولا يمكن استرجاعه من النظام بعد التأكيد.
                 </p>
-                <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+                <div className="flex items-center justify-between gap-2 pt-2 border-t border-[#E6E2D8] dark:border-[#32323C]">
                   <button
                     type="button"
                     disabled={deletingThread}
                     onClick={() =>
                       setPendingDeleteThread((prev) => (prev ? { ...prev, step: 1 } : null))
                     }
-                    className="px-3 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                    className="px-3 py-2 rounded-xl text-xs font-bold text-[#7A756D] dark:text-[#8E8980] hover:bg-[#F3F1EC] dark:hover:bg-[#1C1C22] cursor-pointer"
                   >
                     رجوع
                   </button>
@@ -615,7 +621,7 @@ export const SupportChatTab: React.FC = () => {
                       type="button"
                       disabled={deletingThread}
                       onClick={() => setPendingDeleteThread(null)}
-                      className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                      className="px-3.5 py-2 rounded-xl text-xs font-bold text-[#7A756D] dark:text-[#8E8980] hover:bg-[#F3F1EC] dark:hover:bg-[#1C1C22] cursor-pointer"
                     >
                       إلغاء
                     </button>

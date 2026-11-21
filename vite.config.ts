@@ -7,6 +7,9 @@ import {defineConfig, type Plugin} from 'vite';
 
 const DARK_LOGO_PATH = '/assets/aistudio/file_000000003d20821088780f690ee97fed_f8e408f8.png';
 const CORE_BRAND_IMAGES = [
+  '/assets/images/niapolor-emblem.webp',
+  '/assets/images/niapolor-badge.webp',
+  '/assets/images/niapolor-logo-full.webp',
   '/assets/images/echox-logo.webp',
   DARK_LOGO_PATH,
   '/assets/images/hero_echox_tunisia_store.webp',
@@ -53,6 +56,9 @@ function buildPrecacheManifest(distDir: string) {
       const stat = fs.statSync(path.join(distDir, rel.slice(1)));
       hash.update(`${rel}:${stat.size}:`);
     } else if (
+      rel === '/assets/images/niapolor-emblem.webp' ||
+      rel === '/assets/images/niapolor-badge.webp' ||
+      rel === '/assets/images/niapolor-logo-full.webp' ||
       rel === '/assets/images/echox-logo.webp' ||
       rel === DARK_LOGO_PATH ||
       rel === '/pwa-any-192-v2.png' ||

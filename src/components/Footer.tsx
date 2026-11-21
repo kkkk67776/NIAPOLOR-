@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 
 export const Footer: React.FC = () => {
-  const { siteSettings, language, t, setCurrentView, setIsSupportModalOpen, isDarkMode } = useStore();
+  const { siteSettings, language, t, setCurrentView, setIsSupportModalOpen } = useStore();
 
   const handleLinkClick = (view: string) => {
     setCurrentView(view);
@@ -16,7 +16,7 @@ export const Footer: React.FC = () => {
   };
 
   return (
-    <footer className="bg-[#0F172A] text-white border-t border-slate-800 transition-colors">
+    <footer className="bg-[#F3F1EC] dark:bg-[#0B0B0D] text-[#111113] dark:text-[#F7F6F3] border-t border-[#E6E2D8] dark:border-[#23232A] transition-colors">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-8 sm:py-12">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
           
@@ -24,28 +24,30 @@ export const Footer: React.FC = () => {
           <div className="space-y-3">
             <div className="flex items-center gap-2.5">
               <img 
-                src={isDarkMode ? '/assets/aistudio/file_000000003d20821088780f690ee97fed_f8e408f8.png' : '/assets/images/echox-logo.webp'} 
-                alt="ECHOX Logo" 
+                src="/assets/images/niapolor-emblem.webp" 
+                alt="NIAPOLOR Logo" 
                 width={32}
                 height={32}
                 data-echox-logo="footer"
-                className="w-8 h-8 rounded-full object-contain border border-[#FF6B00]/40 shrink-0"
+                className="w-8 h-8 rounded-full object-contain bg-white dark:bg-[#141418] p-0.5 border border-[#FF6B00]/45 shrink-0"
               />
-              <div>
-                <span className="text-lg font-black tracking-tight text-white block leading-none">
-                  ECHOX <span className="text-[#FF6B00]">Store</span>
+              <div dir="ltr">
+                <span className="text-lg font-black tracking-[0.06em] text-[#111113] dark:text-[#F7F6F3] block leading-none">
+                  NIAPOL<span className="text-[#FF6B00]">O</span>R
                 </span>
-                <span className="text-[10px] text-slate-400 font-bold">{t.footer.verifiedBadge}</span>
+                <span className="text-[10px] text-[#C8A25A] font-bold tracking-[0.12em] uppercase mt-0.5 block">
+                  {t.footer.verifiedBadge}
+                </span>
               </div>
             </div>
 
-            <p className="text-xs text-slate-300 leading-relaxed">
+            <p className="text-xs text-[#5A5854] dark:text-[#B5B0A8] leading-relaxed">
               {(typeof siteSettings.description === 'object' && siteSettings.description
                 ? siteSettings.description[language] || siteSettings.description.ar || siteSettings.description.fr || siteSettings.description.en
                 : (siteSettings.description as any)) || t.footer.desc}
             </p>
 
-            <div className="p-2.5 bg-slate-800/80 rounded-xl border border-slate-700 text-xs flex items-center gap-2 text-slate-200">
+            <div className="p-2.5 bg-white dark:bg-[#141418] rounded-xl border border-[#E6E2D8] dark:border-[#23232A] text-xs flex items-center gap-2 text-[#111113] dark:text-[#F7F6F3]">
               <Truck className="w-4 h-4 text-[#FF6B00] shrink-0" />
               <span className="font-semibold text-[11px]">{t.footer.deliveryAllTunisia || 'شحن سريع وتوصيل لجميع الـ 24 ولاية'}</span>
             </div>
@@ -56,7 +58,7 @@ export const Footer: React.FC = () => {
             <h4 className="text-xs font-black text-[#FF6B00] uppercase tracking-wider">
               {t.footer.quickLinks}
             </h4>
-            <ul className="space-y-1.5 text-xs text-slate-300 font-medium">
+            <ul className="space-y-1.5 text-xs text-[#5A5854] dark:text-[#B5B0A8] font-medium">
               <li>
                 <button 
                   type="button"
@@ -110,7 +112,7 @@ export const Footer: React.FC = () => {
             <h4 className="text-xs font-black text-[#FF6B00] uppercase tracking-wider">
               {t.footer.customerService}
             </h4>
-            <ul className="space-y-1.5 text-xs text-slate-300 font-medium">
+            <ul className="space-y-1.5 text-xs text-[#5A5854] dark:text-[#B5B0A8] font-medium">
               <li>
                 <button 
                   type="button"
@@ -155,11 +157,11 @@ export const Footer: React.FC = () => {
             <h4 className="text-xs font-black text-[#FF6B00] uppercase tracking-wider">
               {t.footer.directContact}
             </h4>
-            <ul className="space-y-2 text-xs text-slate-300 font-medium">
+            <ul className="space-y-2 text-xs text-[#5A5854] dark:text-[#B5B0A8] font-medium">
               {siteSettings?.supportPhone && (
                 <li className="flex items-center gap-2">
                   <Phone className="w-3.5 h-3.5 text-[#FF6B00]" />
-                  <a href={`tel:${siteSettings.supportPhone}`} dir="ltr" className="font-mono font-bold hover:text-white transition-colors">
+                  <a href={`tel:${siteSettings.supportPhone}`} dir="ltr" className="font-mono font-bold hover:text-[#FF6B00] transition-colors">
                     {siteSettings.supportPhone}
                   </a>
                 </li>
@@ -167,7 +169,7 @@ export const Footer: React.FC = () => {
               {siteSettings?.whatsappPhone && (
                 <li className="flex items-center gap-2">
                   <a 
-                    href={`https://wa.me/${siteSettings.whatsappPhone.replace(/\D/g, '')}?text=مرحباً%20ECHOX%20Store%20تونس`}
+                    href={`https://wa.me/${siteSettings.whatsappPhone.replace(/\D/g, '')}?text=مرحباً%20NIAPOLOR%20تونس`}
                     target="_blank"
                     rel="noreferrer"
                     aria-label="WhatsApp"
@@ -188,7 +190,7 @@ export const Footer: React.FC = () => {
               {siteSettings?.officialEmail && (
                 <li className="flex items-center gap-2">
                   <Mail className="w-3.5 h-3.5 text-[#FF6B00]" />
-                  <a href={`mailto:${siteSettings.officialEmail}`} dir="ltr" className="text-slate-300 text-[11px] truncate hover:text-white">
+                  <a href={`mailto:${siteSettings.officialEmail}`} dir="ltr" className="text-[#5A5854] dark:text-[#B5B0A8] text-[11px] truncate hover:text-[#FF6B00] transition-colors">
                     {siteSettings.officialEmail}
                   </a>
                 </li>
@@ -196,7 +198,7 @@ export const Footer: React.FC = () => {
               {(siteSettings?.address || siteSettings?.addressMultilingual) && (
                 <li className="flex items-start gap-2">
                   <MapPin className="w-3.5 h-3.5 text-[#FF6B00] shrink-0 mt-0.5" />
-                  <span className="text-slate-300 text-[11px]">
+                  <span className="text-[#5A5854] dark:text-[#B5B0A8] text-[11px]">
                     {(siteSettings.addressMultilingual && siteSettings.addressMultilingual[language]) || 
                      siteSettings.address || 
                      (siteSettings.addressMultilingual && (siteSettings.addressMultilingual.ar || siteSettings.addressMultilingual.fr || siteSettings.addressMultilingual.en))}
@@ -209,8 +211,8 @@ export const Footer: React.FC = () => {
         </div>
 
         {/* حقوق المتجر بدون أي روابط إدارية */}
-        <div className="pt-6 mt-6 border-t border-slate-800 text-center text-xs text-slate-500">
-          <p>© 2026 ECHOX Store — {t.footer.rights || 'كافة الحقوق محفوظة. الجمهورية التونسية.'}</p>
+        <div className="pt-6 mt-6 border-t border-[#E6E2D8] dark:border-[#23232A] text-center text-xs text-[#7A756D] dark:text-[#8E8980]">
+          <p>© 2026 NIAPOLOR — {t.footer.rights || 'كافة الحقوق محفوظة. الجمهورية التونسية.'}</p>
         </div>
       </div>
     </footer>
