@@ -1,10 +1,10 @@
-/* NIAPOLOR Service Worker v3 — Offline PWA App Shell, Versioned Asset Caching & Web Push Alerts */
-const SW_FALLBACK_VERSION = 'echox-v3-fallback';
+/* NIAPOLOR Service Worker v4 — Offline PWA App Shell, Versioned Asset Caching & Web Push Alerts */
+const SW_FALLBACK_VERSION = 'echox-v4-fallback';
 const STATIC_PREFIX = 'echox-static-';
-const META_CACHE = 'echox-meta-v3';
-const API_CACHE = 'echox-api-v3';
-const IMAGE_CACHE = 'echox-images-v3';
-const FONT_CACHE = 'echox-fonts-v3';
+const META_CACHE = 'echox-meta-v4';
+const API_CACHE = 'echox-api-v4';
+const IMAGE_CACHE = 'echox-images-v4';
+const FONT_CACHE = 'echox-fonts-v4';
 const META_KEY = '/__echox_sw_meta__';
 const MAX_IMAGE_ENTRIES = 80;
 
@@ -32,6 +32,7 @@ const PRIVATE_OR_MUTATING_API_PREFIXES = [
 const FALLBACK_SHELL_URLS = [
   '/',
   '/index.html',
+  '/manifest.json',
   '/manifest.webmanifest',
   '/assets/images/niapolor-emblem.webp',
   '/assets/images/niapolor-badge.webp',
@@ -44,9 +45,12 @@ const FALLBACK_SHELL_URLS = [
   '/assets/images/product_drill_cordless_pro.webp',
   '/assets/images/product_automotive_headlight.webp',
   '/assets/images/product_digital_multimeter.webp',
-  '/pwa-any-192-v2.png',
-  '/pwa-any-512-v2.png',
-  '/apple-touch-icon-v2.png',
+  '/pwa-any-192-v3.png',
+  '/pwa-any-512-v3.png',
+  '/pwa-maskable-192-v3.png',
+  '/pwa-maskable-512-v3.png',
+  '/apple-touch-icon-v3.png',
+  '/favicon-v3.png',
 ];
 
 const GOOGLE_FONT_CSS_URL =
@@ -180,7 +184,7 @@ function isImagePath(url) {
   return (
     url.pathname.startsWith('/assets/images/') ||
     url.pathname.startsWith('/assets/aistudio/') ||
-    /^\/(pwa-|apple-touch-icon).*\.(png|webp|jpg|jpeg|ico)$/i.test(url.pathname) ||
+    /^\/(pwa-|apple-touch-icon|favicon).*\.(png|webp|jpg|jpeg|ico)$/i.test(url.pathname) ||
     /\.(webp|png|jpg|jpeg|gif|svg|ico)$/i.test(url.pathname)
   );
 }
@@ -555,8 +559,8 @@ self.addEventListener('push', (event) => {
   let payload = {
     title: 'NIAPOLOR',
     body: 'لديك إشعار جديد في المتجر.',
-    icon: '/pwa-any-192-v2.png',
-    badge: '/pwa-any-192-v2.png',
+    icon: '/pwa-any-192-v3.png',
+    badge: '/pwa-any-192-v3.png',
     tag: 'echox-general',
     url: '/',
     severity: 'info',
@@ -584,8 +588,8 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     self.registration.showNotification(payload.title || 'NIAPOLOR', {
       body: payload.body || '',
-      icon: payload.icon || '/pwa-any-192-v2.png',
-      badge: payload.badge || '/pwa-any-192-v2.png',
+      icon: payload.icon || '/pwa-any-192-v3.png',
+      badge: payload.badge || '/pwa-any-192-v3.png',
       tag: payload.tag || `echox-${Date.now()}`,
       renotify: payload.renotify !== false,
       requireInteraction: Boolean(payload.requireInteraction || isCritical),

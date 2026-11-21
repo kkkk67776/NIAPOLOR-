@@ -1,14 +1,45 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useStore } from '../context/StoreContext';
 import { 
   Phone, 
   Mail, 
   MapPin, 
-  Truck
+  Truck,
+  Download
 } from 'lucide-react';
+import {
+  getDeferredInstallPrompt,
+  isIosDevice,
+  isStandalonePWA,
+  triggerPwaInstallPrompt,
+} from '../lib/notifications';
 
 export const Footer: React.FC = () => {
   const { siteSettings, language, t, setCurrentView, setIsSupportModalOpen } = useStore();
+  const [canInstallPwa, setCanInstallPwa] = useState(false);
+  const [showIosTip, setShowIosTip] = useState(false);
+
+  useEffect(() => {
+    const refresh = () => {
+      setCanInstallPwa(!isStandalonePWA() && (Boolean(getDeferredInstallPrompt()) || isIosDevice()));
+    };
+    refresh();
+    window.addEventListener('echox_pwa_install_ready', refresh);
+    window.addEventListener('echox_pwa_installed', refresh);
+    return () => {
+      window.removeEventListener('echox_pwa_install_ready', refresh);
+      window.removeEventListener('echox_pwa_installed', refresh);
+    };
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (getDeferredInstallPrompt()) {
+      const outcome = await triggerPwaInstallPrompt();
+      if (outcome === 'accepted') setCanInstallPwa(false);
+    } else if (isIosDevice()) {
+      setShowIosTip((prev) => !prev);
+    }
+  };
 
   const handleLinkClick = (view: string) => {
     setCurrentView(view);
@@ -51,6 +82,39 @@ export const Footer: React.FC = () => {
               <Truck className="w-4 h-4 text-[#FF6B00] shrink-0" />
               <span className="font-semibold text-[11px]">{t.footer.deliveryAllTunisia || 'شحن سريع وتوصيل لجميع الـ 24 ولاية'}</span>
             </div>
+
+            {canInstallPwa && (
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={handleInstallClick}
+                  className="w-full p-2.5 bg-[#0B0B0D] dark:bg-[#141418] hover:border-[#FF6B00] text-white rounded-xl border border-[#23232A] text-xs font-bold flex items-center justify-between gap-2.5 transition-colors cursor-pointer"
+                >
+                  <span className="flex items-center gap-2.5">
+                    <img
+                      src="/pwa-any-192-v3.png"
+                      alt="NIAPOLOR App"
+                      width={24}
+                      height={24}
+                      className="w-6 h-6 rounded-lg object-cover shrink-0 border border-[#FF6B00]/35"
+                    />
+                    <span className="text-[11px]">
+                      {language === 'ar'
+                        ? 'تثبيت تطبيق NIAPOLOR على هاتفك'
+                        : language === 'fr'
+                        ? 'Installer l’application NIAPOLOR'
+                        : 'Install NIAPOLOR App'}
+                    </span>
+                  </span>
+                  <Download className="w-4 h-4 text-[#FF6B00] shrink-0" />
+                </button>
+                {showIosTip && (
+                  <p className="p-2.5 rounded-xl bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#23232A] text-[10px] text-[#5A5854] dark:text-[#B5B0A8] leading-relaxed">
+                    على Safari: اضغط زر <strong>المشاركة (Share)</strong> ثم اختر <strong>إضافة إلى الشاشة الرئيسية (Add to Home Screen)</strong>.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* 2. روابط التصفح السريعة */}

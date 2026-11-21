@@ -643,8 +643,8 @@ export async function showLocalNotificationFallback(event: AdminNotificationEven
     if (reg) {
       await reg.showNotification(event.title, {
         body: event.body,
-        icon: '/pwa-any-192-v2.png',
-        badge: '/pwa-any-192-v2.png',
+        icon: '/pwa-any-192-v3.png',
+        badge: '/pwa-any-192-v3.png',
         tag: `echox-${event.id}`,
         dir: 'rtl',
         lang: 'ar',

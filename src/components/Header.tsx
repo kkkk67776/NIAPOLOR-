@@ -504,10 +504,17 @@ export default function Header(_props: HeaderProps) {
                   <button
                     type="button"
                     onClick={handleInstallPwa}
-                    className="w-full text-start flex items-center gap-2 px-3 py-2.5 rounded-xl bg-[#111113] dark:bg-[#1E1E22] text-white border border-[#27272E] hover:border-[#FF6B00] transition-colors cursor-pointer"
+                    className="w-full text-start flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-[#111113] dark:bg-[#1E1E22] text-white border border-[#27272E] hover:border-[#FF6B00] transition-colors cursor-pointer"
                   >
+                    <img
+                      src="/pwa-any-192-v3.png"
+                      alt=""
+                      width={24}
+                      height={24}
+                      className="w-6 h-6 rounded-lg object-cover shrink-0 border border-[#FF6B00]/30"
+                    />
+                    <span className="flex-1">تثبيت تطبيق NIAPOLOR</span>
                     <Download className="w-4 h-4 text-[#FF6B00] shrink-0" />
-                    <span>تثبيت تطبيق NIAPOLOR</span>
                   </button>
                   {showIosInstallTip && (
                     <div className="p-2.5 rounded-xl bg-[#FFFBEB] dark:bg-[#261D0B] border border-amber-200 dark:border-amber-800 text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">

@@ -16,14 +16,14 @@ const CORE_BRAND_IMAGES = [
   '/assets/images/product_drill_cordless_pro.webp',
   '/assets/images/product_automotive_headlight.webp',
   '/assets/images/product_digital_multimeter.webp',
+  '/manifest.json',
   '/manifest.webmanifest',
-  '/pwa-any-192-v2.png',
-  '/pwa-any-192-v2.webp',
-  '/pwa-any-512-v2.png',
-  '/pwa-any-512-v2.webp',
-  '/pwa-maskable-192-v2.png',
-  '/pwa-maskable-512-v2.png',
-  '/apple-touch-icon-v2.png',
+  '/pwa-any-192-v3.png',
+  '/pwa-any-512-v3.png',
+  '/pwa-maskable-192-v3.png',
+  '/pwa-maskable-512-v3.png',
+  '/apple-touch-icon-v3.png',
+  '/favicon-v3.png',
 ];
 
 function collectDistFiles(rootDir: string, currentDir: string, out: string[] = []): string[] {
@@ -44,7 +44,7 @@ function buildPrecacheManifest(distDir: string) {
   const allFiles = collectDistFiles(distDir, distDir).sort();
   const hash = crypto.createHash('sha256');
 
-  const coreSet = new Set<string>(['/', '/index.html', '/manifest.webmanifest']);
+  const coreSet = new Set<string>(['/', '/index.html', '/manifest.json', '/manifest.webmanifest']);
   const optionalSet = new Set<string>();
 
   for (const rel of allFiles) {
@@ -61,16 +61,19 @@ function buildPrecacheManifest(distDir: string) {
       rel === '/assets/images/niapolor-logo-full.webp' ||
       rel === '/assets/images/echox-logo.webp' ||
       rel === DARK_LOGO_PATH ||
-      rel === '/pwa-any-192-v2.png' ||
-      rel === '/pwa-any-512-v2.png' ||
-      rel === '/apple-touch-icon-v2.png'
+      rel === '/pwa-any-192-v3.png' ||
+      rel === '/pwa-any-512-v3.png' ||
+      rel === '/pwa-maskable-192-v3.png' ||
+      rel === '/pwa-maskable-512-v3.png' ||
+      rel === '/apple-touch-icon-v3.png' ||
+      rel === '/favicon-v3.png'
     ) {
       coreSet.add(rel);
       const stat = fs.statSync(path.join(distDir, rel.slice(1)));
       hash.update(`${rel}:${stat.size}:`);
     } else if (
       rel.startsWith('/assets/images/') ||
-      /^\/(pwa-|apple-touch-icon).*\.(png|webp)$/i.test(rel)
+      /^\/(pwa-|apple-touch-icon|favicon).*\.(png|webp)$/i.test(rel)
     ) {
       optionalSet.add(rel);
       const stat = fs.statSync(path.join(distDir, rel.slice(1)));
@@ -107,10 +110,10 @@ function echoxSwPrecachePlugin(): Plugin {
         res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
         res.end(
           JSON.stringify({
-            version: 'echox-dev-v3',
+            version: 'echox-dev-v4',
             generatedAt: new Date().toISOString(),
             shell: ['/', '/index.html'],
-            core: ['/', '/index.html', '/src/main.tsx', '/src/index.css', ...CORE_BRAND_IMAGES.slice(0, 3), '/manifest.webmanifest', '/pwa-any-192-v2.png'],
+            core: ['/', '/index.html', '/src/main.tsx', '/src/index.css', ...CORE_BRAND_IMAGES.slice(0, 3), '/manifest.json', '/manifest.webmanifest', '/pwa-any-192-v3.png'],
             optional: CORE_BRAND_IMAGES.slice(3),
           })
         );
