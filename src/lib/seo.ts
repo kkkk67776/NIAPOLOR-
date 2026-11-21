@@ -30,19 +30,19 @@ const PAGES: Record<string, PageMeta> = {
     index: true,
     meta: {
       ar: {
-        title: 'NIAPOLOR — المتجر التونسي الفاخر للمنتجات والمعدات الأصلية',
+        title: 'NIAPOLOR — عالمك، متجر واحد. | متجر إلكتروني متعدد الفئات',
         description:
-          'متجر NIAPOLOR التونسي للأجهزة والمعدات والسلع الفاخرة وقطع الغيار الأصلية، مع الدفع عند الاستلام أو التحويل البنكي والتوصيل لكافة ولايات تونس الـ24.',
+          'NIAPOLOR هو متجر إلكتروني متعدد الفئات، يجمع عالمًا متنوعًا من المنتجات والاختيارات في مكان واحد. اكتشف الإلكترونيات والأجهزة والمعدات وقطع غيار السيارات والإكسسوارات والعديد من المنتجات الأخرى. تسوّق بسهولة واستمتع بتجربة شراء موثوقة تناسب احتياجاتك.',
       },
       fr: {
-        title: 'NIAPOLOR — Boutique de Luxe, Équipements & Pièces d’Origine en Tunisie',
+        title: 'NIAPOLOR — Votre monde. Une seule boutique.',
         description:
-          'Boutique tunisienne NIAPOLOR : outillage, articles premium et pièces détachées certifiées avec paiement à la livraison ou virement dans les 24 gouvernorats.',
+          "NIAPOLOR est votre destination de shopping en ligne, réunissant une grande variété de produits dans plusieurs catégories. Découvrez l'électronique, les équipements, les pièces automobiles, les accessoires et bien plus encore, dans une seule boutique.",
       },
       en: {
-        title: 'NIAPOLOR — Luxury Storefront, Genuine Tools & Hardware in Tunisia',
+        title: 'NIAPOLOR — YOUR WORLD. ONE STORE. | Online Store',
         description:
-          'NIAPOLOR Tunisia offers luxury curated goods, certified tools, and precision electronics with Cash on Delivery or online payment across all 24 governorates.',
+          'NIAPOLOR is your online shopping destination, bringing together a wide variety of products across multiple categories. Discover electronics, equipment, automotive parts, accessories, and much more — all in one store.',
       },
     },
   },
@@ -51,19 +51,19 @@ const PAGES: Record<string, PageMeta> = {
     index: true,
     meta: {
       ar: {
-        title: 'وعدنا وضمان الجودة | NIAPOLOR تونس',
+        title: 'ميثاق الجودة والخدمة | NIAPOLOR',
         description:
-          'تعرّف على ميثاق ضمان NIAPOLOR: منتجات أصلية 100%، دفع آمن عند المعاينة أو بالتحويل، وتوصيل سريع لكافة ولايات تونس.',
+          'تعرّف على التزام NIAPOLOR بتوفير تجربة تسوق إلكتروني واضحة وموثوقة عبر فئات متعددة من المنتجات في مكان واحد.',
       },
       fr: {
-        title: 'Notre Engagement Qualité & Garantie | NIAPOLOR Tunisie',
+        title: 'Notre Engagement Qualité | NIAPOLOR',
         description:
-          'Découvrez la garantie NIAPOLOR : pièces et articles certifiés 100% d’origine, contrôle avant paiement et livraison express sur toute la Tunisie.',
+          "Découvrez l'engagement de NIAPOLOR pour une expérience d'achat en ligne claire et fiable dans plusieurs catégories.",
       },
       en: {
-        title: 'Our Quality Promise & Warranty | NIAPOLOR Tunisia',
+        title: 'Our Quality Commitment | NIAPOLOR',
         description:
-          'Learn about the NIAPOLOR guarantee: 100% genuine certified products, secure payment options, and fast delivery across Tunisia.',
+          'Learn about NIAPOLOR’s commitment to a clear and reliable online shopping experience across multiple categories.',
       },
     },
   },
@@ -72,19 +72,19 @@ const PAGES: Record<string, PageMeta> = {
     index: true,
     meta: {
       ar: {
-        title: 'الشركات والعلامات الشريكة | NIAPOLOR تونس',
+        title: 'الشركات والعلامات التجارية | NIAPOLOR',
         description:
-          'استعرض الشركات والموزعين المعتمدين لدى متجر NIAPOLOR في تونس للأجهزة والمعدات والقطع الأصلية.',
+          'استعرض العلامات التجارية والشركاء المتوفرين في متجر NIAPOLOR متعدد الفئات في مكان واحد.',
       },
       fr: {
-        title: 'Partenaires & Distributeurs Agréés | NIAPOLOR Tunisie',
+        title: 'Marques & Partenaires | NIAPOLOR',
         description:
-          'Découvrez les marques et distributeurs officiels partenaires de NIAPOLOR en Tunisie.',
+          'Découvrez les marques et partenaires disponibles dans votre boutique en ligne multi-catégories NIAPOLOR.',
       },
       en: {
-        title: 'Authorized Partners & Brands | NIAPOLOR Tunisia',
+        title: 'Brands & Partners | NIAPOLOR',
         description:
-          'Explore verified partner distributors and luxury brands on NIAPOLOR Tunisia.',
+          'Explore the brands and partners available on NIAPOLOR across multiple product categories.',
       },
     },
   },
@@ -93,19 +93,19 @@ const PAGES: Record<string, PageMeta> = {
     index: true,
     meta: {
       ar: {
-        title: 'اتصل بنا والدعم الفني | NIAPOLOR تونس',
+        title: 'اتصل بنا | NIAPOLOR',
         description:
-          'تواصل مع فريق NIAPOLOR تونس عبر الهاتف أو واتساب أو البريد الإلكتروني. دعم سريع واستشارات من الإثنين إلى السبت.',
+          'تواصل مع فريق NIAPOLOR عبر الهاتف أو واتساب أو البريد الإلكتروني للاستفسارات والمساعدة.',
       },
       fr: {
-        title: 'Contact & Assistance Technique | NIAPOLOR Tunisie',
+        title: 'Contact & Assistance | NIAPOLOR',
         description:
-          'Contactez l’équipe NIAPOLOR Tunisie par téléphone, WhatsApp ou e-mail pour toute demande.',
+          'Contactez l’équipe NIAPOLOR par téléphone, WhatsApp ou e-mail pour toute demande.',
       },
       en: {
-        title: 'Contact & Customer Concierge | NIAPOLOR Tunisia',
+        title: 'Contact & Support | NIAPOLOR',
         description:
-          'Reach NIAPOLOR Tunisia via phone, WhatsApp, or email for genuine product advice and dedicated support.',
+          'Reach the NIAPOLOR team via phone, WhatsApp, or email for inquiries and assistance.',
       },
     },
   },

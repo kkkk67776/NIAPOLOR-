@@ -47,8 +47,8 @@ const RouteFallback: React.FC = () => {
         <p className="text-sm font-black tracking-[0.26em] uppercase text-[#111113] dark:text-[#F7F6F3]">
           NIAPOL<span className="text-[#FF6B00]">O</span>R
         </p>
-        <p className="text-[9px] font-bold tracking-[0.32em] uppercase text-[#7A756D] dark:text-[#9A958E]">
-          LUXURY BRANDS
+        <p className="text-[9px] font-bold tracking-[0.2em] uppercase text-[#7A756D] dark:text-[#9A958E]">
+          YOUR WORLD. ONE STORE.
         </p>
       </div>
     </div>

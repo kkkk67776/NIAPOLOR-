@@ -194,8 +194,8 @@ export default function Header(_props: HeaderProps) {
               <span className="font-black tracking-[0.12em] text-sm sm:text-base text-[#111113] dark:text-[#F7F6F3] whitespace-nowrap">
                 NIAPOL<span className="text-[#FF6B00]">O</span>R
               </span>
-              <span className="text-[8px] font-bold tracking-[0.26em] text-[#7A756D] dark:text-[#9A958E] uppercase mt-0.5 hidden xs:block whitespace-nowrap">
-                LUXURY BRANDS
+              <span className="text-[7px] font-bold tracking-[0.14em] text-[#7A756D] dark:text-[#9A958E] uppercase mt-0.5 hidden xs:block whitespace-nowrap">
+                YOUR WORLD. ONE STORE.
               </span>
             </div>
           </button>
@@ -428,8 +428,8 @@ export default function Header(_props: HeaderProps) {
                   <span className="font-black text-sm tracking-[0.14em] text-[#111113] dark:text-[#F7F6F3]">
                     NIAPOL<span className="text-[#FF6B00]">O</span>R
                   </span>
-                  <span className="text-[7px] font-bold tracking-[0.26em] text-[#7A756D] dark:text-[#9A958E] uppercase mt-0.5">
-                    LUXURY BRANDS
+                  <span className="text-[6.5px] font-bold tracking-[0.14em] text-[#7A756D] dark:text-[#9A958E] uppercase mt-0.5 whitespace-nowrap">
+                    YOUR WORLD. ONE STORE.
                   </span>
                 </div>
               </div>

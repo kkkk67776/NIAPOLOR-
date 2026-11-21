@@ -295,23 +295,23 @@ export const INITIAL_OWNER_SETTINGS: OwnerSettings = {
   loginEmail: 'abdelkaderbahri570@gmail.com', // Locked sovereign Google email
   photoUrl: '/assets/images/niapolor-badge.webp',
   bio: {
-    ar: 'مالك ومؤسس منصة NIAPOLOR تونس. متخصص في سلاسل الإمداد للقطع الأصلية والأجهزة التقنية الدقيقة.',
-    fr: 'Fondateur et propriétaire de NIAPOLOR Tunisie, dédié aux équipements d’origine et produits sélectionnés.',
-    en: 'Founder and owner of NIAPOLOR Tunisia, committed to genuine hardware and curated products.'
+    ar: 'مالك ومؤسس متجر NIAPOLOR الإلكتروني متعدد الفئات — عالمك، متجر واحد.',
+    fr: 'Fondateur et propriétaire de la boutique en ligne multi-catégories NIAPOLOR — Votre monde. Une seule boutique.',
+    en: 'Founder and owner of NIAPOLOR multi-category online store — YOUR WORLD. ONE STORE.'
   }
 };
 
 export const INITIAL_SITE_SETTINGS: SiteSettings = {
   storeName: 'NIAPOLOR',
   slogan: {
-    ar: 'المنصة التونسية الرائدة للأجهزة والقطع الأصلية',
-    fr: 'La plateforme tunisienne de référence pour l’outillage et pièces certifiées',
-    en: 'Tunisia’s Premier Platform for Genuine Equipment & Spare Parts'
+    ar: 'عالمك، متجر واحد.',
+    fr: 'Votre monde. Une seule boutique.',
+    en: 'YOUR WORLD. ONE STORE.'
   },
   description: {
-    ar: 'متجر تونسي متخصص في المعدات الميكانيكية والكهربائية وقطع الغيار الأصلية مع الدفع عند الاستلام والتوصيل لكافة الـ 24 ولاية.',
-    fr: 'Boutique en ligne tunisienne spécialisée dans l’outillage, matériel électrique et pièces détachées avec paiement à la livraison sur toute la Tunisie.',
-    en: 'Tunisian online store specializing in professional tools, electrical equipment, and genuine spare parts with cash on delivery across Tunisia.'
+    ar: 'NIAPOLOR هو متجر إلكتروني متعدد الفئات، يجمع عالمًا متنوعًا من المنتجات والاختيارات في مكان واحد. اكتشف الإلكترونيات والأجهزة والمعدات وقطع غيار السيارات والإكسسوارات والعديد من المنتجات الأخرى. تسوّق بسهولة واستمتع بتجربة شراء موثوقة تناسب احتياجاتك.',
+    fr: "NIAPOLOR est votre destination de shopping en ligne, réunissant une grande variété de produits dans plusieurs catégories. Découvrez l'électronique, les équipements, les pièces automobiles, les accessoires et bien plus encore, dans une seule boutique.",
+    en: 'NIAPOLOR is your online shopping destination, bringing together a wide variety of products across multiple categories. Discover electronics, equipment, automotive parts, accessories, and much more — all in one store.'
   },
   officialEmail: 'contact@niapolor.tn',
   address: 'المركب التكنولوجي بالغزالة، أريانة / تونس العاصمة',

@@ -10,7 +10,7 @@ export const translations = {
     
     header: {
       brandName: 'NIAPOLOR',
-      subtitle: 'متجر الأجهزة والمعدات وقطع الغيار الأصلية',
+      subtitle: 'عالمك، متجر واحد.',
       searchPlaceholder: 'ابحث في المعدات والأجهزة وقطع الغيار...',
       language: 'اللغة',
       theme: 'المظهر',
@@ -96,9 +96,9 @@ export const translations = {
     },
 
     hero: {
-      badge: 'تشكيلة الفخامة المعتمدة في تونس',
+      badge: 'عالمك، متجر واحد.',
       title: 'اكتشف كل ما تحتاجه',
-      subtitle: 'أرقى المعدات الأصلية، الأجهزة الدقيقة، وقطع الغيار المعتمدة من كبرى العلامات التونسية والعالمية مع التوصيل لـ 24 ولاية والدفع عند الاستلام.',
+      subtitle: 'اكتشف الإلكترونيات والأجهزة والمعدات وقطع غيار السيارات والإكسسوارات والعديد من المنتجات الأخرى في مكان واحد.',
       shopNow: 'تسوّق الآن',
       learnPromise: 'ميثاق الجودة',
       verifiedDistributor: 'موزعون وشركات معتمدة',
@@ -526,8 +526,8 @@ export const translations = {
     },
 
     footer: {
-      desc: 'المنصة التونسية الرائدة للتجارة الإلكترونية المتخصصة في المعدات الأصلية، قطع الغيار، والأجهزة الدقيقة مع ضمان شامل وتوصيل لكافة ولايات الجمهورية.',
-      verifiedBadge: 'المنصة التونسية المعتمدة',
+      desc: 'NIAPOLOR هو متجر إلكتروني متعدد الفئات، يجمع عالمًا متنوعًا من المنتجات والاختيارات في مكان واحد. اكتشف الإلكترونيات والأجهزة والمعدات وقطع غيار السيارات والإكسسوارات والعديد من المنتجات الأخرى. تسوّق بسهولة واستمتع بتجربة شراء موثوقة تناسب احتياجاتك.',
+      verifiedBadge: 'عالمك، متجر واحد.',
       directContact: 'التواصل المباشر',
       quickLinks: 'روابط سريعة',
       customerService: 'خدمة الحرفاء',
@@ -564,7 +564,7 @@ export const translations = {
 
     header: {
       brandName: 'NIAPOLOR',
-      subtitle: 'Outillage, Équipements & Pièces Certifiées',
+      subtitle: 'Votre monde. Une seule boutique.',
       searchPlaceholder: 'Rechercher pièces, outillage et équipements...',
       language: 'Langue',
       theme: 'Thème',
@@ -650,9 +650,9 @@ export const translations = {
     },
 
     hero: {
-      badge: 'Nouvelle Collection Certifiée en Tunisie',
+      badge: 'Votre monde. Une seule boutique.',
       title: 'DÉCOUVREZ TOUT CE DONT VOUS AVEZ BESOIN',
-      subtitle: 'Explorez notre sélection haut de gamme d’équipements, instruments et pièces certifiées avec livraison sur les 24 gouvernorats et paiement à la réception.',
+      subtitle: "Découvrez l'électronique, les équipements, les pièces automobiles, les accessoires et bien plus encore, dans une seule boutique.",
       shopNow: 'ACHETER MAINTENANT',
       learnPromise: 'Notre Charte Qualité',
       verifiedDistributor: 'Distributeurs Agréés',
@@ -1080,8 +1080,8 @@ export const translations = {
     },
 
     footer: {
-      desc: 'Première plateforme e-commerce en Tunisie dédiée à l’outillage professionnel, pièces d’origine et équipements de précision avec garantie et livraison sur les 24 gouvernorats.',
-      verifiedBadge: 'Plateforme Tunisienne Certifiée',
+      desc: "NIAPOLOR est votre destination de shopping en ligne, réunissant une grande variété de produits dans plusieurs catégories. Découvrez l'électronique, les équipements, les pièces automobiles, les accessoires et bien plus encore, dans une seule boutique.",
+      verifiedBadge: 'Votre monde. Une seule boutique.',
       directContact: 'Contact Direct',
       quickLinks: 'Navigation',
       customerService: 'Service Client',
@@ -1118,7 +1118,7 @@ export const translations = {
 
     header: {
       brandName: 'NIAPOLOR',
-      subtitle: 'Genuine Tools, Hardware & Equipment Store',
+      subtitle: 'YOUR WORLD. ONE STORE.',
       searchPlaceholder: 'Search tools, spare parts, equipment...',
       language: 'Language',
       theme: 'Theme',
@@ -1204,9 +1204,9 @@ export const translations = {
     },
 
     hero: {
-      badge: 'New Season Curated Collection',
+      badge: 'YOUR WORLD. ONE STORE.',
       title: 'DISCOVER EVERYTHING YOU NEED',
-      subtitle: 'Explore NIAPOLOR’s curated collection of precision instruments, luxury hardware, and certified equipment. Fast 24-governorate delivery with Cash on Delivery.',
+      subtitle: 'Discover electronics, equipment, automotive parts, accessories, and much more — all in one store.',
       shopNow: 'SHOP NOW',
       learnPromise: 'Our Quality Charter',
       verifiedDistributor: 'Verified Distributors',
@@ -1634,8 +1634,8 @@ export const translations = {
     },
 
     footer: {
-      desc: 'Tunisia’s premier digital storefront for certified equipment, precision testing tools, and genuine spare parts with cash on delivery across 24 governorates.',
-      verifiedBadge: 'Tunisia Certified Platform',
+      desc: 'NIAPOLOR is your online shopping destination, bringing together a wide variety of products across multiple categories. Discover electronics, equipment, automotive parts, accessories, and much more — all in one store.',
+      verifiedBadge: 'YOUR WORLD. ONE STORE.',
       directContact: 'Direct Contact',
       quickLinks: 'Navigation',
       customerService: 'Customer Service',

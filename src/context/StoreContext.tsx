@@ -801,11 +801,41 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return { ok: true, order: res.order };
   };
 
+  const migrateLegacySiteSettings = (raw: SiteSettings): SiteSettings => {
+    const desc = { ...(raw?.description || INITIAL_SITE_SETTINGS.description) };
+    const slogan = { ...(raw?.slogan || INITIAL_SITE_SETTINGS.slogan) };
+    if (!desc.ar || /متخصص في المعدات|المعدات الميكانيكية|قطع الغيار الأصلية|الدفع عند الاستلام/i.test(desc.ar)) {
+      desc.ar = INITIAL_SITE_SETTINGS.description.ar;
+    }
+    if (!desc.fr || /spécialisée dans l[’']outillage|pièces détachées|paiement à la livraison/i.test(desc.fr)) {
+      desc.fr = INITIAL_SITE_SETTINGS.description.fr;
+    }
+    if (!desc.en || /specializing in professional tools|genuine spare parts|cash on delivery/i.test(desc.en)) {
+      desc.en = INITIAL_SITE_SETTINGS.description.en;
+    }
+    if (!slogan.ar || /المنصة التونسية الرائدة للأجهزة والقطع الأصلية/i.test(slogan.ar)) {
+      slogan.ar = INITIAL_SITE_SETTINGS.slogan.ar;
+    }
+    if (!slogan.fr || /plateforme tunisienne de référence|pièces certifiées/i.test(slogan.fr)) {
+      slogan.fr = INITIAL_SITE_SETTINGS.slogan.fr;
+    }
+    if (!slogan.en || /Premier Platform for Genuine Equipment/i.test(slogan.en)) {
+      slogan.en = INITIAL_SITE_SETTINGS.slogan.en;
+    }
+    return {
+      ...INITIAL_SITE_SETTINGS,
+      ...raw,
+      storeName: 'NIAPOLOR',
+      slogan,
+      description: desc,
+    };
+  };
+
   // 6. Settings
   const [siteSettings, setSiteSettingsState] = useState<SiteSettings>(() => {
     try {
       const saved = localStorage.getItem('echox_site_settings');
-      return saved ? JSON.parse(saved) : INITIAL_SITE_SETTINGS;
+      return saved ? migrateLegacySiteSettings(JSON.parse(saved)) : INITIAL_SITE_SETTINGS;
     } catch {
       return INITIAL_SITE_SETTINGS;
     }
@@ -853,7 +883,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
     if (data.siteSettings && typeof data.siteSettings === 'object') {
       setSiteSettingsState(prev => {
-        const merged = { ...prev, ...data.siteSettings };
+        const merged = migrateLegacySiteSettings({ ...prev, ...data.siteSettings });
         try {
           localStorage.setItem('echox_site_settings', JSON.stringify(merged));
         } catch {

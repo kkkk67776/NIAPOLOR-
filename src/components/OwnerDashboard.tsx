@@ -2338,10 +2338,10 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   </div>
                   <p className="text-[11px] text-[#B5B0A8] leading-relaxed italic bg-black/20 p-2 rounded-xl border border-white/5">
                     "{previewFooterLang === 'ar' 
-                      ? (footerDescAr || 'متجر تونسي متخصص في المعدات الميكانيكية والكهربائية...') 
+                      ? (footerDescAr || 'NIAPOLOR هو متجر إلكتروني متعدد الفئات، يجمع عالمًا متنوعًا من المنتجات والاختيارات في مكان واحد...') 
                       : previewFooterLang === 'fr' 
-                      ? (footerDescFr || footerDescAr || 'Boutique en ligne tunisienne spécialisée...') 
-                      : (footerDescEn || footerDescAr || 'Tunisian online store specializing in...')}"
+                      ? (footerDescFr || footerDescAr || "NIAPOLOR est votre destination de shopping en ligne, réunissant une grande variété de produits...") 
+                      : (footerDescEn || footerDescAr || 'NIAPOLOR is your online shopping destination, bringing together a wide variety of products...')}"
                   </p>
                 </div>
 
@@ -2441,7 +2441,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                     required
                     value={footerDescAr}
                     onChange={e => setFooterDescAr(e.target.value)}
-                    placeholder="متجر إلكتروني تونسي متخصص في توفير المعدات والأجهزة الصناعية وقطع الغيار الأصلية..."
+                    placeholder="NIAPOLOR هو متجر إلكتروني متعدد الفئات، يجمع عالمًا متنوعًا من المنتجات والاختيارات في مكان واحد..."
                     className="w-full text-xs p-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent text-[#111113] dark:text-[#F7F6F3] focus:border-[#FF6B00] outline-none resize-none leading-relaxed"
                   />
                   <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980] block text-end">
@@ -2459,7 +2459,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                     rows={3}
                     value={footerDescFr}
                     onChange={e => setFooterDescFr(e.target.value)}
-                    placeholder="Boutique en ligne tunisienne spécialisée dans l’outillage, matériel électrique et pièces détachées..."
+                    placeholder="NIAPOLOR est votre destination de shopping en ligne, réunissant une grande variété de produits dans plusieurs catégories..."
                     className="w-full text-xs p-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent text-[#111113] dark:text-[#F7F6F3] focus:border-[#FF6B00] outline-none resize-none leading-relaxed"
                     dir="ltr"
                   />
@@ -2478,7 +2478,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                     rows={3}
                     value={footerDescEn}
                     onChange={e => setFooterDescEn(e.target.value)}
-                    placeholder="Tunisian online store specializing in professional tools, electrical equipment, and genuine spare parts..."
+                    placeholder="NIAPOLOR is your online shopping destination, bringing together a wide variety of products across multiple categories..."
                     className="w-full text-xs p-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent text-[#111113] dark:text-[#F7F6F3] focus:border-[#FF6B00] outline-none resize-none leading-relaxed"
                     dir="ltr"
                   />
