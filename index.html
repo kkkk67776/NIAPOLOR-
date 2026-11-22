@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ar" dir="rtl">
+<html lang="ar" dir="rtl" class="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#FF6B00" />
+    <meta name="theme-color" content="#0B0B0D" />
 
     <!-- Google Search Console Verification -->
     <meta name="google-site-verification" content="afzVsNh9fVuZZTjM_tM4pYiOYxrWEEOOcYV5R8ELndE" />
@@ -117,13 +117,14 @@
       (function () {
         try {
           var saved = localStorage.getItem('echox_theme');
-          var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-          if (saved === 'dark' || (!saved && prefersDark)) {
+          if (saved !== 'light') {
             document.documentElement.classList.add('dark');
           } else {
             document.documentElement.classList.remove('dark');
           }
-        } catch (e) {}
+        } catch (e) {
+          document.documentElement.classList.add('dark');
+        }
       })();
     </script>
 

@@ -189,8 +189,20 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
     const filtered = products.filter(item => {
       const nameAr = item.name?.ar?.toLowerCase() || '';
       const nameFr = item.name?.fr?.toLowerCase() || '';
+      const nameEn = item.name?.en?.toLowerCase() || '';
       const descAr = item.description?.ar?.toLowerCase() || '';
-      return nameAr.includes(term) || nameFr.includes(term) || descAr.includes(term);
+      const descFr = item.description?.fr?.toLowerCase() || '';
+      const descEn = item.description?.en?.toLowerCase() || '';
+      const cat = item.category?.toLowerCase() || '';
+      return (
+        nameAr.includes(term) ||
+        nameFr.includes(term) ||
+        nameEn.includes(term) ||
+        descAr.includes(term) ||
+        descFr.includes(term) ||
+        descEn.includes(term) ||
+        cat.includes(term)
+      );
     });
     setSearchResults(filtered);
   };
@@ -200,14 +212,54 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
     setIsSearchModalOpen(false);
   };
 
-  const categories = storeCategories && storeCategories.length > 0 ? storeCategories : [
-    { id: 'all', label: t.categories.all, icon: '⚡', desc: 'كافة المعروضات المعتمدة' },
-    { id: 'power_tools', label: t.categories.power_tools, icon: '🔧', desc: 'مثاقب، مناشير، ومعدات ورشات' },
-    { id: 'auto_parts', label: t.categories.auto_parts, icon: '🚗', desc: 'قطع ميكانيكية وكهربائية للسيارات' },
-    { id: 'electronics', label: t.categories.electronics, icon: '🔌', desc: 'أجهزة قياس، لوحات وقطع إلكترونية' },
-    { id: 'industrial', label: t.categories.industrial, icon: '🏭', desc: 'معدات المصانع والورشات الثقيلة' },
-    { id: 'smart_home', label: t.categories.smart_home, icon: '🏠', desc: 'أتمتة وحماية المنازل الذكية' },
-  ];
+  const defaultCatDescs: Record<string, { ar: string; fr: string; en: string }> = {
+    all: {
+      ar: 'استكشف جميع الفئات والمنتجات المختارة',
+      fr: 'Explorez toutes les catégories et nouveautés',
+      en: 'Explore all curated departments & arrivals',
+    },
+    power_tools: {
+      ar: 'معدات عالية الأداء وتجهيزات متنوعة',
+      fr: 'Équipements performants et outillage moderne',
+      en: 'High-performance tools and utility equipment',
+    },
+    auto_parts: {
+      ar: 'إكسسوارات السيارات ومكونات التنقل',
+      fr: 'Accessoires auto, éclairage et mobilité',
+      en: 'Automotive lighting, components & accessories',
+    },
+    electronics: {
+      ar: 'أجهزة ذكية، إلكترونيات وتقنيات حديثة',
+      fr: 'Appareils électroniques, audio et mesure',
+      en: 'Electronics, smart tech & precision devices',
+    },
+    industrial: {
+      ar: 'حلول وتجهيزات احترافية للأعمال والشركات',
+      fr: 'Solutions et équipements professionnels',
+      en: 'Professional solutions & business hardware',
+    },
+    smart_home: {
+      ar: 'تقنيات المنزل العصري، الحماية والإكسسوارات',
+      fr: 'Maison connectée, sécurité et accessoires',
+      en: 'Smart living, security & lifestyle accessories',
+    },
+  };
+
+  const categories = (
+    storeCategories && storeCategories.length > 0
+      ? storeCategories
+      : [
+          { id: 'all', label: t.categories.all, icon: '✦', desc: defaultCatDescs.all[language] },
+          { id: 'electronics', label: t.categories.electronics, icon: '◈', desc: defaultCatDescs.electronics[language] },
+          { id: 'auto_parts', label: t.categories.auto_parts, icon: '◇', desc: defaultCatDescs.auto_parts[language] },
+          { id: 'power_tools', label: t.categories.power_tools, icon: '▣', desc: defaultCatDescs.power_tools[language] },
+          { id: 'smart_home', label: t.categories.smart_home, icon: '◎', desc: defaultCatDescs.smart_home[language] },
+          { id: 'industrial', label: t.categories.industrial, icon: '◆', desc: defaultCatDescs.industrial[language] },
+        ]
+  ).map((c) => ({
+    ...c,
+    desc: defaultCatDescs[c.id]?.[language] || c.desc || '',
+  }));
 
   const handleTabClick = (tab: 'home' | 'categories' | 'search' | 'cart') => {
     if (tab === 'home') {
@@ -245,14 +297,12 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
   const isCategoriesActive = isCategoriesSheetOpen;
   const isSearchActive = isSearchModalOpen;
 
-  const popularTags = [
-    'مثقاب كهربائي',
-    'مفتاح عزم',
-    'مضخة هواء',
-    'فلتر زيت',
-    'بطارية 20V',
-    'قاطع ليزري'
-  ];
+  const popularTags =
+    language === 'ar'
+      ? ['LED', 'FLUKE', 'TITAN', 'إلكترونيات', 'سيارات', '20V']
+      : language === 'fr'
+      ? ['LED', 'FLUKE', 'TITAN', 'Électronique', 'Auto', '20V']
+      : ['LED', 'FLUKE', 'TITAN', 'Electronics', 'Auto', '20V'];
 
   return (
     <>
@@ -260,7 +310,7 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
       {isSearchModalOpen && (
         <div className="fixed inset-0 z-50 bg-[#FAF9F7] dark:bg-[#0B0B0D] flex flex-col animate-fadeIn select-none text-[#111113] dark:text-[#F7F6F3]">
           {/* Top Bar for Search */}
-          <div className="p-3 sm:p-4 border-b border-[#E6E2D8] dark:border-[#27272E] bg-white dark:bg-[#121216] flex items-center gap-2.5 max-w-5xl w-full mx-auto">
+          <div className="p-3 sm:p-4 border-b border-[#E6E2D8] dark:border-[#23232C] bg-white dark:bg-[#131317] flex items-center gap-2.5 max-w-5xl w-full mx-auto">
             <button
               type="button"
               onClick={() => {
@@ -268,7 +318,7 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
                 setLocalSearchInput('');
                 setSearchResults([]);
               }}
-              className="p-2.5 rounded-xl hover:bg-[#F3F1EC] dark:hover:bg-[#1C1C22] text-[#111113] dark:text-[#F7F6F3] transition-colors cursor-pointer shrink-0"
+              className="p-2.5 rounded-xl hover:bg-[#F3F1EC] dark:hover:bg-[#1D1D24] text-[#111113] dark:text-[#F7F6F3] transition-colors cursor-pointer shrink-0"
               title="رجوع"
             >
               <ArrowRight className={`w-5 h-5 ${language !== 'ar' ? 'rotate-180' : ''}`} />
@@ -281,7 +331,7 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
                 if (accessCheckTimerRef.current) clearTimeout(accessCheckTimerRef.current);
                 void runAccessCodeVerification(localSearchInput, true);
               }}
-              className="flex-1 relative flex items-center bg-[#FAF9F7] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#2C2C35] focus-within:border-[#FF6B00] dark:focus-within:border-[#FF6B00] focus-within:bg-white dark:focus-within:bg-[#121216] rounded-xl py-2.5 px-4 transition-all"
+              className="flex-1 relative flex items-center bg-[#FAF9F7] dark:bg-[#18181E] border border-[#E6E2D8] dark:border-[#2C2C35] focus-within:border-[#FF6B00] dark:focus-within:border-[#FF6B00] focus-within:bg-white dark:focus-within:bg-[#131317] rounded-xl py-2.5 px-4 transition-all"
             >
               <Search className="w-4 h-4 text-[#FF6B00] mx-2 shrink-0" />
               <input
@@ -290,7 +340,7 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
                 value={localSearchInput}
                 onChange={handleSearchChange}
                 autoFocus
-                placeholder={t.bottomNav?.searchPlaceholder || 'ابحث في المعدات والأجهزة وقطع الغيار...'}
+                placeholder={t.bottomNav?.searchPlaceholder}
                 className="w-full bg-transparent text-xs sm:text-sm text-[#111113] dark:text-[#F7F6F3] placeholder-[#8A857C] dark:placeholder-[#6E6A63] outline-none"
               />
               {localSearchInput && (
@@ -318,7 +368,7 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
                 <div>
                   <div className="flex items-center gap-2 text-xs font-black tracking-wide text-[#111113] dark:text-[#F7F6F3] mb-3">
                     <TrendingUp className="w-4 h-4 text-[#FF6B00]" />
-                    <span>عمليات البحث الشائعة في تونس</span>
+                    <span>{language === 'ar' ? 'عمليات البحث الرائجة' : language === 'fr' ? 'Recherches populaires' : 'Trending Searches'}</span>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {popularTags.map((tag) => (
@@ -326,7 +376,7 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
                         key={tag}
                         type="button"
                         onClick={() => handleQuickTagClick(tag)}
-                        className="px-3.5 py-2 rounded-xl bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#27272E] hover:border-[#FF6B00] text-xs font-bold text-[#3D3A35] dark:text-[#D5D1C8] hover:text-[#FF6B00] transition-colors cursor-pointer"
+                        className="px-3.5 py-2 rounded-xl bg-white dark:bg-[#131317] border border-[#E6E2D8] dark:border-[#23232C] hover:border-[#FF6B00] text-xs font-bold text-[#3D3A35] dark:text-[#D5D1C8] hover:text-[#FF6B00] transition-colors cursor-pointer"
                       >
                         {tag}
                       </button>

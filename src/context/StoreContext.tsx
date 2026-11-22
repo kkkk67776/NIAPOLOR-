@@ -257,14 +257,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
   }, [language]);
 
-  // Dark Mode State with localStorage persistence
+  // Dark Mode State with localStorage persistence (Default: Dark Mode)
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem('echox_theme');
-      if (saved) return saved === 'dark';
-      return typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      return saved ? saved === 'dark' : true;
     } catch {
-      return false;
+      return true;
     }
   });
 

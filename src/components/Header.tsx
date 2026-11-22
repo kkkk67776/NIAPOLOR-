@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   Menu,
   X,
+  Search,
   ShoppingBag,
   Bell,
   BellRing,
@@ -146,6 +147,12 @@ export default function Header(_props: HeaderProps) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const openUnifiedSearch = () => {
+    setIsNotificationsOpen(false);
+    setIsMenuOpen(false);
+    window.dispatchEvent(new CustomEvent('open_echox_search'));
+  };
+
   const cycleLanguage = () => {
     if (language === 'ar') setLanguage('en');
     else if (language === 'en') setLanguage('fr');
@@ -162,14 +169,14 @@ export default function Header(_props: HeaderProps) {
 
   return (
     <>
-    <header className="w-full bg-white/95 dark:bg-[#0B0B0D]/95 backdrop-blur-md border-b border-[#E6E2D8] dark:border-[#1E1E24] text-[#111113] dark:text-[#F7F6F3] sticky top-0 z-40 transition-colors select-none">
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-2">
+    <header className="w-full bg-white/90 dark:bg-[#0B0B0D]/90 backdrop-blur-xl border-b border-[#E6E2D8] dark:border-[#1E1E26] text-[#111113] dark:text-[#F7F6F3] sticky top-0 z-40 transition-colors select-none">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-3">
         {/* Start: Drawer trigger + Official NIAPOLOR Emblem & Lockup */}
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <button
             type="button"
             onClick={() => setIsMenuOpen(true)}
-            className="p-2 rounded-lg hover:bg-[#F3F1EC] dark:hover:bg-[#18181D] text-[#111113] dark:text-[#F7F6F3] transition-colors cursor-pointer shrink-0"
+            className="p-2 rounded-xl hover:bg-[#F3F1EC] dark:hover:bg-[#18181E] text-[#111113] dark:text-[#F7F6F3] transition-colors cursor-pointer shrink-0"
             title={language === 'ar' ? 'القائمة' : 'Menu'}
             aria-label={language === 'ar' ? 'القائمة' : 'Menu'}
           >
@@ -191,10 +198,10 @@ export default function Header(_props: HeaderProps) {
               className="w-8 h-8 sm:w-9 sm:h-9 object-contain group-hover:scale-105 transition-transform shrink-0"
             />
             <div className="flex flex-col leading-none" dir="ltr">
-              <span className="font-black tracking-[0.12em] text-sm sm:text-base text-[#111113] dark:text-[#F7F6F3] whitespace-nowrap">
+              <span className="font-black tracking-[0.14em] text-sm sm:text-base text-[#111113] dark:text-[#F7F6F3] whitespace-nowrap">
                 NIAPOL<span className="text-[#FF6B00]">O</span>R
               </span>
-              <span className="text-[7px] font-bold tracking-[0.14em] text-[#7A756D] dark:text-[#9A958E] uppercase mt-0.5 hidden xs:block whitespace-nowrap">
+              <span className="text-[7px] font-bold tracking-[0.16em] text-[#7A756D] dark:text-[#8E8980] uppercase mt-0.5 hidden sm:block whitespace-nowrap">
                 YOUR WORLD. ONE STORE.
               </span>
             </div>
@@ -202,7 +209,7 @@ export default function Header(_props: HeaderProps) {
         </div>
 
         {/* Center: Clean Editorial Desktop Navigation */}
-        <nav className="hidden lg:flex items-center gap-7" aria-label="Primary Navigation">
+        <nav className="hidden lg:flex items-center gap-6" aria-label="Primary Navigation">
           {desktopNavItems.map((item) => {
             const isActive =
               currentView === item.id || (item.id === 'store' && (currentView === 'store' || currentView === '/'));
@@ -211,7 +218,7 @@ export default function Header(_props: HeaderProps) {
                 key={item.id}
                 type="button"
                 onClick={() => handleNavClick(item.id)}
-                className={`relative py-2 text-xs font-extrabold uppercase tracking-[0.1em] whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
+                className={`relative py-2 text-xs font-bold uppercase tracking-[0.08em] whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
                   isActive
                     ? 'text-[#111113] dark:text-[#F7F6F3]'
                     : 'text-[#6B665F] dark:text-[#9A958E] hover:text-[#FF6B00] dark:hover:text-[#FF6B00]'
@@ -228,11 +235,23 @@ export default function Header(_props: HeaderProps) {
 
         {/* End: Compact Luxury Utility Controls */}
         <div className="flex items-center gap-1 sm:gap-1.5 relative shrink-0">
+          {/* Quick Search Trigger (synced with Search Modal + # vault access) */}
+          <button
+            type="button"
+            onClick={openUnifiedSearch}
+            className="hidden sm:inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-[#E6E2D8] dark:border-[#23232C] bg-[#FAF9F7] dark:bg-[#131317] hover:border-[#FF6B00]/60 text-xs text-[#6B665F] dark:text-[#9A958E] hover:text-[#111113] dark:hover:text-[#F7F6F3] transition-colors cursor-pointer"
+            title={t.nav.search}
+            aria-label={t.nav.search}
+          >
+            <Search className="w-3.5 h-3.5 text-[#FF6B00] shrink-0" />
+            <span className="hidden xl:inline font-semibold text-[11px]">{t.nav.search}</span>
+          </button>
+
           {/* Theme Toggle */}
           <button
             type="button"
             onClick={toggleDarkMode}
-            className="p-2 rounded-lg hover:bg-[#F3F1EC] dark:hover:bg-[#18181D] text-[#111113] dark:text-[#C8A25A] transition-colors cursor-pointer"
+            className="p-2 rounded-xl hover:bg-[#F3F1EC] dark:hover:bg-[#18181E] text-[#111113] dark:text-[#C8A25A] transition-colors cursor-pointer"
             title={isDarkMode ? t.header.lightMode : t.header.darkMode}
             aria-label="Toggle Theme"
           >
@@ -243,7 +262,7 @@ export default function Header(_props: HeaderProps) {
           <button
             type="button"
             onClick={cycleLanguage}
-            className="px-2 py-1 rounded-lg border border-[#E6E2D8] dark:border-[#27272E] bg-[#FAF9F7] dark:bg-[#141418] text-[11px] font-extrabold text-[#111113] dark:text-[#F7F6F3] hover:border-[#FF6B00] transition-colors cursor-pointer uppercase"
+            className="px-2.5 py-1 rounded-xl border border-[#E6E2D8] dark:border-[#23232C] bg-[#FAF9F7] dark:bg-[#131317] text-[11px] font-extrabold text-[#111113] dark:text-[#F7F6F3] hover:border-[#FF6B00] transition-colors cursor-pointer uppercase"
             title={t.header.language}
           >
             {language}
@@ -253,19 +272,19 @@ export default function Header(_props: HeaderProps) {
           <button
             type="button"
             onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
-            className="relative p-2 rounded-lg hover:bg-[#F3F1EC] dark:hover:bg-[#18181D] text-[#111113] dark:text-[#F7F6F3] transition-colors cursor-pointer"
+            className="relative p-2 rounded-xl hover:bg-[#F3F1EC] dark:hover:bg-[#18181E] text-[#111113] dark:text-[#F7F6F3] transition-colors cursor-pointer"
             title={t.header.notifications}
             aria-label={t.header.notifications}
           >
             <Bell className="w-[18px] h-[18px]" />
-            <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-[#FF6B00]" />
+            <span className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-[#FF6B00]" />
           </button>
 
           {/* Wishlist Heart with fiery-orange badge */}
           <button
             type="button"
             onClick={() => handleNavClick('wishlist')}
-            className="relative p-2 rounded-lg hover:bg-[#F3F1EC] dark:hover:bg-[#18181D] text-[#111113] dark:text-[#F7F6F3] transition-colors cursor-pointer hidden xs:inline-flex"
+            className="relative p-2 rounded-xl hover:bg-[#F3F1EC] dark:hover:bg-[#18181E] text-[#111113] dark:text-[#F7F6F3] transition-colors cursor-pointer hidden xs:inline-flex"
             title={t.nav.wishlist}
             aria-label={t.nav.wishlist}
           >
@@ -281,7 +300,7 @@ export default function Header(_props: HeaderProps) {
           <button
             type="button"
             onClick={() => setIsCartOpen(true)}
-            className="relative p-2 rounded-lg hover:bg-[#F3F1EC] dark:hover:bg-[#18181D] text-[#111113] dark:text-[#F7F6F3] transition-colors cursor-pointer"
+            className="relative p-2 rounded-xl hover:bg-[#F3F1EC] dark:hover:bg-[#18181E] text-[#111113] dark:text-[#F7F6F3] transition-colors cursor-pointer"
             title={t.nav.cart}
             aria-label={t.nav.cart}
           >
@@ -295,8 +314,8 @@ export default function Header(_props: HeaderProps) {
 
           {/* Notifications Dropdown */}
           {isNotificationsOpen && (
-            <div className="absolute top-full left-0 mt-2 w-80 max-w-[90vw] bg-white dark:bg-[#141418] rounded-2xl border border-[#E6E2D8] dark:border-[#27272E] shadow-2xl p-3.5 z-50 animate-scaleUp">
-              <div className="flex items-center justify-between pb-2.5 border-b border-[#E6E2D8] dark:border-[#27272E] mb-2.5">
+            <div className="absolute top-full left-0 mt-2 w-80 max-w-[90vw] bg-white dark:bg-[#131317] rounded-2xl border border-[#E6E2D8] dark:border-[#23232C] shadow-2xl p-3.5 z-50 animate-scaleUp">
+              <div className="flex items-center justify-between pb-2.5 border-b border-[#E6E2D8] dark:border-[#23232C] mb-2.5">
                 <span className="text-xs font-black text-[#111113] dark:text-[#F7F6F3] flex items-center gap-1.5">
                   <BellRing className="w-3.5 h-3.5 text-[#FF6B00]" />
                   <span>{t.header?.notifications || 'إشعارات NIAPOLOR'}</span>
@@ -313,7 +332,7 @@ export default function Header(_props: HeaderProps) {
               <div className="mb-2.5 p-2.5 rounded-xl bg-[#FF6B00]/10 border border-[#FF6B00]/25 space-y-1.5">
                 <div className="flex items-center gap-1.5 text-[11px] font-bold text-[#111113] dark:text-[#F7F6F3]">
                   <Smartphone className="w-3.5 h-3.5 text-[#FF6B00] shrink-0" />
-                  <span>تنبيهات العروض والمنتجات الجديدة</span>
+                  <span>{language === 'ar' ? 'تنبيهات العروض والمنتجات الجديدة' : language === 'fr' ? 'Alertes offres & nouveautés' : 'Deals & New Arrivals Alerts'}</span>
                 </div>
                 <button
                   type="button"
@@ -360,7 +379,7 @@ export default function Header(_props: HeaderProps) {
                         }
                         setIsNotificationsOpen(false);
                       }}
-                      className="w-full text-start p-2.5 rounded-xl bg-[#FAF9F7] dark:bg-[#1C1C22] border border-[#E6E2D8] dark:border-[#27272E] hover:border-[#FF6B00]/50 transition-colors cursor-pointer"
+                      className="w-full text-start p-2.5 rounded-xl bg-[#FAF9F7] dark:bg-[#18181E] border border-[#E6E2D8] dark:border-[#23232C] hover:border-[#FF6B00]/50 transition-colors cursor-pointer"
                     >
                       <div className="flex items-center justify-between gap-1 text-[#FF6B00] font-bold text-[11px] mb-0.5">
                         <span className="flex items-center gap-1">
@@ -376,22 +395,22 @@ export default function Header(_props: HeaderProps) {
                     </button>
                   ))}
 
-                <div className="p-2.5 rounded-xl bg-[#FAF9F7] dark:bg-[#1C1C22] border border-[#E6E2D8] dark:border-[#27272E]">
+                <div className="p-2.5 rounded-xl bg-[#FAF9F7] dark:bg-[#18181E] border border-[#E6E2D8] dark:border-[#23232C]">
                   <div className="flex items-center gap-1.5 text-[#FF6B00] font-bold text-[11px] mb-0.5">
                     <Sparkles className="w-3.5 h-3.5" />
                     <span>{t.storefront?.defaultBannerTag || 'عروض حصرية'}</span>
                   </div>
                   <p className="text-[11px] text-[#5A5854] dark:text-[#A9A49B]">
-                    {t.header?.notificationPromo || 'تخفيض 10% بمناسبة إطلاق التشكيلة الجديدة! استخدم كود NIAPOLOR2026 عند إتمام الطلب.'}
+                    {t.header?.notificationPromo}
                   </p>
                 </div>
-                <div className="p-2.5 rounded-xl bg-[#FAF9F7] dark:bg-[#1C1C22] border border-[#E6E2D8] dark:border-[#27272E]">
+                <div className="p-2.5 rounded-xl bg-[#FAF9F7] dark:bg-[#18181E] border border-[#E6E2D8] dark:border-[#23232C]">
                   <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-bold text-[11px] mb-0.5">
                     <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>{t.storefront?.trustGenuine || 'قطع ومعدات أصلية 100%'}</span>
+                    <span>{t.storefront?.trustGenuine}</span>
                   </div>
                   <p className="text-[11px] text-[#5A5854] dark:text-[#A9A49B]">
-                    {t.header?.notificationCod || 'الدفع عند الاستلام والمعاينة متوفر لكافة ولايات تونس الـ24.'}
+                    {t.header?.notificationCod}
                   </p>
                 </div>
               </div>

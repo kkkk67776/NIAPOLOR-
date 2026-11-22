@@ -47,26 +47,26 @@ export const Footer: React.FC = () => {
   };
 
   return (
-    <footer className="bg-[#F3F1EC] dark:bg-[#0B0B0D] text-[#111113] dark:text-[#F7F6F3] border-t border-[#E6E2D8] dark:border-[#23232A] transition-colors">
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-8 sm:py-12">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
+    <footer className="bg-[#F3F1EC] dark:bg-[#0B0B0D] text-[#111113] dark:text-[#F7F6F3] border-t border-[#E6E2D8] dark:border-[#1E1E26] transition-colors">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-10 sm:py-14">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 sm:gap-10">
           
           {/* 1. معلومات المتجر والعلامة */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2.5">
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
               <img 
                 src="/assets/images/niapolor-emblem.webp" 
                 alt="NIAPOLOR Logo" 
-                width={32}
-                height={32}
+                width={34}
+                height={34}
                 data-echox-logo="footer"
-                className="w-8 h-8 rounded-full object-contain bg-white dark:bg-[#141418] p-0.5 border border-[#FF6B00]/45 shrink-0"
+                className="w-8.5 h-8.5 object-contain shrink-0"
               />
               <div dir="ltr">
-                <span className="text-lg font-black tracking-[0.06em] text-[#111113] dark:text-[#F7F6F3] block leading-none">
+                <span className="text-lg font-black tracking-[0.12em] text-[#111113] dark:text-[#F7F6F3] block leading-none">
                   NIAPOL<span className="text-[#FF6B00]">O</span>R
                 </span>
-                <span className="text-[10px] text-[#C8A25A] font-bold tracking-[0.12em] uppercase mt-0.5 block">
+                <span className="text-[10px] text-[#C8A25A] font-bold tracking-[0.14em] uppercase mt-1 block">
                   {t.footer.verifiedBadge}
                 </span>
               </div>
@@ -78,9 +78,9 @@ export const Footer: React.FC = () => {
                 : (siteSettings.description as any)) || t.footer.desc}
             </p>
 
-            <div className="p-2.5 bg-white dark:bg-[#141418] rounded-xl border border-[#E6E2D8] dark:border-[#23232A] text-xs flex items-center gap-2 text-[#111113] dark:text-[#F7F6F3]">
+            <div className="p-2.5 bg-white dark:bg-[#131317] rounded-xl border border-[#E6E2D8] dark:border-[#23232C] text-xs flex items-center gap-2 text-[#111113] dark:text-[#F7F6F3]">
               <Truck className="w-4 h-4 text-[#FF6B00] shrink-0" />
-              <span className="font-semibold text-[11px]">{t.footer.deliveryAllTunisia || 'شحن سريع وتوصيل لجميع الـ 24 ولاية'}</span>
+              <span className="font-semibold text-[11px]">{t.footer.deliveryAllTunisia}</span>
             </div>
 
             {canInstallPwa && (
@@ -88,7 +88,7 @@ export const Footer: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleInstallClick}
-                  className="w-full p-2.5 bg-[#0B0B0D] dark:bg-[#141418] hover:border-[#FF6B00] text-white rounded-xl border border-[#23232A] text-xs font-bold flex items-center justify-between gap-2.5 transition-colors cursor-pointer"
+                  className="w-full p-2.5 bg-[#0B0B0D] dark:bg-[#131317] hover:border-[#FF6B00] text-white rounded-xl border border-[#23232C] text-xs font-bold flex items-center justify-between gap-2.5 transition-colors cursor-pointer"
                 >
                   <span className="flex items-center gap-2.5">
                     <img

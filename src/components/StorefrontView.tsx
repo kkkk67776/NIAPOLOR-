@@ -3,20 +3,33 @@ import { useStore } from '../context/StoreContext';
 import { ProductCard } from './ProductCard';
 import {
   ArrowLeft,
+  ArrowUpRight,
   Star,
   MapPin,
   Sparkles,
   TrendingUp,
   ShieldCheck,
   Truck,
-  Banknote,
-  Headphones,
+  CreditCard,
+  Store,
   Check,
   Plus,
 } from 'lucide-react';
 import { TUNISIAN_GOVERNORATES } from '../data/governorates';
 import { Product } from '../types';
 import { handleStoreImageError, handleStoreImageLoad } from '../lib/imageFallback';
+import catElectronicsImg from '../assets/images/cat_electronics_tech_1795344146522.jpg';
+import catAutomotiveImg from '../assets/images/cat_automotive_mobility_1795344145510.jpg';
+import catEquipmentImg from '../assets/images/cat_pro_equipment_1795344145754.jpg';
+import catSmartLivingImg from '../assets/images/cat_smart_living_1795344145470.jpg';
+
+const CATEGORY_SHOWCASE_IMAGES: Record<string, string> = {
+  electronics: catElectronicsImg,
+  auto_parts: catAutomotiveImg,
+  power_tools: catEquipmentImg,
+  smart_home: catSmartLivingImg,
+  industrial: catEquipmentImg,
+};
 
 export const StorefrontView: React.FC = () => {
   const {
@@ -28,6 +41,7 @@ export const StorefrontView: React.FC = () => {
     selectedCategory,
     setSelectedCategory,
     setSelectedProductId,
+    setCurrentView,
     addToCart,
     banners,
   } = useStore();
@@ -53,7 +67,8 @@ export const StorefrontView: React.FC = () => {
       const matchName =
         product.name[language]?.toLowerCase().includes(q) ||
         product.name.ar.toLowerCase().includes(q) ||
-        product.name.fr.toLowerCase().includes(q);
+        product.name.fr.toLowerCase().includes(q) ||
+        product.name.en?.toLowerCase().includes(q);
       const matchComp = product.companyName?.toLowerCase().includes(q);
       const matchDesc = product.description[language]?.toLowerCase().includes(q);
       if (!matchName && !matchComp && !matchDesc) return false;
@@ -71,31 +86,61 @@ export const StorefrontView: React.FC = () => {
   });
 
   const activeProducts = products.filter((p) => p.active);
-  const featuredShowcase = activeProducts.slice(0, 6);
+
+  // Featured & Exclusive Offers (prioritize featured or discounted items)
+  const featuredOffers = activeProducts
+    .slice()
+    .sort((a, b) => {
+      const aScore = (a.featured ? 2 : 0) + (a.originalPrice && a.originalPrice > a.price ? 1 : 0);
+      const bScore = (b.featured ? 2 : 0) + (b.originalPrice && b.originalPrice > b.price ? 1 : 0);
+      return bScore - aScore;
+    })
+    .slice(0, 6);
+
+  // Best-Selling & Trending Ranked
   const topTrending = activeProducts
     .slice()
-    .sort((a, b) => (b.rating || 5) - (a.rating || 5))
+    .sort((a, b) => (b.rating * 10 + (b.reviewCount || 0)) - (a.rating * 10 + (a.reviewCount || 0)))
     .slice(0, 6);
-  const powerToolsOnly = activeProducts.filter((p) => p.category === 'power_tools');
+
+  // Cross-Category Recommended Showcase
+  const recommendedProducts = activeProducts
+    .slice()
+    .sort((a, b) => (b.stock > 0 ? 1 : 0) - (a.stock > 0 ? 1 : 0))
+    .slice(0, 6);
 
   const isBrowsingAll =
     selectedCategory === 'all' && !searchQuery.trim() && selectedGovFilter === 'all';
 
-  const categoryChips = (
+  const categoryList = (
     categories && categories.length > 0
       ? categories
       : [
           { id: 'all', label: t.categories.all },
-          { id: 'power_tools', label: t.categories.power_tools },
-          { id: 'auto_parts', label: t.categories.auto_parts },
           { id: 'electronics', label: t.categories.electronics },
-          { id: 'industrial', label: t.categories.industrial },
+          { id: 'auto_parts', label: t.categories.auto_parts },
+          { id: 'power_tools', label: t.categories.power_tools },
           { id: 'smart_home', label: t.categories.smart_home },
+          { id: 'industrial', label: t.categories.industrial },
         ]
   ).map((c) => ({
     ...c,
     label: (t.categories as Record<string, string>)[c.id] || c.label,
   }));
+
+  // Curated visual category cards (exclude 'all'; prioritize up to 4 main visual categories + any extra custom ones)
+  const visualCategories = categoryList
+    .filter((c) => c.id !== 'all')
+    .slice(0, 4)
+    .map((c, idx) => {
+      const count = activeProducts.filter((p) => p.category === c.id).length;
+      const fallbackPool = [catElectronicsImg, catAutomotiveImg, catEquipmentImg, catSmartLivingImg];
+      return {
+        ...c,
+        count,
+        image: CATEGORY_SHOWCASE_IMAGES[c.id] || fallbackPool[idx % fallbackPool.length],
+      };
+    });
 
   const scrollToCatalog = () => {
     const el = document.getElementById('niapolor-catalog');
@@ -104,15 +149,20 @@ export const StorefrontView: React.FC = () => {
     }
   };
 
+  const handleSelectShowcaseCategory = (catId: string) => {
+    setSelectedCategory(catId);
+    setTimeout(scrollToCatalog, 60);
+  };
+
   return (
-    <div className="space-y-7 sm:space-y-10 pb-24 bg-[#FAF9F7] dark:bg-[#0B0B0D] transition-colors">
-      {/* 1. NIAPOLOR DUAL-THEME STUDIO HERO BANNER (Smartphone, Headphones, Watch, Leather Accessories & Bag) */}
+    <div className="space-y-10 sm:space-y-14 pb-24 bg-[#FAF9F7] dark:bg-[#0B0B0D] transition-colors">
+      {/* 1. SIGNATURE EDITORIAL HERO — NIAPOLOR: YOUR WORLD. ONE STORE. */}
       <section
         dir="ltr"
-        className="relative overflow-hidden border-b border-[#E6E2D8] dark:border-[#1E1E24] bg-[#ECEDEB] dark:bg-[#101012]"
+        className="relative overflow-hidden border-b border-[#E6E2D8] dark:border-[#1E1E26] bg-[#EAE8E2] dark:bg-[#0D0D11]"
       >
-        <div className="relative max-w-[1440px] mx-auto min-h-[245px] sm:min-h-[340px] lg:min-h-[420px] flex items-center">
-          {/* Light Theme Studio Product Photography */}
+        <div className="relative max-w-[1440px] mx-auto min-h-[300px] sm:min-h-[390px] lg:min-h-[470px] flex items-center">
+          {/* Light Theme Studio Photography */}
           <img
             src="/assets/images/hero-niapolor-light.webp"
             alt={t.hero.title}
@@ -120,7 +170,7 @@ export const StorefrontView: React.FC = () => {
             className="block dark:hidden absolute inset-0 w-full h-full object-cover object-right select-none pointer-events-none"
           />
 
-          {/* Dark Theme Studio Product Photography */}
+          {/* Dark Theme Studio Photography */}
           <img
             src="/assets/images/hero-niapolor-dark.webp"
             alt={t.hero.title}
@@ -128,33 +178,64 @@ export const StorefrontView: React.FC = () => {
             className="hidden dark:block absolute inset-0 w-full h-full object-cover object-right select-none pointer-events-none"
           />
 
-          {/* Protective Directional Scrim Keeping Headline & CTA Ultra-Crisp Without Obscuring Right-Side Products */}
+          {/* Subtle Fiery-Orange Ambient Rim Glow */}
+          <div aria-hidden="true" className="niapolor-hero-glow pointer-events-none absolute inset-0" />
+
+          {/* Protective Directional Scrim Keeping Headline & CTAs Crisp */}
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute inset-0 bg-gradient-to-r from-[#ECEDEB] via-[#ECEDEB]/80 sm:via-[#ECEDEB]/55 to-transparent dark:from-[#101012] dark:via-[#101012]/80 sm:dark:via-[#101012]/55 dark:to-transparent"
+            className="pointer-events-none absolute inset-0 bg-gradient-to-r from-[#EAE8E2] via-[#EAE8E2]/88 sm:via-[#EAE8E2]/68 to-transparent dark:from-[#0B0B0D] dark:via-[#0B0B0D]/88 sm:dark:via-[#0B0B0D]/70 dark:to-transparent"
           />
 
-          {/* Foreground Editorial Copy + Fiery Orange CTA (Anchored in Open Left Studio Zone) */}
-          <div className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12 lg:py-16">
+          {/* Foreground Editorial Copy & Dual Action Architecture */}
+          <div className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 py-10 sm:py-14 lg:py-20">
             <div
               dir={language === 'ar' ? 'rtl' : 'ltr'}
-              className="max-w-[55%] sm:max-w-md lg:max-w-lg space-y-3.5 sm:space-y-5"
+              className="max-w-[78%] xs:max-w-[66%] sm:max-w-lg lg:max-w-xl space-y-4 sm:space-y-5"
             >
-              <h1 className="font-editorial text-[1.35rem] sm:text-4xl lg:text-[2.85rem] font-black leading-[1.1] tracking-tight text-[#111113] dark:text-[#FFFFFF] text-balance">
+              {/* Brand Eyebrow Lockup */}
+              <div className="inline-flex items-center gap-2.5 text-[10px] sm:text-xs font-black uppercase tracking-[0.2em] text-[#FF6B00]">
+                <img
+                  src="/assets/images/niapolor-emblem.webp"
+                  alt=""
+                  width={18}
+                  height={18}
+                  className="w-4.5 h-4.5 object-contain shrink-0"
+                />
+                <span>NIAPOLOR</span>
+                <span aria-hidden="true" className="text-[#8E8980]">·</span>
+                <span className="text-[#4F4D49] dark:text-[#C8A25A]">{t.hero.badge}</span>
+              </div>
+
+              <h1 className="font-editorial text-2xl sm:text-4xl lg:text-[3.1rem] font-black leading-[1.08] tracking-tight text-[#111113] dark:text-[#FFFFFF] text-balance">
                 {t.hero.title}
               </h1>
 
-              <p className="hidden sm:block text-sm text-[#4F4D49] dark:text-[#B5B0A8] leading-relaxed max-w-md font-medium">
+              <p className="text-xs sm:text-sm lg:text-[15px] text-[#4F4D49] dark:text-[#B5B0A8] leading-relaxed max-w-lg font-medium line-clamp-3 sm:line-clamp-none">
                 {t.hero.subtitle}
               </p>
 
-              <div className="pt-0.5 sm:pt-1">
+              {/* Dual Primary + Seller/Marketplace Actions */}
+              <div className="flex flex-wrap items-center gap-3 pt-1">
                 <button
                   type="button"
                   onClick={scrollToCatalog}
-                  className="inline-flex items-center justify-center px-5 sm:px-7 py-2.5 sm:py-3 rounded-lg bg-[#FF6B00] hover:bg-[#E05E00] text-white text-xs sm:text-sm font-black uppercase tracking-wider shadow-[0_10px_24px_-6px_rgba(255,107,0,0.48)] transition-all cursor-pointer active:scale-95"
+                  className="inline-flex items-center justify-center gap-2 px-6 sm:px-7 py-3 rounded-xl bg-[#FF6B00] hover:bg-[#E05E00] text-white text-xs sm:text-sm font-black uppercase tracking-wider shadow-[0_12px_28px_-8px_rgba(255,107,0,0.55)] transition-all cursor-pointer active:scale-95"
                 >
-                  {t.hero.shopNow}
+                  <span>{t.hero.shopNow}</span>
+                  <ArrowLeft className={`w-4 h-4 ${language !== 'ar' ? 'rotate-180' : ''}`} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCurrentView('companies');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                  className="inline-flex items-center justify-center gap-1.5 px-4 sm:px-5 py-3 rounded-xl bg-white/80 dark:bg-[#18181E]/90 hover:bg-white dark:hover:bg-[#1D1D24] border border-[#D6D0C4] dark:border-[#2C2C36] hover:border-[#FF6B00]/60 text-[#111113] dark:text-[#F7F6F3] text-xs font-extrabold transition-all cursor-pointer active:scale-95"
+                >
+                  <Store className="w-3.5 h-3.5 text-[#FF6B00]" />
+                  <span>{t.hero.exploreSellers || t.nav.companies}</span>
                 </button>
               </div>
             </div>
@@ -162,39 +243,10 @@ export const StorefrontView: React.FC = () => {
         </div>
       </section>
 
-      {/* 2. CATEGORY CHIPS BAR (Directly beneath Hero with 'NEW' kicker on All — Matches Mobile Reference) */}
-      <section className="max-w-7xl mx-auto px-3 sm:px-6 w-full max-w-full overflow-hidden -mt-3 sm:-mt-4">
-        <div className="flex items-end gap-2 overflow-x-auto pt-3 pb-1 scrollbar-none snap-x">
-          {categoryChips.map((chip) => {
-            const isSelected = selectedCategory === chip.id;
-            return (
-              <div key={chip.id} className="relative flex flex-col items-center shrink-0">
-                {chip.id === 'all' && (
-                  <span className="text-[8px] font-black tracking-[0.18em] uppercase text-[#FF6B00] mb-0.5">
-                    NEW
-                  </span>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setSelectedCategory(chip.id)}
-                  className={`px-4 py-1.5 rounded-full text-xs font-extrabold whitespace-nowrap transition-all cursor-pointer active:scale-95 ${
-                    isSelected
-                      ? 'bg-[#FF6B00] text-white shadow-[0_4px_12px_rgba(255,107,0,0.35)]'
-                      : 'bg-white dark:bg-[#141418] text-[#3D3A35] dark:text-[#D5D1C8] hover:text-[#111113] dark:hover:text-white border border-[#E6E2D8] dark:border-[#27272E] hover:border-[#FF6B00]/50'
-                  }`}
-                >
-                  {chip.label}
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
       {/* Optional Admin Promotional Banners */}
       {banners && banners.filter((b) => b.active).length > 0 && (
-        <div className="max-w-7xl mx-auto px-3 sm:px-6">
-          <div className="space-y-2">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 -mt-4 sm:-mt-6">
+          <div className="space-y-2.5">
             {banners
               .filter((b) => b.active)
               .map((b) => {
@@ -213,21 +265,22 @@ export const StorefrontView: React.FC = () => {
                 return (
                   <div
                     key={b.id}
-                    className={`rounded-2xl bg-gradient-to-r ${b.bgGradient || 'from-[#18181D] via-[#121216] to-[#FF6B00]'} text-white px-4 py-3 shadow-xs flex items-center justify-between gap-3 overflow-hidden relative border border-[#27272E]`}
+                    className={`rounded-2xl bg-gradient-to-r ${b.bgGradient || 'from-[#131317] via-[#1A1412] to-[#FF6B00]/90'} text-white px-4 sm:px-6 py-3.5 flex items-center justify-between gap-3 overflow-hidden relative border border-[#2C2C36]`}
                   >
-                    <div className="flex items-center gap-2.5 z-10">
-                      <span className="w-7 h-7 rounded-lg bg-[#FF6B00] flex items-center justify-center shrink-0">
+                    <div className="flex items-center gap-3 z-10">
+                      <span className="w-8 h-8 rounded-xl bg-[#FF6B00] flex items-center justify-center shrink-0">
                         <Sparkles className="w-4 h-4 text-white" />
                       </span>
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-[10px] font-black uppercase tracking-wider bg-white text-[#111113] px-2 py-0.5 rounded-md">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-[#FF8A33]">
                             {displayTag}
                           </span>
+                          <span aria-hidden="true" className="text-white/40">·</span>
                           <span className="text-xs sm:text-sm font-black text-white">{displayTitle}</span>
                         </div>
                         {displaySubtitle && (
-                          <p className="text-[11px] text-white/85 hidden xs:block mt-0.5">{displaySubtitle}</p>
+                          <p className="text-[11px] text-white/80 hidden sm:block mt-0.5">{displaySubtitle}</p>
                         )}
                       </div>
                     </div>
@@ -238,110 +291,169 @@ export const StorefrontView: React.FC = () => {
         </div>
       )}
 
-      {/* 3. FEATURED PRODUCTS + TOP TRENDING WHEN BROWSING ALL */}
+      {/* 2. ORGANIZED VISUAL MULTI-CATEGORY SHOWCASE */}
+      {isBrowsingAll && (
+        <section className="max-w-7xl mx-auto px-3 sm:px-6 space-y-5 w-full">
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <h2 className="text-base sm:text-xl font-black tracking-tight text-[#111113] dark:text-[#F7F6F3]">
+                {t.storefront?.categoriesTitle}
+              </h2>
+              <p className="text-xs text-[#6B665F] dark:text-[#9A958E] font-medium mt-0.5">
+                {t.storefront?.categoriesSubtitle}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={scrollToCatalog}
+              className="flex items-center gap-1 text-xs font-extrabold text-[#FF6B00] hover:text-[#E05E00] transition-colors cursor-pointer shrink-0"
+            >
+              <span>{t.storefront?.more}</span>
+              <ArrowLeft className={`w-3.5 h-3.5 ${language !== 'ar' ? 'rotate-180' : ''}`} />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            {visualCategories.map((cat) => (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => handleSelectShowcaseCategory(cat.id)}
+                className="group relative aspect-[4/3] rounded-2xl overflow-hidden bg-[#131317] border border-[#E6E2D8] dark:border-[#23232C] hover:border-[#FF6B00]/75 text-start transition-all duration-200 hover:shadow-[0_16px_36px_-12px_rgba(255,107,0,0.22)] cursor-pointer"
+              >
+                <img
+                  src={cat.image}
+                  alt={cat.label}
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                  className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ease-out"
+                />
+                <div
+                  aria-hidden="true"
+                  className="absolute inset-0 bg-gradient-to-t from-[#0B0B0D]/95 via-[#0B0B0D]/40 to-transparent"
+                />
+
+                <div className="relative z-10 h-full p-3.5 sm:p-4 flex flex-col justify-between">
+                  <div className="flex items-center justify-end">
+                    <span className="w-7 h-7 rounded-lg bg-white/10 backdrop-blur-xs border border-white/15 text-white flex items-center justify-center group-hover:bg-[#FF6B00] group-hover:border-[#FF6B00] transition-colors">
+                      <ArrowUpRight className="w-3.5 h-3.5" />
+                    </span>
+                  </div>
+
+                  <div>
+                    <h3 className="text-xs sm:text-sm font-black text-white leading-snug group-hover:text-[#FF8A33] transition-colors">
+                      {cat.label}
+                    </h3>
+                    <span className="text-[10px] font-semibold text-[#B5B0A8] tabular-nums mt-0.5 block">
+                      {cat.count} {t.bottomNav?.itemsCountSuffix}
+                    </span>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* 3. FEATURED & EXCLUSIVE OFFERS + BEST SELLING + RECOMMENDED (WHEN BROWSING ALL) */}
       {isBrowsingAll && (
         <>
-          {/* FEATURED PRODUCTS SHOWCASE */}
-          <section className="max-w-7xl mx-auto px-3 sm:px-6 space-y-3.5 w-full max-w-full overflow-hidden">
-            <div className="flex items-center justify-between">
+          {/* FEATURED & EXCLUSIVE OFFERS */}
+          <section className="max-w-7xl mx-auto px-3 sm:px-6 space-y-4 w-full overflow-hidden">
+            <div className="flex items-end justify-between gap-4">
               <div>
-                <h2 className="text-sm sm:text-lg font-black uppercase tracking-[0.06em] text-[#111113] dark:text-[#F7F6F3] leading-tight">
-                  {language === 'ar'
-                    ? 'المنتجات المميزة'
-                    : language === 'fr'
-                    ? 'PRODUITS VEDETTES'
-                    : 'FEATURED PRODUCTS'}
+                <h2 className="text-base sm:text-xl font-black tracking-tight text-[#111113] dark:text-[#F7F6F3]">
+                  {t.storefront?.featuredTitle}
                 </h2>
-                <p className="text-[11px] text-[#6B665F] dark:text-[#A19E97] font-medium">
-                  {t.storefront?.suggestedDesc || 'اختيارات فاخرة من تشكيلة الموسم الجديد'}
+                <p className="text-xs text-[#6B665F] dark:text-[#9A958E] font-medium mt-0.5">
+                  {t.storefront?.featuredDesc}
                 </p>
               </div>
 
               <button
                 type="button"
-                onClick={() => setSelectedCategory('power_tools')}
-                className="flex items-center gap-1 text-xs font-extrabold text-[#FF6B00] hover:text-[#E05E00] p-1 rounded-lg hover:bg-[#FF6B00]/10 transition-colors cursor-pointer"
-                title={t.storefront?.more || 'المزيد'}
+                onClick={scrollToCatalog}
+                className="flex items-center gap-1 text-xs font-extrabold text-[#FF6B00] hover:text-[#E05E00] transition-colors cursor-pointer shrink-0"
               >
-                <span className="hidden sm:inline">{t.storefront?.more || 'المزيد'}</span>
-                <ArrowLeft className={`w-4 h-4 ${language !== 'ar' ? 'rotate-180' : ''}`} />
+                <span>{t.storefront?.more}</span>
+                <ArrowLeft className={`w-3.5 h-3.5 ${language !== 'ar' ? 'rotate-180' : ''}`} />
               </button>
             </div>
 
-            <div className="w-full max-w-full overflow-hidden">
-              <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none snap-x w-full max-w-full">
-                {featuredShowcase.map((product) => {
+            <div className="w-full overflow-hidden">
+              <div className="flex gap-3 sm:gap-4 overflow-x-auto pb-2 scrollbar-none snap-x w-full">
+                {featuredOffers.map((product) => {
                   const prodName = product.name[language] || product.name.ar;
                   const isAdded = addedItemIds[product.id];
-                  const hasDiscount = Boolean(product.originalPrice && product.originalPrice > product.price);
-                  const topBadgeLabel = hasDiscount
-                    ? t.storefront?.discountBadge || 'تخفيض'
-                    : product.featured
-                    ? language === 'ar'
-                      ? 'حصري'
-                      : 'EXCLUSIVE'
-                    : language === 'ar'
-                    ? 'تشكيلة جديدة'
-                    : 'NEW SEASON';
+                  const discountPct =
+                    product.originalPrice && product.originalPrice > product.price
+                      ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)
+                      : 0;
 
                   return (
                     <div
                       key={product.id}
                       onClick={() => setSelectedProductId(product.id)}
-                      className="w-40 sm:w-48 shrink-0 snap-start bg-white dark:bg-[#141418] rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] hover:border-[#FF6B00]/60 overflow-hidden flex flex-col justify-between cursor-pointer group transition-all hover:shadow-lg"
+                      className="w-44 sm:w-56 shrink-0 snap-start bg-white dark:bg-[#131317] rounded-2xl border border-[#E6E2D8] dark:border-[#23232C] hover:border-[#FF6B00]/65 overflow-hidden flex flex-col justify-between cursor-pointer group transition-all duration-200 hover:shadow-xl"
                     >
                       <div>
-                        <div className="py-1 px-2 text-center border-b border-[#F0EDE6] dark:border-[#1E1E24] bg-[#FAF9F7] dark:bg-[#18181D]">
-                          <span
-                            className={`text-[9px] font-extrabold uppercase tracking-[0.16em] ${
-                              hasDiscount ? 'text-[#FF6B00]' : 'text-[#6B665F] dark:text-[#9A958E]'
-                            }`}
-                          >
-                            {topBadgeLabel}
-                          </span>
+                        <div className="relative aspect-[4/3] w-full bg-[#F5F3EE] dark:bg-[#0D0D10] overflow-hidden p-3.5 flex items-center justify-center border-b border-[#ECE8DF] dark:border-[#1E1E26]">
+                          <img
+                            src={product.images[0] || '/assets/images/niapolor-badge.webp'}
+                            alt={prodName}
+                            loading="lazy"
+                            referrerPolicy="no-referrer"
+                            onError={handleStoreImageError}
+                            onLoad={handleStoreImageLoad}
+                            className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
+                          />
+                          {discountPct > 0 && (
+                            <span
+                              className={`absolute top-2.5 ${language === 'ar' ? 'right-2.5' : 'left-2.5'} bg-[#FF6B00] text-white text-[10px] font-black px-2 py-0.5 rounded-md tabular-nums`}
+                            >
+                              -{discountPct}%
+                            </span>
+                          )}
                         </div>
 
-                        <div className="p-2.5 pb-1">
-                          <div className="aspect-square w-full bg-[#FAF9F7] dark:bg-[#0B0B0D] rounded-xl overflow-hidden p-2 flex items-center justify-center relative">
-                            <img
-                              src={product.images[0] || '/assets/images/niapolor-badge.webp'}
-                              alt={prodName}
-                              loading="lazy"
-                              referrerPolicy="no-referrer"
-                              onError={handleStoreImageError}
-                              onLoad={handleStoreImageLoad}
-                              className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
-                            />
-                          </div>
-
-                          <div className="pt-2 text-center">
-                            <h3 className="text-xs font-bold text-[#111113] dark:text-[#F7F6F3] line-clamp-2 leading-tight group-hover:text-[#FF6B00] transition-colors min-h-[2rem]">
-                              {prodName}
-                            </h3>
-                            <p className="text-xs sm:text-sm font-black text-[#FF6B00] tabular-nums mt-1">
-                              {product.price.toFixed(3)} {t.cart.currency}
-                            </p>
+                        <div className="p-3 pb-1 space-y-1">
+                          <span className="text-[10px] font-semibold text-[#FF6B00] block truncate">
+                            {product.companyName}
+                          </span>
+                          <h3 className="text-xs sm:text-sm font-bold text-[#111113] dark:text-[#F7F6F3] line-clamp-2 leading-snug group-hover:text-[#FF6B00] transition-colors min-h-[2.2rem]">
+                            {prodName}
+                          </h3>
+                          <div className="flex items-baseline gap-1.5 pt-0.5 flex-wrap">
+                            <span className="text-xs sm:text-sm font-black text-[#111113] dark:text-[#F7F6F3] tabular-nums">
+                              {product.price.toFixed(3)} <span className="text-[#FF6B00]">{t.cart.currency}</span>
+                            </span>
+                            {product.originalPrice && product.originalPrice > product.price && (
+                              <span className="text-[10px] text-[#8A857C] dark:text-[#6E6A63] line-through tabular-nums">
+                                {product.originalPrice.toFixed(3)}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
 
-                      <div className="p-2.5 pt-1.5">
+                      <div className="p-3 pt-2">
                         <button
                           type="button"
                           onClick={(e) => handleQuickAdd(e, product)}
-                          className={`w-full py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-1 transition-all cursor-pointer active:scale-95 ${
+                          className={`w-full py-2 rounded-xl text-[11px] font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer active:scale-95 ${
                             isAdded ? 'bg-emerald-600 text-white' : 'bg-[#FF6B00] hover:bg-[#E05E00] text-white'
                           }`}
                         >
                           {isAdded ? (
                             <>
-                              <Check className="w-3 h-3" />
-                              <span>{t.storefront?.quickAdded || 'تم ✓'}</span>
+                              <Check className="w-3.5 h-3.5" />
+                              <span>{t.storefront?.quickAdded}</span>
                             </>
                           ) : (
                             <>
-                              <Plus className="w-3 h-3" />
-                              <span>{t.product?.addToCart || 'أضف للسلة'}</span>
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>{t.product?.addToCart}</span>
                             </>
                           )}
                         </button>
@@ -353,18 +465,18 @@ export const StorefrontView: React.FC = () => {
             </div>
           </section>
 
-          {/* Top Trending Compact List */}
-          <section className="max-w-7xl mx-auto px-3 sm:px-6 space-y-3 w-full max-w-full">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="w-7 h-7 rounded-lg bg-[#FF6B00]/12 flex items-center justify-center text-[#FF6B00]">
+          {/* BEST SELLING & TRENDING */}
+          <section className="max-w-7xl mx-auto px-3 sm:px-6 space-y-4 w-full">
+            <div className="flex items-end justify-between gap-4">
+              <div className="flex items-center gap-2.5">
+                <span className="w-8 h-8 rounded-xl bg-[#FF6B00]/12 flex items-center justify-center text-[#FF6B00] shrink-0">
                   <TrendingUp className="w-4 h-4" />
                 </span>
                 <div>
-                  <h2 className="text-sm sm:text-lg font-black text-[#111113] dark:text-[#F7F6F3] leading-tight">
-                    {t.storefront?.topTrending || 'أفضل الترتيبات • الأكثر طلباً'}
+                  <h2 className="text-base sm:text-xl font-black tracking-tight text-[#111113] dark:text-[#F7F6F3]">
+                    {t.storefront?.topTrending}
                   </h2>
-                  <p className="text-[11px] text-[#6B665F] dark:text-[#A19E97] font-medium">
+                  <p className="text-xs text-[#6B665F] dark:text-[#9A958E] font-medium mt-0.5">
                     {t.storefront?.topTrendingDesc}
                   </p>
                 </div>
@@ -373,14 +485,14 @@ export const StorefrontView: React.FC = () => {
               <button
                 type="button"
                 onClick={scrollToCatalog}
-                className="flex items-center gap-1 text-xs font-extrabold text-[#FF6B00] hover:text-[#E05E00] p-1 rounded-lg hover:bg-[#FF6B00]/10 transition-colors cursor-pointer"
+                className="flex items-center gap-1 text-xs font-extrabold text-[#FF6B00] hover:text-[#E05E00] transition-colors cursor-pointer shrink-0"
               >
-                <span className="hidden sm:inline">{t.storefront?.all || 'الكل'}</span>
-                <ArrowLeft className={`w-4 h-4 ${language !== 'ar' ? 'rotate-180' : ''}`} />
+                <span>{t.storefront?.all}</span>
+                <ArrowLeft className={`w-3.5 h-3.5 ${language !== 'ar' ? 'rotate-180' : ''}`} />
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {topTrending.map((product, index) => {
                 const prodName = product.name[language] || product.name.ar;
                 const isAdded = addedItemIds[product.id];
@@ -388,14 +500,14 @@ export const StorefrontView: React.FC = () => {
                   <div
                     key={product.id}
                     onClick={() => setSelectedProductId(product.id)}
-                    className="p-2.5 rounded-2xl bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#23232A] hover:border-[#FF6B00]/50 flex items-center justify-between gap-3 cursor-pointer group transition-all hover:shadow-sm"
+                    className="p-3 rounded-2xl bg-white dark:bg-[#131317] border border-[#E6E2D8] dark:border-[#23232C] hover:border-[#FF6B00]/55 flex items-center justify-between gap-3 cursor-pointer group transition-all hover:shadow-md"
                   >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <span className="w-5 text-xs font-black text-[#C8A25A] tabular-nums text-center shrink-0">
-                        {index + 1}
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="w-6 text-xs font-black text-[#C8A25A] tabular-nums text-center shrink-0">
+                        0{index + 1}
                       </span>
 
-                      <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-xl bg-[#FAF9F7] dark:bg-[#0B0B0D] border border-[#E6E2D8] dark:border-[#23232A] p-1 shrink-0 flex items-center justify-center overflow-hidden">
+                      <div className="w-14 h-14 rounded-xl bg-[#F5F3EE] dark:bg-[#0D0D10] border border-[#ECE8DF] dark:border-[#1E1E26] p-1.5 shrink-0 flex items-center justify-center overflow-hidden">
                         <img
                           src={product.images[0] || '/assets/images/niapolor-badge.webp'}
                           alt={prodName}
@@ -407,35 +519,38 @@ export const StorefrontView: React.FC = () => {
                         />
                       </div>
 
-                      <div className="min-w-0 truncate">
+                      <div className="min-w-0">
                         <h4 className="text-xs sm:text-sm font-bold text-[#111113] dark:text-[#F7F6F3] truncate group-hover:text-[#FF6B00] transition-colors">
                           {prodName}
                         </h4>
-                        <div className="flex items-center gap-1.5 text-[10px] text-[#6B665F] dark:text-[#A19E97] font-semibold truncate mt-0.5">
-                          <span className="text-[#FF6B00]">{product.companyName}</span>
-                          <span>•</span>
-                          <span className="flex items-center gap-0.5">
-                            <Star className="w-3 h-3 fill-[#FF6B00] text-[#FF6B00] shrink-0" />
-                            <span className="text-[#111113] dark:text-[#F7F6F3]">{product.rating || '4.9'}</span>
+                        <div className="flex items-center gap-1.5 text-[10px] text-[#7A756D] dark:text-[#8E8980] font-semibold truncate mt-0.5">
+                          <span className="text-[#FF6B00] truncate">{product.companyName}</span>
+                          <span aria-hidden="true">·</span>
+                          <span className="flex items-center gap-0.5 shrink-0">
+                            <Star className="w-3 h-3 fill-[#FF6B00] text-[#FF6B00]" />
+                            <span className="text-[#111113] dark:text-[#F7F6F3] tabular-nums">{product.rating || '4.9'}</span>
                           </span>
                         </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-xs sm:text-sm font-black text-[#FF6B00] tabular-nums">
-                        {product.price.toFixed(3)} {t.cart.currency}
-                      </span>
+                    <div className="flex items-center gap-2.5 shrink-0">
+                      <div className="text-end">
+                        <span className="text-xs sm:text-sm font-black text-[#111113] dark:text-[#F7F6F3] tabular-nums block leading-none">
+                          {product.price.toFixed(3)}
+                        </span>
+                        <span className="text-[9px] font-bold text-[#FF6B00]">{t.cart.currency}</span>
+                      </div>
                       <button
                         type="button"
                         onClick={(e) => handleQuickAdd(e, product)}
-                        className={`px-3 py-1.5 rounded-lg text-[11px] font-black transition-all cursor-pointer active:scale-95 ${
+                        className={`px-3 py-1.5 rounded-xl text-[11px] font-black transition-all cursor-pointer active:scale-95 ${
                           isAdded
                             ? 'bg-emerald-600 text-white'
                             : 'bg-[#FF6B00] hover:bg-[#E05E00] text-white'
                         }`}
                       >
-                        {isAdded ? (t.storefront?.quickAdded || 'تم ✓') : (t.storefront?.quickAdd || 'أضف')}
+                        {isAdded ? t.storefront?.quickAdded : t.storefront?.quickAdd}
                       </button>
                     </div>
                   </div>
@@ -444,42 +559,43 @@ export const StorefrontView: React.FC = () => {
             </div>
           </section>
 
-          {/* Power Tools Highlight Carousel */}
-          {powerToolsOnly.length > 0 && (
-            <section className="max-w-7xl mx-auto px-3 sm:px-6 space-y-3 w-full max-w-full overflow-hidden">
-              <div className="flex items-center justify-between">
+          {/* RECOMMENDED FOR YOU (CURATED ACROSS ALL CATEGORIES) */}
+          {recommendedProducts.length > 0 && (
+            <section className="max-w-7xl mx-auto px-3 sm:px-6 space-y-4 w-full overflow-hidden">
+              <div className="flex items-end justify-between gap-4">
                 <div>
-                  <h2 className="text-sm sm:text-lg font-black text-[#111113] dark:text-[#F7F6F3] leading-tight">
-                    {t.storefront?.powerToolsTitle || 'أدوات ومعدات ميكانيكية وكهربائية'}
+                  <h2 className="text-base sm:text-xl font-black tracking-tight text-[#111113] dark:text-[#F7F6F3]">
+                    {t.storefront?.suggestedForYou}
                   </h2>
-                  <p className="text-[11px] text-[#6B665F] dark:text-[#A19E97] font-medium">
-                    {t.storefront?.powerToolsDesc}
+                  <p className="text-xs text-[#6B665F] dark:text-[#9A958E] font-medium mt-0.5">
+                    {t.storefront?.suggestedDesc}
                   </p>
                 </div>
 
                 <button
                   type="button"
-                  onClick={() => setSelectedCategory('power_tools')}
-                  className="flex items-center gap-1 text-xs font-extrabold text-[#FF6B00] hover:text-[#E05E00] p-1 rounded-lg hover:bg-[#FF6B00]/10 transition-colors cursor-pointer"
+                  onClick={scrollToCatalog}
+                  className="flex items-center gap-1 text-xs font-extrabold text-[#FF6B00] hover:text-[#E05E00] transition-colors cursor-pointer shrink-0"
                 >
-                  <span className="hidden sm:inline">{t.storefront?.more || 'المزيد'}</span>
-                  <ArrowLeft className={`w-4 h-4 ${language !== 'ar' ? 'rotate-180' : ''}`} />
+                  <span>{t.storefront?.more}</span>
+                  <ArrowLeft className={`w-3.5 h-3.5 ${language !== 'ar' ? 'rotate-180' : ''}`} />
                 </button>
               </div>
 
-              <div className="w-full max-w-full overflow-hidden">
-                <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none snap-x w-full max-w-full">
-                  {powerToolsOnly.map((product) => {
+              <div className="w-full overflow-hidden">
+                <div className="flex gap-3 sm:gap-4 overflow-x-auto pb-2 scrollbar-none snap-x w-full">
+                  {recommendedProducts.map((product) => {
                     const prodName = product.name[language] || product.name.ar;
                     const isAdded = addedItemIds[product.id];
+                    const catLabel = (t.categories as Record<string, string>)[product.category] || product.category;
                     return (
                       <div
-                        key={product.id}
+                        key={`rec-${product.id}`}
                         onClick={() => setSelectedProductId(product.id)}
-                        className="w-40 sm:w-48 shrink-0 snap-start bg-white dark:bg-[#141418] rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] hover:border-[#FF6B00]/60 p-2.5 flex flex-col justify-between cursor-pointer group transition-all hover:shadow-md"
+                        className="w-44 sm:w-52 shrink-0 snap-start bg-white dark:bg-[#131317] rounded-2xl border border-[#E6E2D8] dark:border-[#23232C] hover:border-[#FF6B00]/60 p-3 flex flex-col justify-between cursor-pointer group transition-all hover:shadow-lg"
                       >
                         <div>
-                          <div className="aspect-square w-full bg-[#FAF9F7] dark:bg-[#0B0B0D] rounded-xl overflow-hidden p-2 flex items-center justify-center">
+                          <div className="aspect-[4/3] w-full bg-[#F5F3EE] dark:bg-[#0D0D10] rounded-xl overflow-hidden p-3 flex items-center justify-center border border-[#ECE8DF] dark:border-[#1E1E26]">
                             <img
                               src={product.images[0] || '/assets/images/niapolor-badge.webp'}
                               alt={prodName}
@@ -491,33 +607,32 @@ export const StorefrontView: React.FC = () => {
                             />
                           </div>
 
-                          <div className="pt-2">
-                            <span className="text-[10px] text-[#7A756D] dark:text-[#9A958E] font-semibold block truncate">
-                              {product.companyName}
+                          <div className="pt-2.5 space-y-1">
+                            <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980] font-semibold block truncate">
+                              {catLabel}
                             </span>
-                            <h3 className="text-xs font-bold text-[#111113] dark:text-[#F7F6F3] line-clamp-2 leading-tight group-hover:text-[#FF6B00] transition-colors min-h-[1.9rem] my-0.5">
+                            <h3 className="text-xs font-bold text-[#111113] dark:text-[#F7F6F3] line-clamp-2 leading-snug group-hover:text-[#FF6B00] transition-colors min-h-[2rem]">
                               {prodName}
                             </h3>
                           </div>
                         </div>
 
-                        <div className="pt-1.5 border-t border-[#F0EDE6] dark:border-[#1E1E24] flex items-center justify-between gap-1">
+                        <div className="pt-2 mt-1.5 border-t border-[#ECE8DF] dark:border-[#1E1E26] flex items-center justify-between gap-2">
                           <div>
-                            <span className="text-xs sm:text-sm font-black text-[#FF6B00] tabular-nums block leading-none">
+                            <span className="text-xs sm:text-sm font-black text-[#111113] dark:text-[#F7F6F3] tabular-nums block leading-none">
                               {product.price.toFixed(3)}
                             </span>
-                            <span className="text-[9px] text-[#7A756D] dark:text-[#9A958E] font-bold">
-                              {t.cart.currency}
-                            </span>
+                            <span className="text-[9px] text-[#FF6B00] font-bold">{t.cart.currency}</span>
                           </div>
                           <button
                             type="button"
                             onClick={(e) => handleQuickAdd(e, product)}
-                            className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all cursor-pointer active:scale-95 ${
+                            aria-label={t.product.addToCart}
+                            className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all cursor-pointer active:scale-95 ${
                               isAdded ? 'bg-emerald-600 text-white' : 'bg-[#FF6B00] hover:bg-[#E05E00] text-white'
                             }`}
                           >
-                            {isAdded ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                            {isAdded ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
                           </button>
                         </div>
                       </div>
@@ -530,46 +645,63 @@ export const StorefrontView: React.FC = () => {
         </>
       )}
 
-      {/* 4. CATALOG FILTER BAR & FULL PRODUCT GRID */}
-      <section id="niapolor-catalog" className="max-w-7xl mx-auto px-3 sm:px-6 w-full max-w-full scroll-mt-20">
-        <div className="flex items-center justify-between gap-2 bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#23232A] p-2.5 sm:p-3 rounded-2xl">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-[#FF6B00]" />
-            <span className="text-xs sm:text-sm font-black text-[#111113] dark:text-[#F7F6F3]">
-              {t.storefront?.allProducts || 'كافة المعروضات'} ({filteredProducts.length})
-            </span>
+      {/* 4. INTERACTIVE FULL CATALOG WITH CLEAN SEGMENTED FILTER BAR */}
+      <section id="niapolor-catalog" className="max-w-7xl mx-auto px-3 sm:px-6 w-full scroll-mt-20 space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-[#E6E2D8] dark:border-[#23232C]">
+          <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-1 md:pb-0">
+            {categoryList.map((tab) => {
+              const active = selectedCategory === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setSelectedCategory(tab.id)}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-extrabold whitespace-nowrap transition-all cursor-pointer ${
+                    active
+                      ? 'bg-[#FF6B00] text-white shadow-[0_6px_16px_-4px_rgba(255,107,0,0.45)]'
+                      : 'bg-white dark:bg-[#131317] text-[#5A5854] dark:text-[#B5B0A8] hover:text-[#111113] dark:hover:text-white border border-[#E6E2D8] dark:border-[#23232C]'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <MapPin className="w-3.5 h-3.5 text-[#FF6B00] shrink-0" />
-            <select
-              value={selectedGovFilter}
-              onChange={(e) => setSelectedGovFilter(e.target.value)}
-              className="text-xs py-1.5 px-3 rounded-lg border border-[#E6E2D8] dark:border-[#27272E] bg-[#FAF9F7] dark:bg-[#0B0B0D] font-bold text-[#111113] dark:text-[#F7F6F3] focus:outline-none focus:border-[#FF6B00] cursor-pointer"
-            >
-              <option value="all">{t.storefront?.allGovernorates || 'كافة ولايات تونس (الكل)'}</option>
-              {TUNISIAN_GOVERNORATES.map((gov) => (
-                <option key={gov.id} value={gov.id}>
-                  {language === 'fr'
-                    ? gov.nameFr
-                    : language === 'en'
-                    ? gov.nameEn
-                    : `${t.storefront?.governoratePrefix || 'ولاية'} ${gov.nameAr}`}
-                </option>
-              ))}
-            </select>
+          <div className="flex items-center justify-between md:justify-end gap-3 shrink-0">
+            <span className="text-xs font-bold text-[#6B665F] dark:text-[#9A958E] tabular-nums">
+              {t.storefront?.allProducts} ({filteredProducts.length})
+            </span>
+
+            <div className="flex items-center gap-1.5">
+              <MapPin className="w-3.5 h-3.5 text-[#FF6B00] shrink-0" />
+              <select
+                value={selectedGovFilter}
+                onChange={(e) => setSelectedGovFilter(e.target.value)}
+                className="text-xs py-1.5 px-3 rounded-xl border border-[#E6E2D8] dark:border-[#23232C] bg-white dark:bg-[#131317] font-bold text-[#111113] dark:text-[#F7F6F3] focus:outline-none focus:border-[#FF6B00] cursor-pointer"
+              >
+                <option value="all">{t.storefront?.allGovernorates}</option>
+                {TUNISIAN_GOVERNORATES.map((gov) => (
+                  <option key={gov.id} value={gov.id}>
+                    {language === 'fr'
+                      ? gov.nameFr
+                      : language === 'en'
+                      ? gov.nameEn
+                      : `${t.storefront?.governoratePrefix || 'ولاية'} ${gov.nameAr}`}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
-      </section>
 
-      <main className="max-w-7xl mx-auto px-3 sm:px-6 w-full max-w-full">
         {filteredProducts.length === 0 ? (
-          <div className="py-12 text-center bg-white dark:bg-[#141418] rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] p-6 space-y-3">
+          <div className="py-12 text-center bg-white dark:bg-[#131317] rounded-2xl border border-[#E6E2D8] dark:border-[#23232C] p-6 space-y-3">
             <h3 className="text-sm font-bold text-[#111113] dark:text-[#F7F6F3]">
-              {t.storefront?.noProductsFound || 'لا توجد منتجات مطابقة لبحثك أو الفلتر'}
+              {t.storefront?.noProductsFound}
             </h3>
-            <p className="text-xs text-[#6B665F] dark:text-[#A19E97]">
-              {t.storefront?.noProductsDesc || 'جرب اختيار تصنيف آخر أو تفريغ شريط البحث'}
+            <p className="text-xs text-[#6B665F] dark:text-[#9A958E]">
+              {t.storefront?.noProductsDesc}
             </p>
             <button
               type="button"
@@ -579,7 +711,7 @@ export const StorefrontView: React.FC = () => {
               }}
               className="text-xs font-extrabold text-[#FF6B00] hover:underline cursor-pointer"
             >
-              {t.storefront?.resetFilters || 'إعادة ضبط الفلاتر وعرض كافة المنتجات'}
+              {t.storefront?.resetFilters}
             </button>
           </div>
         ) : (
@@ -589,63 +721,88 @@ export const StorefrontView: React.FC = () => {
             ))}
           </div>
         )}
-      </main>
+      </section>
 
-      {/* 5. LUXURY TRUST STRIP */}
-      <section className="max-w-7xl mx-auto px-3 sm:px-6 pt-2 w-full max-w-full">
-        <div className="rounded-2xl bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#23232A] p-3.5 sm:p-5">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
-            <div className="flex items-center gap-2.5 p-2.5 bg-[#FAF9F7] dark:bg-[#0B0B0D] rounded-xl border border-[#E6E2D8]/80 dark:border-[#23232A]">
-              <div className="w-8 h-8 rounded-lg bg-[#FF6B00]/12 text-[#FF6B00] flex items-center justify-center shrink-0">
+      {/* 5. MARKETPLACE IDENTITY & TRUST STRIP (1-LEVEL ARCHITECTURAL HAIRLINE GRID) */}
+      <section className="max-w-7xl mx-auto px-3 sm:px-6 w-full pt-2">
+        <div className="rounded-3xl bg-white dark:bg-[#131317] border border-[#E6E2D8] dark:border-[#23232C] overflow-hidden">
+          <div className="px-5 sm:px-8 py-5 sm:py-6 border-b border-[#E6E2D8] dark:border-[#23232C] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#FF6B00] block">
+                NIAPOLOR MARKETPLACE
+              </span>
+              <h2 className="text-base sm:text-lg font-black text-[#111113] dark:text-[#F7F6F3]">
+                {t.storefront?.marketplaceTitle}
+              </h2>
+              <p className="text-xs text-[#6B665F] dark:text-[#9A958E] max-w-2xl">
+                {t.storefront?.marketplaceSubtitle}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setCurrentView('companies');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#111113] dark:bg-[#1D1D24] hover:bg-[#FF6B00] dark:hover:bg-[#FF6B00] border border-transparent dark:border-[#2C2C36] text-white text-xs font-bold transition-colors cursor-pointer shrink-0"
+            >
+              <Store className="w-4 h-4" />
+              <span>{t.storefront?.marketplaceCta}</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-px bg-[#E6E2D8] dark:bg-[#23232C]">
+            <div className="p-4 sm:p-5 bg-white dark:bg-[#131317] flex items-start gap-3">
+              <div className="w-9 h-9 rounded-xl bg-[#FF6B00]/12 text-[#FF6B00] flex items-center justify-center shrink-0">
                 <Truck className="w-4 h-4" />
               </div>
-              <div className="truncate">
-                <h4 className="text-xs font-bold text-[#111113] dark:text-[#F7F6F3] leading-tight">
-                  {t.storefront?.trustFastDelivery || 'توصيل سريع'}
-                </h4>
-                <p className="text-[10px] text-[#6B665F] dark:text-[#A19E97] leading-tight">
+              <div className="min-w-0">
+                <h3 className="text-xs font-extrabold text-[#111113] dark:text-[#F7F6F3]">
+                  {t.storefront?.trustFastDelivery}
+                </h3>
+                <p className="text-[11px] text-[#6B665F] dark:text-[#9A958E] mt-0.5 leading-snug">
                   {t.storefront?.trustFastDeliveryDesc}
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2.5 p-2.5 bg-[#FAF9F7] dark:bg-[#0B0B0D] rounded-xl border border-[#E6E2D8]/80 dark:border-[#23232A]">
-              <div className="w-8 h-8 rounded-lg bg-emerald-500/12 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-                <Banknote className="w-4 h-4" />
+            <div className="p-4 sm:p-5 bg-white dark:bg-[#131317] flex items-start gap-3">
+              <div className="w-9 h-9 rounded-xl bg-emerald-500/12 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                <CreditCard className="w-4 h-4" />
               </div>
-              <div className="truncate">
-                <h4 className="text-xs font-bold text-[#111113] dark:text-[#F7F6F3] leading-tight">
-                  {t.storefront?.trustCod || 'دفع عند الاستلام'}
-                </h4>
-                <p className="text-[10px] text-[#6B665F] dark:text-[#A19E97] leading-tight">
+              <div className="min-w-0">
+                <h3 className="text-xs font-extrabold text-[#111113] dark:text-[#F7F6F3]">
+                  {t.storefront?.trustCod}
+                </h3>
+                <p className="text-[11px] text-[#6B665F] dark:text-[#9A958E] mt-0.5 leading-snug">
                   {t.storefront?.trustCodDesc}
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2.5 p-2.5 bg-[#FAF9F7] dark:bg-[#0B0B0D] rounded-xl border border-[#E6E2D8]/80 dark:border-[#23232A]">
-              <div className="w-8 h-8 rounded-lg bg-[#FF6B00]/12 text-[#FF6B00] flex items-center justify-center shrink-0">
+            <div className="p-4 sm:p-5 bg-white dark:bg-[#131317] flex items-start gap-3">
+              <div className="w-9 h-9 rounded-xl bg-[#FF6B00]/12 text-[#FF6B00] flex items-center justify-center shrink-0">
                 <ShieldCheck className="w-4 h-4" />
               </div>
-              <div className="truncate">
-                <h4 className="text-xs font-bold text-[#111113] dark:text-[#F7F6F3] leading-tight">
-                  {t.storefront?.trustGenuine || 'قطع ومعدات أصلية'}
-                </h4>
-                <p className="text-[10px] text-[#6B665F] dark:text-[#A19E97] leading-tight">
+              <div className="min-w-0">
+                <h3 className="text-xs font-extrabold text-[#111113] dark:text-[#F7F6F3]">
+                  {t.storefront?.trustGenuine}
+                </h3>
+                <p className="text-[11px] text-[#6B665F] dark:text-[#9A958E] mt-0.5 leading-snug">
                   {t.storefront?.trustGenuineDesc}
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2.5 p-2.5 bg-[#FAF9F7] dark:bg-[#0B0B0D] rounded-xl border border-[#E6E2D8]/80 dark:border-[#23232A]">
-              <div className="w-8 h-8 rounded-lg bg-[#C8A25A]/15 text-[#C8A25A] flex items-center justify-center shrink-0">
-                <Headphones className="w-4 h-4" />
+            <div className="p-4 sm:p-5 bg-white dark:bg-[#131317] flex items-start gap-3">
+              <div className="w-9 h-9 rounded-xl bg-[#C8A25A]/15 text-[#C8A25A] flex items-center justify-center shrink-0">
+                <Store className="w-4 h-4" />
               </div>
-              <div className="truncate">
-                <h4 className="text-xs font-bold text-[#111113] dark:text-[#F7F6F3] leading-tight">
-                  {t.storefront?.trustDirectSupport || 'دعم وتتبع مباشر'}
-                </h4>
-                <p className="text-[10px] text-[#6B665F] dark:text-[#A19E97] leading-tight">
+              <div className="min-w-0">
+                <h3 className="text-xs font-extrabold text-[#111113] dark:text-[#F7F6F3]">
+                  {t.storefront?.trustDirectSupport}
+                </h3>
+                <p className="text-[11px] text-[#6B665F] dark:text-[#9A958E] mt-0.5 leading-snug">
                   {t.storefront?.trustDirectSupportDesc}
                 </p>
               </div>
