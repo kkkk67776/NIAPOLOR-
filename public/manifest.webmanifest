@@ -8,8 +8,8 @@
   "display": "standalone",
   "dir": "rtl",
   "lang": "ar",
-  "theme_color": "#FF6B00",
-  "background_color": "#000000",
+  "theme_color": "#0B0B0D",
+  "background_color": "#0B0B0D",
   "icons": [
     {
       "src": "/pwa-any-192-v3.png",

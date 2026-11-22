@@ -548,7 +548,7 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
 
       {/* 3. شريط التنقل السفلي الذكي (إخفاء تلقائي سلس عند التمرير للأسفل وإظهار عند الصعود، مع الحفاظ التام على العناصر والأيقونات والترتيب والوظائف) */}
       <nav 
-        className={`fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-[#0B0B0D]/95 backdrop-blur-md border-t border-[#E6E2D8] dark:border-[#222228] shadow-[0_-8px_28px_rgba(0,0,0,0.08)] dark:shadow-[0_-8px_28px_rgba(0,0,0,0.45)] px-2 py-1.5 transition-transform duration-300 ease-out will-change-transform select-none ${
+        className={`fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-[#0B0B0D]/95 backdrop-blur-md border-t border-[#E6E2D8] dark:border-[#222228] shadow-[0_-8px_28px_rgba(0,0,0,0.08)] dark:shadow-[0_-8px_28px_rgba(0,0,0,0.45)] px-2 pt-1.5 pb-[calc(0.375rem+env(safe-area-inset-bottom,0px))] transition-transform duration-300 ease-out will-change-transform select-none ${
           isNavVisible || isSearchModalOpen || isCategoriesSheetOpen
             ? 'translate-y-0'
             : 'translate-y-[115%] pointer-events-none'

@@ -287,7 +287,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
     const metaTheme = document.querySelector('meta[name="theme-color"]');
     if (metaTheme) {
-      metaTheme.setAttribute('content', isDarkMode ? '#0B0B0D' : '#FFFFFF');
+      metaTheme.setAttribute('content', isDarkMode ? '#0B0B0D' : '#FAF9F7');
     }
   }, [isDarkMode]);
 
