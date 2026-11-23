@@ -10,6 +10,12 @@ const DEFAULT_RENDER_BACKEND = 'https://echox-store.onrender.com';
 
 const STATIC_PATHS = [
   { loc: '/', changefreq: 'daily', priority: '1.0', multilingual: true },
+  { loc: '/about', changefreq: 'monthly', priority: '0.8', multilingual: true },
+  { loc: '/shipping', changefreq: 'monthly', priority: '0.8', multilingual: true },
+  { loc: '/returns', changefreq: 'monthly', priority: '0.8', multilingual: true },
+  { loc: '/faq', changefreq: 'monthly', priority: '0.8', multilingual: true },
+  { loc: '/privacy', changefreq: 'yearly', priority: '0.6', multilingual: true },
+  { loc: '/terms', changefreq: 'yearly', priority: '0.6', multilingual: true },
   { loc: '/promise', changefreq: 'monthly', priority: '0.8', multilingual: true },
   { loc: '/companies', changefreq: 'weekly', priority: '0.8', multilingual: true },
   { loc: '/contact', changefreq: 'monthly', priority: '0.7', multilingual: true },

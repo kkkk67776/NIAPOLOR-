@@ -39,6 +39,7 @@ import {
   verifyEdgeOwnerSession,
 } from './firestoreEdge';
 import { appendEdgeAdminNotification } from './notificationsEdge';
+import { verifyEdgeCustomerSession } from './customerEdge';
 
 const CLOUD_PAYMENT_KEY = 'echox:payment_system_data';
 const CLOUD_STORE_KEY = 'echox:storefront_state';
@@ -84,7 +85,7 @@ const DEFAULT_CATALOG: Record<string, ProductCatalogEntry> = {
     id: 'prod_titan_drill',
     price: 345.0,
     companyId: 'comp_echox',
-    companyName: 'ECHOX Distribution Tunisie',
+    companyName: 'NIAPOLOR Distribution Tunisie',
     active: true,
   },
   prod_aether_headlight: {
@@ -1067,7 +1068,7 @@ export async function syncEdgeCatalogSnapshot(
           id: p.id,
           price: round3(p.price),
           companyId: p.companyId || 'comp_echox',
-          companyName: p.companyName || 'ECHOX Distribution Tunisie',
+          companyName: p.companyName || 'NIAPOLOR Distribution Tunisie',
           active: p.active !== false,
         };
       }
@@ -1200,6 +1201,7 @@ export async function handleEdgePaymentsRoute(
     const reqKey = String(input.clientRequestId || '').trim();
     const normalizedMethod = normalizePaymentMethod(input.paymentMethod);
     const origin = getEdgeRequestOrigin(request, env);
+    const custSess = await verifyEdgeCustomerSession(request, env);
 
     // Load storefront products lazily only if needed for an item missing from catalog
     let storefrontProductsCache: Product[] | null | undefined;
@@ -1375,7 +1377,13 @@ export async function handleEdgePaymentsRoute(
 
         const subtotal = round3(verifiedItems.reduce((sum, it) => sum + it.totalPrice, 0));
         const cleanCoupon = String(input.couponCode || '').trim().toUpperCase();
-        const discountRate = cleanCoupon === 'ECHOX2026' || cleanCoupon === 'ECHOX10' ? 0.1 : 0;
+        const discountRate =
+          cleanCoupon === 'NIAPOLOR2026' ||
+          cleanCoupon === 'NIAPOLOR10' ||
+          cleanCoupon === 'ECHOX2026' ||
+          cleanCoupon === 'ECHOX10'
+            ? 0.1
+            : 0;
         const discount = round3(subtotal * discountRate);
         const netItemsTotal = Math.max(0, round3(subtotal - discount));
         const taxAmount = round3(netItemsTotal * (cfg.taxRatePercent / 100));
@@ -1413,7 +1421,7 @@ export async function handleEdgePaymentsRoute(
         const groupedByVendor = new Map<string, { vendorName: string; items: OrderItem[] }>();
         for (const item of verifiedItems) {
           const vId = item.companyId || 'comp_echox';
-          const vName = item.companyName || 'ECHOX Distribution Tunisie';
+          const vName = item.companyName || 'NIAPOLOR Distribution Tunisie';
           if (!groupedByVendor.has(vId)) {
             groupedByVendor.set(vId, { vendorName: vName, items: [] });
           }
@@ -1493,7 +1501,7 @@ export async function handleEdgePaymentsRoute(
               amount: totalAmount,
               currency: cfg.currency,
               trackingRef: trackingNumber,
-              description: `ECHOX Store Order ${trackingNumber}`,
+              description: `NIAPOLOR Store Order ${trackingNumber}`,
               customerName: input.customerName,
               customerPhone: input.customerPhone,
               customerEmail: input.customerEmail,
@@ -1531,7 +1539,7 @@ export async function handleEdgePaymentsRoute(
         const order: Order = {
           id: orderId,
           trackingNumber,
-          customerId: input.customerId,
+          customerId: custSess?.customerId || undefined,
           customerName: cleanName,
           customerEmail: cleanEmail,
           customerPhone: phoneCheck.normalized,
@@ -1551,7 +1559,7 @@ export async function handleEdgePaymentsRoute(
           transferProof: submittedProof,
           subOrders,
           transactionId,
-          carrierName: input.carrierName || 'Aramex Express Tunisie',
+          carrierName: input.carrierName || 'NIAPOLOR Delivery Tunisie',
           createdAt: now,
           updatedAt: now,
           notes: String(input.notes || '').trim(),
@@ -1566,7 +1574,7 @@ export async function handleEdgePaymentsRoute(
                   ? `تم تسجيل الطلب (${trackingNumber}) — مرجع التحويل: ${paymentReference}`
                   : normalizedMethod === 'online_payment'
                   ? `تم تسجيل الطلب (${trackingNumber}) — بانتظار تأكيد الدفع عبر بوابة ${cfg.methods.online_payment.provider}`
-                  : 'تم تسجيل الطلب بنجاح عبر منصة ECHOX STORE (الدفع عند الاستلام)',
+                  : 'تم تسجيل الطلب بنجاح عبر منصة NIAPOLOR (الدفع عند الاستلام)',
             },
           ],
         };
@@ -2454,7 +2462,7 @@ export async function handleEdgePaymentsRoute(
           initialStatus = 'Payment Verification';
           proof = {
             referenceNumber: String(payload.transferProof.referenceNumber).trim(),
-            senderName: String(payload.transferProof.senderName || payload.supporterName || 'داعم ECHOX').trim(),
+            senderName: String(payload.transferProof.senderName || payload.supporterName || 'داعم NIAPOLOR').trim(),
             transferDate: payload.transferProof.transferDate || now.split('T')[0],
             receiptImageDataUrl: cleanImg.value,
             notes: payload.transferProof.notes?.trim(),
@@ -2473,8 +2481,8 @@ export async function handleEdgePaymentsRoute(
           amount: amt,
           currency: cfg.currency,
           trackingRef: supportRef,
-          description: `ECHOX Platform Support ${supportRef}`,
-          customerName: payload.supporterName?.trim() || 'ECHOX Supporter',
+          description: `NIAPOLOR Platform Support ${supportRef}`,
+          customerName: payload.supporterName?.trim() || 'NIAPOLOR Supporter',
           customerPhone: payload.supporterPhone?.trim() || '00000000',
           customerEmail: payload.supporterEmail,
           origin,
@@ -2493,7 +2501,7 @@ export async function handleEdgePaymentsRoute(
       const supTxn: SupportTransaction = {
         id: `sup_${Date.now()}_${randomHex(2)}`,
         supportReference: supportRef,
-        supporterName: payload.supporterName?.trim() || 'داعم ECHOX',
+        supporterName: payload.supporterName?.trim() || 'داعم NIAPOLOR',
         supporterEmail: payload.supporterEmail?.trim() || '',
         supporterPhone: payload.supporterPhone?.trim() || '',
         note: payload.note?.trim() || '',
@@ -3399,7 +3407,7 @@ export async function handleEdgePaymentsRoute(
           status: input.status || 'new',
           paymentMethod: payMethod,
           paymentStatus,
-          carrierName: (input.carrierName || '').trim() || 'LivriTN Logistics',
+          carrierName: (input.carrierName || '').trim() || 'NIAPOLOR Delivery Tunisie',
           createdAt: now,
           updatedAt: now,
           notes: (input.notes || '').trim() || 'تم التسجيل يدوياً من لوحة التحكم',
@@ -3622,3 +3630,58 @@ export async function handleEdgePaymentsRoute(
 
   return null;
 }
+
+export async function hasVerifiedCustomerPurchaseEdge(
+  env: EdgeEnv,
+  params: {
+    productId: string;
+    customerId?: string;
+    customerPhone?: string;
+    orderTrackingNumber?: string;
+    orderPhone?: string;
+  }
+): Promise<boolean> {
+  const cleanProductId = String(params.productId || '').trim();
+  if (!cleanProductId) return false;
+
+  const loaded = await loadEdgeDocWithMeta<Partial<PaymentSystemDatabase>>(env, CLOUD_PAYMENT_KEY);
+  const orders = Array.isArray(loaded.data?.orders) ? loaded.data!.orders : [];
+  if (orders.length === 0) return false;
+
+  const normPhone = (val: string) => (val || '').replace(/\D/g, '').slice(-8);
+  const sessionPhoneDigits = normPhone(params.customerPhone || '');
+  const trackingCode = String(params.orderTrackingNumber || '').trim().toUpperCase();
+  const trackingPhoneDigits = normPhone(params.orderPhone || '');
+
+  return orders.some((o) => {
+    if (!o || o.status === 'cancelled') return false;
+    if (
+      o.paymentStatus === 'Cancelled' ||
+      o.paymentStatus === 'Refunded' ||
+      o.paymentStatus === 'Payment Failed' ||
+      o.paymentStatus === 'failed'
+    ) {
+      return false;
+    }
+    const isCompletedOrPaid =
+      o.paymentStatus === 'Paid' || o.paymentStatus === 'paid' || o.status === 'delivered';
+    if (!isCompletedOrPaid) return false;
+
+    const containsProduct =
+      Array.isArray(o.items) && o.items.some((item) => item.productId === cleanProductId);
+    if (!containsProduct) return false;
+
+    const orderPhoneDigits = normPhone(o.customerPhone || '');
+    const matchesCustomerId = Boolean(params.customerId && o.customerId && o.customerId === params.customerId);
+    const matchesSessionPhone = Boolean(sessionPhoneDigits.length === 8 && orderPhoneDigits === sessionPhoneDigits);
+    const matchesTrackingProof = Boolean(
+      trackingCode &&
+        trackingPhoneDigits.length === 8 &&
+        o.trackingNumber.toUpperCase() === trackingCode &&
+        orderPhoneDigits === trackingPhoneDigits
+    );
+
+    return matchesCustomerId || matchesSessionPhone || matchesTrackingProof;
+  });
+}
+

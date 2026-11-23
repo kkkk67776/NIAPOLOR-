@@ -24,7 +24,8 @@ import {
   requireEdgeAdminAuth,
 } from './firestoreEdge';
 import { appendEdgeAdminNotification, appendEdgePublicAnnouncement } from './notificationsEdge';
-import { syncEdgeCatalogSnapshot } from './paymentsEdge';
+import { hasVerifiedCustomerPurchaseEdge, syncEdgeCatalogSnapshot } from './paymentsEdge';
+import { getEdgeCustomerById, verifyEdgeCustomerSession } from './customerEdge';
 
 const CLOUD_STORE_KEY = 'echox:storefront_state';
 
@@ -48,21 +49,7 @@ const DEFAULT_BANNERS: PromoBanner[] = [
   },
 ];
 
-const DEFAULT_INQUIRIES: ContactInquiry[] = [
-  {
-    id: 'inq_1',
-    senderName: 'كمال التريكي',
-    email: 'kamel.triki@gmail.com',
-    phone: '+216 55 120 900',
-    subject: 'استفسار حول توافق مصباح Matrix LED مع موديل W205',
-    message:
-      'السلام عليكم، هل مصباح الكريستال يركب مباشرة على موديل 2018 دون الحاجة إلى تعديل أسلاك أو برمجة كمبيوتر؟ شكراً.',
-    createdAt: '2026-11-05T10:15:00Z',
-    read: true,
-    reply: 'وعليكم السلام سي كمال. نعم يتوافق مباشرة Plug & Play مع ضمان التشغيل الكامل.',
-    repliedAt: '2026-11-05T11:00:00Z',
-  },
-];
+const DEFAULT_INQUIRIES: ContactInquiry[] = [];
 
 export interface StorefrontDatabase {
   products: Product[];
@@ -120,6 +107,10 @@ export function mergeStoreState(raw: Partial<StorefrontDatabase> | null): Storef
       announcementText: mergeMultilingual(
         def.siteSettings.announcementText,
         raw.siteSettings?.announcementText
+      ),
+      deliveryTimeEstimate: mergeMultilingual(
+        def.siteSettings.deliveryTimeEstimate,
+        raw.siteSettings?.deliveryTimeEstimate
       ),
     },
     ownerSettings: {
@@ -307,6 +298,25 @@ function validateEdgeStorePatch(patch: Partial<StorefrontDatabase>): { ok: boole
               next.siteSettings.announcementText,
               patch.siteSettings.announcementText
             ),
+            deliveryTimeEstimate: mergeMultilingual(
+              next.siteSettings.deliveryTimeEstimate,
+              patch.siteSettings.deliveryTimeEstimate
+            ),
+            legalEntityName:
+              typeof patch.siteSettings.legalEntityName === 'string'
+                ? patch.siteSettings.legalEntityName.trim().slice(0, 140)
+                : next.siteSettings.legalEntityName,
+            commercialRegisterId:
+              typeof patch.siteSettings.commercialRegisterId === 'string'
+                ? patch.siteSettings.commercialRegisterId.trim().slice(0, 80)
+                : next.siteSettings.commercialRegisterId,
+            returnWindowDays:
+              typeof patch.siteSettings.returnWindowDays === 'number' &&
+              Number.isFinite(patch.siteSettings.returnWindowDays) &&
+              patch.siteSettings.returnWindowDays >= 0 &&
+              patch.siteSettings.returnWindowDays <= 90
+                ? Math.round(patch.siteSettings.returnWindowDays)
+                : next.siteSettings.returnWindowDays,
           };
         }
         if (patch.ownerSettings && typeof patch.ownerSettings === 'object') {
@@ -362,7 +372,7 @@ function validateEdgeStorePatch(patch: Partial<StorefrontDatabase>): { ok: boole
         tasks.push(
           appendEdgePublicAnnouncement(env, {
             tag: 'منتج جديد',
-            title: `🆕 منتج جديد في ECHOX Store: ${newest.name?.ar || newest.name?.en || newest.name?.fr || 'منتج جديد'}`,
+            title: `🆕 منتج جديد في NIAPOLOR: ${newest.name?.ar || newest.name?.en || newest.name?.fr || 'منتج جديد'}`,
             body: `متوفر الآن بسعر ${newest.price} د.ت — اطلبه الآن مع التوصيل لكافة الولايات.`,
             url: `/?product=${encodeURIComponent(newest.id)}`,
           })
@@ -375,7 +385,7 @@ function validateEdgeStorePatch(patch: Partial<StorefrontDatabase>): { ok: boole
           appendEdgePublicAnnouncement(env, {
             tag: newestBanner.tag || 'عرض جديد',
             title: `🔥 ${newestBanner.title}`,
-            body: newestBanner.subtitle || 'اكتشف العروض الجديدة في ECHOX Store الآن.',
+            body: newestBanner.subtitle || 'اكتشف العروض الجديدة في NIAPOLOR الآن.',
             url: '/',
           })
         );
@@ -418,21 +428,51 @@ function validateEdgeStorePatch(patch: Partial<StorefrontDatabase>): { ok: boole
       rating?: number;
       comment?: string;
       verifiedPurchase?: boolean;
+      orderTrackingNumber?: string;
+      orderPhone?: string;
     };
-    const comment = (body.comment || '').trim().slice(0, 1000);
-    if (!comment) {
-      return jsonResponse({ success: false, error: 'يرجى كتابة نص التقييم.' }, 400);
+    const custSess = await verifyEdgeCustomerSession(request, env);
+    const custUser = custSess ? await getEdgeCustomerById(env, custSess.customerId) : null;
+
+    const comment = String(body.comment || '').trim().slice(0, 1000);
+    const authorName =
+      String(body.authorName || body.customerName || custUser?.fullName || '').trim().slice(0, 80) ||
+      'زائر NIAPOLOR';
+
+    if (
+      /<[^>]*>|<script|<iframe|javascript:|onerror=|onload=/i.test(comment) ||
+      /<[^>]*>|<script|<iframe|javascript:|onerror=|onload=/i.test(authorName)
+    ) {
+      return jsonResponse(
+        { success: false, error: 'يُمنع إدخال وسوم HTML أو رموز برمجية غير صالحة في التقييم.' },
+        400
+      );
     }
+    if (!comment || comment.length < 4) {
+      return jsonResponse({ success: false, error: 'يرجى كتابة تقييم واضح لا يقل عن 4 أحرف.' }, 400);
+    }
+
     const rating = Math.min(5, Math.max(1, Math.round(Number(body.rating) || 5)));
-    const authorName = (body.authorName || body.customerName || '').trim().slice(0, 80) || 'حريف ECHOX';
+    const verifiedPurchase = await hasVerifiedCustomerPurchaseEdge(env, {
+      productId,
+      customerId: custUser?.id,
+      customerPhone: custUser?.phone,
+      orderTrackingNumber: typeof body.orderTrackingNumber === 'string' ? body.orderTrackingNumber : undefined,
+      orderPhone: typeof body.orderPhone === 'string' ? body.orderPhone : undefined,
+    });
 
     const mut = await mutateEdgeDocWithRetry<
       StorefrontDatabase,
-      { notFound?: boolean; product?: Product }
+      { notFound?: boolean; duplicate?: boolean; product?: Product }
     >(env, CLOUD_STORE_KEY, async (raw) => {
       const db = mergeStoreState(raw);
       const prod = db.products.find((p) => p.id === productId);
       if (!prod) return { skipWrite: true, result: { notFound: true } };
+
+      const normalizedComment = comment.toLowerCase();
+      if ((prod.reviews || []).slice(0, 15).some((r) => String(r.comment || '').trim().toLowerCase() === normalizedComment)) {
+        return { skipWrite: true, result: { duplicate: true } };
+      }
 
       const newRev = {
         id: `rev_${Date.now()}`,
@@ -440,7 +480,8 @@ function validateEdgeStorePatch(patch: Partial<StorefrontDatabase>): { ok: boole
         rating,
         comment,
         date: new Date().toISOString().split('T')[0],
-        verifiedPurchase: Boolean(body.verifiedPurchase),
+        verifiedPurchase,
+        ...(custUser?.id ? { customerId: custUser.id } : {}),
       };
       const updatedReviews = [newRev, ...(prod.reviews || [])].slice(0, 100);
       const newRating = +(
@@ -464,18 +505,19 @@ function validateEdgeStorePatch(patch: Partial<StorefrontDatabase>): { ok: boole
 
     if (!mut.ok) return jsonResponse({ success: false, error: mut.error }, mut.statusCode || 503);
     if (mut.result?.notFound) return jsonResponse({ success: false, error: 'المنتج غير موجود.' }, 404);
+    if (mut.result?.duplicate) return jsonResponse({ success: false, error: 'تم تسجيل هذا التعليق مسبقاً لهذا المنتج.' }, 409);
 
     const notifTask = appendEdgeAdminNotification(env, {
       category: 'activity',
       severity: 'info',
-      title: `⭐ تقييم جديد (${rating}/5)`,
+      title: `⭐ تقييم جديد (${rating}/5)${verifiedPurchase ? ' — مشتري موثق' : ''}`,
       body: `المنتج: ${mut.result?.product?.name?.ar || productId} — ${authorName}`,
       url: '/owner/dashboard',
     });
     if (waitUntil) waitUntil(notifTask);
     else await notifTask;
 
-    return jsonResponse({ success: true, product: mut.result?.product });
+    return jsonResponse({ success: true, product: mut.result?.product, review: mut.result?.product?.reviews?.[0] });
   }
 
   if (method === 'POST' && pathname === '/api/store/inquiries') {

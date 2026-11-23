@@ -21,6 +21,7 @@ export interface Review {
   comment: string;
   date: string;
   verifiedPurchase: boolean;
+  customerId?: string;
 }
 
 export interface Product {
@@ -411,6 +412,10 @@ export interface SiteSettings {
   enableFlouci: boolean;
   announcementText: MultilingualText;
   showAnnouncement: boolean;
+  legalEntityName?: string;
+  commercialRegisterId?: string;
+  returnWindowDays?: number;
+  deliveryTimeEstimate?: MultilingualText;
 }
 
 export interface CategoryItem {

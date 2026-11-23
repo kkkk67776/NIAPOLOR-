@@ -33,12 +33,26 @@ import {
   hydratePaymentDbFromCloud,
   ensureInitialBankSealAfterHydrate,
   getActiveCatalogProductIds,
+  hasVerifiedCustomerPurchase,
+  getCustomerScopedOrders,
   isBankIdentityChange,
   isEnvLockedBank,
   syncPaymentDbIfStale,
   getPaymentRecoverySnapshot,
   restorePaymentRecoverySnapshot,
 } from './server/paymentEngine';
+import {
+  hydrateCustomerAccountsFromCloud,
+  syncCustomerAccountsIfStale,
+  registerCustomerAccount,
+  authenticateCustomerAccount,
+  getCustomerById,
+  addCustomerAddressServer,
+  setDefaultCustomerAddressServer,
+  signCustomerSessionToken,
+  verifyCustomerSessionToken,
+  revokeCustomerSession,
+} from './server/customerEngine';
 import { getGovernorateName } from './src/data/governorates';
 import {
   getPublicStoreState,
@@ -186,9 +200,15 @@ function isTrustedStorefrontHostname(hostname: string): boolean {
   if (
     hostname === 'echoxstore.pages.dev' ||
     hostname === 'echox-store.onrender.com' ||
+    hostname === 'niapolor.pages.dev' ||
+    hostname === 'niapolor.com' ||
+    hostname === 'www.niapolor.com' ||
+    hostname === 'niapolor.tn' ||
+    hostname === 'www.niapolor.tn' ||
     isLoopbackHostname(hostname) ||
     isTrustedRunAppHostname(hostname) ||
-    /^([a-z0-9-]+\.)*echox[a-z0-9-]*\.pages\.dev$/i.test(hostname)
+    /^([a-z0-9-]+\.)*echox[a-z0-9-]*\.pages\.dev$/i.test(hostname) ||
+    /^([a-z0-9-]+\.)*niapolor[a-z0-9-]*\.pages\.dev$/i.test(hostname)
   ) {
     return true;
   }
@@ -236,6 +256,36 @@ function buildSessionCookie(req: Request, value: string, maxAgeSeconds: number):
   const sameSite = https && isAiStudioPreviewRequest(req) ? 'None' : 'Lax';
   const secureFlag = https || sameSite === 'None' ? '; Secure' : '';
   return `__session=${value}; Path=/; Max-Age=${maxAgeSeconds}; SameSite=${sameSite}; HttpOnly${secureFlag}`;
+}
+
+function buildCustomerSessionCookie(req: Request, value: string, maxAgeSeconds: number): string {
+  const https = isHttpsRequest(req);
+  const sameSite = https && isAiStudioPreviewRequest(req) ? 'None' : 'Lax';
+  const secureFlag = https || sameSite === 'None' ? '; Secure' : '';
+  return `__customer_session=${value}; Path=/; Max-Age=${maxAgeSeconds}; SameSite=${sameSite}; HttpOnly${secureFlag}`;
+}
+
+function resolveCustomerSession(req: Request): { customerId: string; sessionId: string } | null {
+  const cookies = parseCookies(req);
+  const raw = cookies['__customer_session'];
+  if (!raw) return null;
+  const parsed = verifyCustomerSessionToken(raw, getHmacSecret());
+  if (!parsed) return null;
+  return { customerId: parsed.customerId, sessionId: parsed.sessionId };
+}
+
+function verifyCustomerMutationSecurity(req: Request, res: Response): boolean {
+  const reqOrigin = String(req.headers.origin || '').trim();
+  if (reqOrigin && !isAllowedOrigin(reqOrigin)) {
+    res.status(403).json({ success: false, error: 'Origin not allowed.' });
+    return false;
+  }
+  const xrw = String(req.headers['x-requested-with'] || '').trim();
+  if (xrw !== 'NIAPOLOR-Customer') {
+    res.status(403).json({ success: false, error: 'Missing required X-Requested-With customer header.' });
+    return false;
+  }
+  return true;
 }
 
 function normalizeIpString(raw: string): string {
@@ -311,6 +361,11 @@ function isAllowedOrigin(origin: string): boolean {
   if (
     origin === 'https://echoxstore.pages.dev' ||
     origin === 'https://echox-store.onrender.com' ||
+    origin === 'https://niapolor.pages.dev' ||
+    origin === 'https://niapolor.com' ||
+    origin === 'https://www.niapolor.com' ||
+    origin === 'https://niapolor.tn' ||
+    origin === 'https://www.niapolor.tn' ||
     origin === process.env.SITE_URL ||
     origin === process.env.VITE_SITE_URL ||
     origin === process.env.CORS_ORIGIN
@@ -321,7 +376,8 @@ function isAllowedOrigin(origin: string): boolean {
     const u = new URL(origin);
     if (
       u.protocol === 'https:' &&
-      /^([a-z0-9-]+\.)*echox[a-z0-9-]*\.pages\.dev$/i.test(u.hostname)
+      (/^([a-z0-9-]+\.)*echox[a-z0-9-]*\.pages\.dev$/i.test(u.hostname) ||
+        /^([a-z0-9-]+\.)*niapolor[a-z0-9-]*\.pages\.dev$/i.test(u.hostname))
     ) {
       return true;
     }
@@ -343,7 +399,7 @@ app.use((req: Request, res: Response, next) => {
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
     res.setHeader(
       'Access-Control-Allow-Headers',
-      'Content-Type, Authorization, X-CSRF-Token, X-File-Name, X-Chat-Token, X-Tracking-Phone'
+      'Content-Type, Authorization, X-CSRF-Token, X-File-Name, X-Chat-Token, X-Tracking-Phone, X-Requested-With'
     );
     if (req.method === 'OPTIONS') {
       return res.status(204).end();
@@ -459,10 +515,19 @@ app.get('/robots.txt', (req: Request, res: Response) => {
   res.setHeader('Cache-Control', 'public, max-age=3600');
   res.send(`User-agent: *
 Allow: /
+Allow: /about
+Allow: /privacy
+Allow: /terms
+Allow: /returns
+Allow: /shipping
+Allow: /faq
 Allow: /promise
 Allow: /companies
 Allow: /contact
 Allow: /assets/
+Disallow: /owner
+Disallow: /owner/
+Disallow: /owner_dashboard
 Disallow: /my_orders
 Disallow: /account
 Disallow: /wishlist
@@ -479,6 +544,12 @@ app.get('/sitemap.xml', (req: Request, res: Response) => {
 
   const staticRoutes = [
     { loc: '/', changefreq: 'daily', priority: '1.0', multilingual: true },
+    { loc: '/about', changefreq: 'monthly', priority: '0.8', multilingual: true },
+    { loc: '/shipping', changefreq: 'monthly', priority: '0.8', multilingual: true },
+    { loc: '/returns', changefreq: 'monthly', priority: '0.8', multilingual: true },
+    { loc: '/faq', changefreq: 'monthly', priority: '0.8', multilingual: true },
+    { loc: '/privacy', changefreq: 'yearly', priority: '0.6', multilingual: true },
+    { loc: '/terms', changefreq: 'yearly', priority: '0.6', multilingual: true },
     { loc: '/promise', changefreq: 'monthly', priority: '0.8', multilingual: true },
     { loc: '/companies', changefreq: 'weekly', priority: '0.8', multilingual: true },
     { loc: '/contact', changefreq: 'monthly', priority: '0.7', multilingual: true },
@@ -2271,8 +2342,10 @@ app.post('/api/payments/checkout', async (req: Request, res: Response) => {
     return res.status(429).json({ success: false, error: `تم تجاوز حد الطلبات، يرجى الانتظار ${rate.retryAfterSeconds} ثانية.` });
   }
   try {
+    const custSess = resolveCustomerSession(req);
     const result = await processServerCheckout({
       ...(req.body || {}),
+      customerId: custSess?.customerId || undefined,
       origin: getRequestOrigin(req),
       actorIp: ip,
     });
@@ -3293,24 +3366,168 @@ app.get('/api/media/products/:fileName', async (req: Request, res: Response) => 
   return res.status(200).send(asset.buffer);
 });
 
+// ==========================================
+// 👤 CUSTOMER ACCOUNTS, SESSIONS & ORDERS
+// ==========================================
+app.post('/api/customer/register', async (req: Request, res: Response) => {
+  if (!verifyCustomerMutationSecurity(req, res)) return;
+  const ip = getClientIp(req);
+  const rate = checkSlidingWindowLimit('custRegister', ip, 10, 15 * 60 * 1000);
+  if (!rate.allowed) {
+    return res.status(429).json({
+      success: false,
+      error: `تم تجاوز حد التسجيل المؤقت، يرجى الانتظار ${rate.retryAfterSeconds} ثانية.`,
+    });
+  }
+  const result = await registerCustomerAccount({
+    fullName: String(req.body?.fullName || ''),
+    email: String(req.body?.email || ''),
+    phone: String(req.body?.phone || ''),
+    password: String(req.body?.password || ''),
+  });
+  if (!result.ok || !result.customer) {
+    return res.status(result.statusCode || 400).json({ success: false, error: result.error });
+  }
+  const signed = signCustomerSessionToken(result.customer.id, getHmacSecret());
+  res.setHeader('Set-Cookie', [buildCustomerSessionCookie(req, signed.token, 14 * 24 * 3600)]);
+  return res.status(201).json({ success: true, customer: result.customer });
+});
+
+app.post('/api/customer/login', async (req: Request, res: Response) => {
+  if (!verifyCustomerMutationSecurity(req, res)) return;
+  const ip = getClientIp(req);
+  const lock = checkLockout('custLogin', ip);
+  if (lock.locked) {
+    return res.status(429).json({
+      success: false,
+      error: `محاولات دخول متكررة، يرجى الانتظار ${lock.remainingSeconds} ثانية.`,
+    });
+  }
+  const result = await authenticateCustomerAccount({
+    email: String(req.body?.email || ''),
+    password: String(req.body?.password || ''),
+  });
+  if (!result.ok || !result.customer) {
+    recordFailedAttempt('custLogin', ip, 10, 5 * 60 * 1000);
+    return res.status(result.statusCode || 401).json({ success: false, error: result.error });
+  }
+  resetBucket('custLogin', ip);
+  const signed = signCustomerSessionToken(result.customer.id, getHmacSecret());
+  res.setHeader('Set-Cookie', [buildCustomerSessionCookie(req, signed.token, 14 * 24 * 3600)]);
+  return res.json({ success: true, customer: result.customer });
+});
+
+app.post('/api/customer/logout', async (req: Request, res: Response) => {
+  if (!verifyCustomerMutationSecurity(req, res)) return;
+  const rawToken = parseCookies(req)['__customer_session'];
+  if (rawToken) {
+    const parsed = verifyCustomerSessionToken(rawToken, getHmacSecret());
+    if (parsed) {
+      await revokeCustomerSession(parsed.sessionId, parsed.expiresAt);
+    }
+  }
+  res.setHeader('Set-Cookie', [buildCustomerSessionCookie(req, '', 0)]);
+  return res.json({ success: true });
+});
+
+app.get('/api/customer/me', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  await syncCustomerAccountsIfStale(false).catch(() => {});
+  const sess = resolveCustomerSession(req);
+  if (!sess) {
+    return res.status(401).json({ authenticated: false, customer: null });
+  }
+  const customer = getCustomerById(sess.customerId);
+  if (!customer) {
+    return res.status(401).json({ authenticated: false, customer: null });
+  }
+  return res.json({ authenticated: true, customer });
+});
+
+app.post('/api/customer/addresses', async (req: Request, res: Response) => {
+  if (!verifyCustomerMutationSecurity(req, res)) return;
+  const sess = resolveCustomerSession(req);
+  if (!sess) {
+    return res.status(401).json({ success: false, error: 'يرجى تسجيل الدخول لإدارة العناوين.' });
+  }
+  const result = await addCustomerAddressServer(sess.customerId, req.body || {});
+  if (!result.ok || !result.customer) {
+    return res.status(result.statusCode || 400).json({ success: false, error: result.error });
+  }
+  return res.json({ success: true, customer: result.customer });
+});
+
+app.patch('/api/customer/addresses/default', async (req: Request, res: Response) => {
+  if (!verifyCustomerMutationSecurity(req, res)) return;
+  const sess = resolveCustomerSession(req);
+  if (!sess) {
+    return res.status(401).json({ success: false, error: 'يرجى تسجيل الدخول لإدارة العناوين.' });
+  }
+  const result = await setDefaultCustomerAddressServer(sess.customerId, String(req.body?.addressId || ''));
+  if (!result.ok || !result.customer) {
+    return res.status(result.statusCode || 400).json({ success: false, error: result.error });
+  }
+  return res.json({ success: true, customer: result.customer });
+});
+
+app.get('/api/customer/orders', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  await Promise.all([
+    syncCustomerAccountsIfStale(false).catch(() => {}),
+    syncPaymentDbIfStale(false).catch(() => {}),
+  ]);
+  const sess = resolveCustomerSession(req);
+  if (!sess) {
+    return res.status(401).json({ success: false, error: 'يرجى تسجيل الدخول لعرض طلباتك.' });
+  }
+  const customer = getCustomerById(sess.customerId);
+  if (!customer) {
+    return res.status(401).json({ success: false, error: 'الحساب غير موجود.' });
+  }
+  const orders = getCustomerScopedOrders(customer.id, customer.phone);
+  return res.json({ success: true, orders });
+});
+
 app.post('/api/store/products/:productId/reviews', async (req: Request, res: Response) => {
   const ip = getClientIp(req);
   const rate = checkSlidingWindowLimit('productReview', ip, 15, 60 * 1000);
   if (!rate.allowed) {
     return res.status(429).json({ success: false, error: `تم تجاوز الحد المسموح، يرجى الانتظار ${rate.retryAfterSeconds} ثانية.` });
   }
-  const result = await addPublicProductReview(req.params.productId, req.body || {});
+  await Promise.all([
+    syncCustomerAccountsIfStale(false).catch(() => {}),
+    syncPaymentDbIfStale(false).catch(() => {}),
+  ]);
+  const sess = resolveCustomerSession(req);
+  const customer = sess ? getCustomerById(sess.customerId) : null;
+
+  const verifiedPurchase = hasVerifiedCustomerPurchase({
+    productId: req.params.productId,
+    customerId: customer?.id,
+    customerPhone: customer?.phone,
+    orderTrackingNumber:
+      typeof req.body?.orderTrackingNumber === 'string' ? req.body.orderTrackingNumber : undefined,
+    orderPhone: typeof req.body?.orderPhone === 'string' ? req.body.orderPhone : undefined,
+  });
+
+  const result = await addPublicProductReview(req.params.productId, {
+    authorName: String(req.body?.authorName || req.body?.customerName || customer?.fullName || ''),
+    rating: Number(req.body?.rating),
+    comment: String(req.body?.comment || ''),
+    verifiedPurchase,
+    customerId: customer?.id,
+  });
   if (!result.ok) {
     return res.status(result.statusCode || 400).json({ success: false, error: result.error });
   }
   emitAdminNotification({
     category: 'activity',
     severity: 'info',
-    title: `⭐ تقييم جديد (${req.body?.rating || 5}/5)`,
-    body: `المنتج: ${result.product?.name?.ar || req.params.productId} — ${req.body?.customerName || 'زبون'}`,
+    title: `⭐ تقييم جديد (${req.body?.rating || 5}/5)${verifiedPurchase ? ' — مشتري موثق' : ''}`,
+    body: `المنتج: ${result.product?.name?.ar || req.params.productId} — ${req.body?.customerName || req.body?.authorName || customer?.fullName || 'زائر NIAPOLOR'}`,
     url: '/owner/dashboard',
   });
-  return res.json({ success: true, product: result.product });
+  return res.json({ success: true, product: result.product, review: result.product?.reviews?.[0] });
 });
 
 app.post('/api/store/inquiries', async (req: Request, res: Response) => {
@@ -3794,6 +4011,7 @@ async function ensureServerInitialized(): Promise<void> {
         hydrateChatDbFromCloud().catch((err) => console.error('[ChatEngine] Cloud hydrate notice:', err)),
         hydrateStoreStateFromCloud().catch((err) => console.error('[StoreEngine] Cloud hydrate notice:', err)),
         hydrateNotificationsFromCloud().catch((err) => console.error('[Notifications] Cloud hydrate notice:', err)),
+        hydrateCustomerAccountsFromCloud().catch((err) => console.error('[CustomerEngine] Cloud hydrate notice:', err)),
       ]);
 
       ensureInitialBankSealAfterHydrate();

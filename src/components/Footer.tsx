@@ -135,6 +135,15 @@ export const Footer: React.FC = () => {
               <li>
                 <button 
                   type="button"
+                  onClick={() => handleLinkClick('about')} 
+                  className="hover:text-[#FF6B00] transition-colors cursor-pointer text-start"
+                >
+                  {t.footer.aboutUs}
+                </button>
+              </li>
+              <li>
+                <button 
+                  type="button"
                   onClick={() => handleLinkClick('companies')} 
                   className="hover:text-[#FF6B00] transition-colors cursor-pointer text-start"
                 >
@@ -189,7 +198,16 @@ export const Footer: React.FC = () => {
               <li>
                 <button 
                   type="button"
-                  onClick={() => handleLinkClick('promise')} 
+                  onClick={() => handleLinkClick('shipping')} 
+                  className="hover:text-[#FF6B00] transition-colors cursor-pointer text-start"
+                >
+                  {t.footer.shippingPolicy}
+                </button>
+              </li>
+              <li>
+                <button 
+                  type="button"
+                  onClick={() => handleLinkClick('returns')} 
                   className="hover:text-[#FF6B00] transition-colors cursor-pointer text-start"
                 >
                   {t.footer.returnPolicy}
@@ -198,7 +216,16 @@ export const Footer: React.FC = () => {
               <li>
                 <button 
                   type="button"
-                  onClick={() => handleLinkClick('promise')} 
+                  onClick={() => handleLinkClick('faq')} 
+                  className="hover:text-[#FF6B00] transition-colors cursor-pointer text-start"
+                >
+                  {t.footer.faq}
+                </button>
+              </li>
+              <li>
+                <button 
+                  type="button"
+                  onClick={() => handleLinkClick('privacy')} 
                   className="hover:text-[#FF6B00] transition-colors cursor-pointer text-start"
                 >
                   {t.footer.privacyPolicy}
@@ -207,7 +234,7 @@ export const Footer: React.FC = () => {
               <li>
                 <button 
                   type="button"
-                  onClick={() => handleLinkClick('promise')} 
+                  onClick={() => handleLinkClick('terms')} 
                   className="hover:text-[#FF6B00] transition-colors cursor-pointer text-start"
                 >
                   {t.footer.termsOfService}
@@ -275,7 +302,15 @@ export const Footer: React.FC = () => {
         </div>
 
         {/* حقوق المتجر بدون أي روابط إدارية */}
-        <div className="pt-6 mt-6 border-t border-[#E6E2D8] dark:border-[#23232A] text-center text-xs text-[#7A756D] dark:text-[#8E8980]">
+        <div className="pt-6 mt-6 border-t border-[#E6E2D8] dark:border-[#23232A] text-center text-xs text-[#7A756D] dark:text-[#8E8980] space-y-1.5">
+          {(siteSettings?.legalEntityName?.trim() || siteSettings?.commercialRegisterId?.trim()) && (
+            <p className="text-[11px] font-medium">
+              {t.footer.commercialNotice}{' '}
+              {[siteSettings.legalEntityName?.trim(), siteSettings.commercialRegisterId?.trim()]
+                .filter(Boolean)
+                .join(' — ')}
+            </p>
+          )}
           <p>© 2026 NIAPOLOR — {t.footer.rights || 'كافة الحقوق محفوظة. الجمهورية التونسية.'}</p>
         </div>
       </div>

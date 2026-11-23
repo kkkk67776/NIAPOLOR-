@@ -224,15 +224,15 @@ export const INITIAL_ORDERS: Order[] = [
     status: 'out_for_delivery',
     paymentMethod: 'cod',
     paymentStatus: 'pending',
-    carrierName: 'Aramex Tunisie Express',
+    carrierName: 'NIAPOLOR Delivery Tunisie',
     createdAt: '2026-11-05T14:30:00Z',
     updatedAt: '2026-11-06T08:15:00Z',
-    notes: 'تم التأكيد الهاتفي مع الحريف وخرج مع الساعي سفيان',
+    notes: 'تم التأكيد الهاتفي مع الحريف وخرج للتوصيل',
     statusHistory: [
       { status: 'new', timestamp: '2026-11-05T14:30:00Z', note: 'تسجيل الطلب بالمتجر' },
       { status: 'under_confirmation', timestamp: '2026-11-05T15:10:00Z', note: 'تأكيد الطلب هاتفياً من إدارة المتجر' },
-      { status: 'preparing', timestamp: '2026-11-05T17:00:00Z', note: 'تغليف الطرد وإرفاق شهادة الضمان والفاتورة' },
-      { status: 'out_for_delivery', timestamp: '2026-11-06T08:15:00Z', note: 'تسليم الطرد لساعي Aramex للتوصيل لباب المنزل بالمرسى' }
+      { status: 'preparing', timestamp: '2026-11-05T17:00:00Z', note: 'تغليف الطرد وإرفاق وصل الطلب' },
+      { status: 'out_for_delivery', timestamp: '2026-11-06T08:15:00Z', note: 'تسليم الطرد لفريق التوصيل نحو العنوان المحدد' }
     ]
   },
   {
@@ -273,7 +273,7 @@ export const INITIAL_ORDERS: Order[] = [
     status: 'delivered',
     paymentMethod: 'cod',
     paymentStatus: 'paid',
-    carrierName: 'LivriTN Logistics',
+    carrierName: 'NIAPOLOR Delivery Tunisie',
     createdAt: '2026-11-03T11:00:00Z',
     updatedAt: '2026-11-04T16:20:00Z',
     notes: 'تم استلام المبلغ نقداً وإيداعه بالحساب',
@@ -323,9 +323,9 @@ export const INITIAL_SITE_SETTINGS: SiteSettings = {
   governorate: 'ariana',
   supportPhone: '+216 21 511 162',
   whatsappPhone: '21621511162',
-  facebookUrl: 'https://facebook.com/echoxstore.tn',
-  instagramUrl: 'https://instagram.com/echoxstore.tn',
-  tiktokUrl: 'https://tiktok.com/@echoxstore.tn',
+  facebookUrl: 'https://facebook.com/niapolor.tn',
+  instagramUrl: 'https://instagram.com/niapolor.tn',
+  tiktokUrl: 'https://tiktok.com/@niapolor.tn',
   workingHours: {
     ar: 'من الإثنين إلى السبت: 08:30 إلى 18:30 (الأحد: الدعم عبر واتساب)',
     fr: 'Du Lundi au Samedi : 08h30 à 18h30 (Dimanche : Assistance WhatsApp)',
@@ -341,5 +341,13 @@ export const INITIAL_SITE_SETTINGS: SiteSettings = {
     fr: '🚚 Livraison Gratuite sur toute la Tunisie dès 150 DT d’achats | Paiement à la réception',
     en: '🚚 Free Shipping across all 24 Tunisian governorates on orders over 150 DT | Cash on Delivery'
   },
-  showAnnouncement: true
+  showAnnouncement: true,
+  legalEntityName: '',
+  commercialRegisterId: '',
+  returnWindowDays: 7,
+  deliveryTimeEstimate: {
+    ar: 'من 24 إلى 72 ساعة حسب الولاية',
+    fr: '24 à 72 heures selon le gouvernorat',
+    en: '24 to 72 hours depending on the governorate'
+  }
 };

@@ -1,4 +1,5 @@
 import { Language, Product } from '../types';
+import { getTranslation } from '../data/translations';
 
 const FALLBACK_SITE_URL =
   (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_SITE_URL) ||
@@ -43,6 +44,132 @@ const PAGES: Record<string, PageMeta> = {
         title: 'NIAPOLOR — YOUR WORLD. ONE STORE. | Online Store',
         description:
           'NIAPOLOR is your online shopping destination, bringing together a wide variety of products across multiple categories. Discover electronics, equipment, automotive parts, accessories, and much more — all in one store.',
+      },
+    },
+  },
+  about: {
+    path: '/about',
+    index: true,
+    meta: {
+      ar: {
+        title: 'من نحن | NIAPOLOR تونس',
+        description:
+          'تعرّف على NIAPOLOR، متجر إلكتروني متعدد الفئات في تونس يجمع الإلكترونيات والمعدات وقطع غيار السيارات والإكسسوارات بتجربة شراء واضحة.',
+      },
+      fr: {
+        title: 'À propos de nous | NIAPOLOR Tunisie',
+        description:
+          'Découvrez NIAPOLOR, boutique en ligne multi-catégories en Tunisie réunissant électronique, équipements, pièces auto et accessoires.',
+      },
+      en: {
+        title: 'About Us | NIAPOLOR Tunisia',
+        description:
+          'Learn about NIAPOLOR, a multi-category online store in Tunisia bringing together electronics, tools, automotive parts, and accessories.',
+      },
+    },
+  },
+  shipping: {
+    path: '/shipping',
+    index: true,
+    meta: {
+      ar: {
+        title: 'سياسة الشحن والتوصيل (24 ولاية) | NIAPOLOR',
+        description:
+          'تفاصيل رسوم الشحن، عتبة التوصيل المجاني، وآجال التسليم المقدرة لجميع ولايات تونس الـ24 مع NIAPOLOR.',
+      },
+      fr: {
+        title: 'Politique de Livraison (24 Gouvernorats) | NIAPOLOR',
+        description:
+          'Détails des frais de livraison, seuil de livraison gratuite et délais estimés dans les 24 gouvernorats de Tunisie avec NIAPOLOR.',
+      },
+      en: {
+        title: 'Shipping & Delivery Policy | NIAPOLOR',
+        description:
+          'Shipping fees, free delivery threshold, and estimated delivery timelines across all 24 Tunisian governorates on NIAPOLOR.',
+      },
+    },
+  },
+  returns: {
+    path: '/returns',
+    index: true,
+    meta: {
+      ar: {
+        title: 'سياسة الاسترجاع والاستبدال | NIAPOLOR',
+        description:
+          'شروط وإجراءات إرجاع أو استبدال المنتجات، وحالات العيوب المصنعية أو عدم المطابقة، وطرق رد المبالغ في NIAPOLOR.',
+      },
+      fr: {
+        title: 'Politique de Retour et Échange | NIAPOLOR',
+        description:
+          'Conditions de retour et d’échange, produits défectueux ou non conformes, et délais de remboursement sur NIAPOLOR.',
+      },
+      en: {
+        title: 'Returns & Refunds Policy | NIAPOLOR',
+        description:
+          'Return and exchange conditions, defective or wrong-item claims, and refund timelines at NIAPOLOR.',
+      },
+    },
+  },
+  faq: {
+    path: '/faq',
+    index: true,
+    meta: {
+      ar: {
+        title: 'الأسئلة الشائعة (FAQ) | NIAPOLOR',
+        description:
+          'إجابات واضحة حول الطلب في تونس، الدفع عند الاستلام، البريد التونسي CCP، الشحن للولايات الـ24، والاسترجاع.',
+      },
+      fr: {
+        title: 'Foire Aux Questions (FAQ) | NIAPOLOR',
+        description:
+          'Réponses claires sur les commandes en Tunisie, paiement à la livraison, virement CCP, livraison 24 gouvernorats et retours.',
+      },
+      en: {
+        title: 'Frequently Asked Questions (FAQ) | NIAPOLOR',
+        description:
+          'Clear answers on ordering in Tunisia, Cash on Delivery, Poste CCP transfers, 24-governorate shipping, and returns.',
+      },
+    },
+  },
+  privacy: {
+    path: '/privacy',
+    index: true,
+    meta: {
+      ar: {
+        title: 'سياسة الخصوصية وحماية المعطيات | NIAPOLOR',
+        description:
+          'كيف تجمع NIAPOLOR بيانات الطلب والتوصيل وتؤمن جلسات الحرفاء وتحمي خصوصيتك دون بيع بياناتك لأطراف تسويقية.',
+      },
+      fr: {
+        title: 'Politique de Confidentialité | NIAPOLOR',
+        description:
+          'Comment NIAPOLOR collecte et sécurise vos données de commande, sessions et adresses sans revente à des tiers.',
+      },
+      en: {
+        title: 'Privacy Policy & Data Protection | NIAPOLOR',
+        description:
+          'How NIAPOLOR collects, secures, and protects your order, session, and address data without selling to third-party brokers.',
+      },
+    },
+  },
+  terms: {
+    path: '/terms',
+    index: true,
+    meta: {
+      ar: {
+        title: 'الشروط والأحكام العامة للبيع | NIAPOLOR',
+        description:
+          'الشروط المنظمة للطلب والأسعار بالدينار التونسي والدفع والتسليم وحقوق المستهلك في منصة NIAPOLOR.',
+      },
+      fr: {
+        title: 'Conditions Générales d’Utilisation et de Vente | NIAPOLOR',
+        description:
+          'Conditions régissant les commandes, prix en dinar tunisien, paiement, livraison et droits des consommateurs sur NIAPOLOR.',
+      },
+      en: {
+        title: 'Terms of Service & Conditions of Sale | NIAPOLOR',
+        description:
+          'Terms governing orders, TND pricing transparency, payment options, delivery, and consumer rights on NIAPOLOR.',
       },
     },
   },
@@ -184,7 +311,6 @@ function updateProductJsonLd(origin: string, product: Product | null, lang: Lang
   }
 
   const productUrl = `${origin}/?product=${encodeURIComponent(product.id)}`;
-  const productImage = toAbsoluteUrl(origin, product.images?.[0]);
   const productName = product.name?.[lang] || product.name?.ar || 'NIAPOLOR Product';
   const productDesc = product.description?.[lang] || product.description?.ar || '';
 
@@ -230,6 +356,58 @@ function updateProductJsonLd(origin: string, product: Product | null, lang: Lang
       return s;
     })();
 
+  scriptEl.textContent = JSON.stringify(schema);
+}
+
+function updatePageSchemaJsonLd(origin: string, view: string, lang: Language) {
+  const existing = document.getElementById('niapolor-page-schema');
+  const page = PAGES[view];
+  const legalViews = ['about', 'shipping', 'returns', 'faq', 'privacy', 'terms'];
+  if (!page || !legalViews.includes(view)) {
+    if (existing) existing.remove();
+    return;
+  }
+
+  const t = getTranslation(lang) as any;
+  const pageUrl = `${origin}${page.path}`;
+  const metaForLang = page.meta[lang] || page.meta.ar;
+
+  let schema: Record<string, any>;
+  if (view === 'faq' && Array.isArray(t?.legalPages?.faq?.items)) {
+    schema = {
+      '@context': 'https://schema.org',
+      '@type': 'FAQPage',
+      name: metaForLang.title,
+      url: pageUrl,
+      mainEntity: t.legalPages.faq.items.map((item: { q: string; a: string }) => ({
+        '@type': 'Question',
+        name: item.q,
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: item.a,
+        },
+      })),
+    };
+  } else {
+    schema = {
+      '@context': 'https://schema.org',
+      '@type': view === 'about' ? 'AboutPage' : 'WebPage',
+      name: metaForLang.title,
+      description: metaForLang.description,
+      url: pageUrl,
+      inLanguage: lang === 'ar' ? 'ar-TN' : lang === 'fr' ? 'fr-TN' : 'en',
+    };
+  }
+
+  const scriptEl =
+    (existing as HTMLScriptElement | null) ||
+    (() => {
+      const s = document.createElement('script');
+      s.id = 'niapolor-page-schema';
+      s.type = 'application/ld+json';
+      document.head.appendChild(s);
+      return s;
+    })();
   scriptEl.textContent = JSON.stringify(schema);
 }
 
@@ -283,6 +461,7 @@ export function applySeo(
     setHreflangLink('x-default', productUrl);
 
     updateProductJsonLd(origin, activeProduct, lang);
+    updatePageSchemaJsonLd(origin, 'product', lang);
     return;
   }
 
@@ -337,4 +516,6 @@ export function applySeo(
     setHreflangLink('en', `${origin}${page.path}?lang=en`);
     setHreflangLink('x-default', url);
   }
+
+  updatePageSchemaJsonLd(origin, normalizedView, lang);
 }

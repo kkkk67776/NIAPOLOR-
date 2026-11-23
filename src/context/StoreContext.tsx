@@ -56,7 +56,6 @@ export interface ServerPersistenceStatus {
 import { 
   INITIAL_COMPANIES, 
   INITIAL_PRODUCTS, 
-  INITIAL_ORDERS, 
   INITIAL_OWNER_SETTINGS, 
   INITIAL_SITE_SETTINGS 
 } from '../data/initialData';
@@ -122,10 +121,18 @@ interface StoreContextType {
   
   // Customer Auth
   currentUser: CustomerUser | null;
-  loginCustomer: (email: string, fullName?: string, phone?: string) => void;
-  logoutCustomer: () => void;
-  addCustomerAddress: (address: Omit<CustomerAddress, 'id'>) => void;
-  setDefaultAddress: (addressId: string) => void;
+  customerAuthLoading: boolean;
+  loginCustomer: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+  registerCustomer: (data: {
+    fullName: string;
+    email: string;
+    phone: string;
+    password: string;
+  }) => Promise<{ ok: boolean; error?: string }>;
+  logoutCustomer: () => Promise<void>;
+  refreshCustomerOrders: () => Promise<void>;
+  addCustomerAddress: (address: Omit<CustomerAddress, 'id'>) => Promise<{ ok: boolean; error?: string }>;
+  setDefaultAddress: (addressId: string) => Promise<{ ok: boolean; error?: string }>;
   
   // Owner Auth & Security
   isOwner: boolean;
@@ -138,7 +145,16 @@ interface StoreContextType {
   updateProduct: (id: string, updates: Partial<Product>) => Promise<{ ok: boolean; error?: string }>;
   deleteProduct: (id: string) => Promise<DeleteActionResult>;
   toggleProductActive: (id: string) => Promise<{ ok: boolean; error?: string }>;
-  addProductReview: (productId: string, review: Omit<Review, 'id' | 'date'>) => Promise<{ ok: boolean; error?: string }>;
+  addProductReview: (
+    productId: string,
+    review: {
+      authorName: string;
+      rating: number;
+      comment: string;
+      orderTrackingNumber?: string;
+      orderPhone?: string;
+    }
+  ) => Promise<{ ok: boolean; error?: string; verifiedPurchase?: boolean }>;
   
   // Companies Management
   companies: Company[];
@@ -446,15 +462,24 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       const deletedIds = new Set(getDeletedOrderIds());
       const saved = localStorage.getItem('echox_orders');
-      const base: Order[] = saved ? JSON.parse(saved) : INITIAL_ORDERS;
+      if (!saved) return [];
+      const base: Order[] = JSON.parse(saved);
+      if (!Array.isArray(base)) return [];
       return base
-        .filter(o => !deletedIds.has(o.id) && !deletedIds.has(o.trackingNumber))
+        .filter(
+          o =>
+            o &&
+            o.id !== 'ord_1001' &&
+            o.trackingNumber !== 'ECH-TN-948210' &&
+            !deletedIds.has(o.id) &&
+            !deletedIds.has(o.trackingNumber)
+        )
         .map(o => ({
           ...o,
           items: (o.items || []).map(it => ({ ...it, productImage: normalizeAssetUrl(it.productImage) })),
         }));
     } catch {
-      return INITIAL_ORDERS;
+      return [];
     }
   });
 
@@ -783,7 +808,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       status: orderData.status || 'new',
       paymentMethod: orderData.paymentMethod || 'cod',
       paymentStatus: orderData.paymentStatus || 'Cash on Delivery',
-      carrierName: orderData.carrierName || 'LivriTN Logistics',
+      carrierName: orderData.carrierName || 'NIAPOLOR Delivery Tunisie',
       createdAt: now,
       updatedAt: now,
       notes: orderData.notes || 'تم التسجيل يدوياً بواسطة المالك من لوحة التحكم',
@@ -1194,84 +1219,178 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   };
 
-  // 9. Customer Auth
-  const [currentUser, setCurrentUser] = useState<CustomerUser | null>(() => {
-    try {
-      const saved = localStorage.getItem('echox_customer');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  });
+  // 9. Customer Auth (Real Server PBKDF2 + HttpOnly Cookie Session)
+  const [currentUser, setCurrentUser] = useState<CustomerUser | null>(null);
+  const [customerAuthLoading, setCustomerAuthLoading] = useState<boolean>(true);
 
-  const loginCustomer = (email: string, fullName: string = 'حريف تونسي', phone: string = '+216 21 000 000') => {
-    const user: CustomerUser = {
-      id: `cust_${Date.now()}`,
-      fullName,
-      email,
-      phone,
-      addresses: [
-        {
-          id: 'addr_init',
-          isDefault: true,
-          fullName,
-          phone,
-          governorate: 'tunis',
-          delegation: 'باب البحر',
-          city: 'باب البحر',
-          street: 'شارع الحبيب بورقيبة',
-        }
-      ],
-      wishlist
-    };
-    setCurrentUser(user);
+  const refreshCustomerOrders = async () => {
     try {
-      localStorage.setItem('echox_customer', JSON.stringify(user));
-    } catch (e) {
-      console.warn('Storage write error:', e);
+      const res = await fetch('/api/customer/orders', {
+        credentials: 'include',
+        cache: 'no-store',
+      });
+      if (!res.ok) return;
+      const data = await res.json().catch(() => null);
+      if (data?.success && Array.isArray(data.orders)) {
+        syncOrdersFromServer(data.orders);
+      }
+    } catch {
+      // non-fatal
     }
   };
 
-  const logoutCustomer = () => {
+  useEffect(() => {
+    try {
+      localStorage.removeItem('echox_customer');
+    } catch {
+      // ignore
+    }
+    let active = true;
+    void (async () => {
+      try {
+        const res = await fetch('/api/customer/me', {
+          credentials: 'include',
+          cache: 'no-store',
+        });
+        if (!res.ok) {
+          if (active) setCurrentUser(null);
+          return;
+        }
+        const data = await res.json().catch(() => null);
+        if (active && data?.success && data.customer) {
+          setCurrentUser({ ...data.customer, wishlist });
+          void refreshCustomerOrders();
+        } else if (active) {
+          setCurrentUser(null);
+        }
+      } catch {
+        if (active) setCurrentUser(null);
+      } finally {
+        if (active) setCustomerAuthLoading(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const loginCustomer = async (
+    email: string,
+    password: string
+  ): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      const res = await fetch('/api/customer/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'NIAPOLOR-Customer',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success || !data.customer) {
+        return { ok: false, error: data?.error || 'تعذر تسجيل الدخول. تحقق من البريد وكلمة المرور.' };
+      }
+      setCurrentUser({ ...data.customer, wishlist });
+      await refreshCustomerOrders();
+      return { ok: true };
+    } catch {
+      return { ok: false, error: 'تعذر الاتصال بالخادم.' };
+    }
+  };
+
+  const registerCustomer = async (payload: {
+    fullName: string;
+    email: string;
+    phone: string;
+    password: string;
+  }): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      const res = await fetch('/api/customer/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'NIAPOLOR-Customer',
+        },
+        credentials: 'include',
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success || !data.customer) {
+        return { ok: false, error: data?.error || 'تعذر إنشاء الحساب. يرجى التثبت من المعطيات.' };
+      }
+      setCurrentUser({ ...data.customer, wishlist });
+      await refreshCustomerOrders();
+      return { ok: true };
+    } catch {
+      return { ok: false, error: 'تعذر الاتصال بالخادم.' };
+    }
+  };
+
+  const logoutCustomer = async () => {
+    try {
+      await fetch('/api/customer/logout', {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'NIAPOLOR-Customer' },
+        credentials: 'include',
+      });
+    } catch {
+      // ignore network error on logout
+    }
     setCurrentUser(null);
     try {
       localStorage.removeItem('echox_customer');
-    } catch (e) {
-      console.warn('Storage remove error:', e);
+    } catch {
+      // ignore
     }
   };
 
-  const addCustomerAddress = (newAddr: Omit<CustomerAddress, 'id'>) => {
-    if (!currentUser) return;
-    const address: CustomerAddress = {
-      ...newAddr,
-      id: `addr_${Date.now()}`
-    };
-    const updatedAddresses = newAddr.isDefault 
-      ? currentUser.addresses.map(a => ({ ...a, isDefault: false })).concat(address)
-      : [...currentUser.addresses, address];
-    
-    const updatedUser = { ...currentUser, addresses: updatedAddresses };
-    setCurrentUser(updatedUser);
+  const addCustomerAddress = async (
+    newAddr: Omit<CustomerAddress, 'id'>
+  ): Promise<{ ok: boolean; error?: string }> => {
+    if (!currentUser) return { ok: false, error: 'يرجى تسجيل الدخول أولاً.' };
     try {
-      localStorage.setItem('echox_customer', JSON.stringify(updatedUser));
-    } catch (e) {
-      console.warn('Storage write error:', e);
+      const res = await fetch('/api/customer/addresses', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'NIAPOLOR-Customer',
+        },
+        credentials: 'include',
+        body: JSON.stringify(newAddr),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success || !data.customer) {
+        return { ok: false, error: data?.error || 'تعذر حفظ العنوان على الخادم.' };
+      }
+      setCurrentUser({ ...data.customer, wishlist });
+      return { ok: true };
+    } catch {
+      return { ok: false, error: 'تعذر الاتصال بالخادم.' };
     }
   };
 
-  const setDefaultAddress = (addressId: string) => {
-    if (!currentUser) return;
-    const updatedAddresses = currentUser.addresses.map(a => ({
-      ...a,
-      isDefault: a.id === addressId
-    }));
-    const updatedUser = { ...currentUser, addresses: updatedAddresses };
-    setCurrentUser(updatedUser);
+  const setDefaultAddress = async (addressId: string): Promise<{ ok: boolean; error?: string }> => {
+    if (!currentUser) return { ok: false, error: 'يرجى تسجيل الدخول أولاً.' };
     try {
-      localStorage.setItem('echox_customer', JSON.stringify(updatedUser));
-    } catch (e) {
-      console.warn('Storage write error:', e);
+      const res = await fetch('/api/customer/addresses/default', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'NIAPOLOR-Customer',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ addressId }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success || !data.customer) {
+        return { ok: false, error: data?.error || 'تعذر تحديث العنوان الافتراضي.' };
+      }
+      setCurrentUser({ ...data.customer, wishlist });
+      return { ok: true };
+    } catch {
+      return { ok: false, error: 'تعذر الاتصال بالخادم.' };
     }
   };
 
@@ -1359,12 +1478,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const addProductReview = async (
     productId: string,
-    review: Omit<Review, 'id' | 'date'>
-  ): Promise<{ ok: boolean; error?: string }> => {
+    review: {
+      authorName: string;
+      rating: number;
+      comment: string;
+      orderTrackingNumber?: string;
+      orderPhone?: string;
+    }
+  ): Promise<{ ok: boolean; error?: string; verifiedPurchase?: boolean }> => {
     try {
       const res = await fetch(`/api/store/products/${encodeURIComponent(productId)}/reviews`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(review),
       });
       const data = await res.json().catch(() => null);
@@ -1372,7 +1498,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         return { ok: false, error: data?.error || 'تعذر حفظ التقييم على الخادم.' };
       }
       setProducts(prev => prev.map(p => (p.id === productId ? data.product : p)));
-      return { ok: true };
+      return {
+        ok: true,
+        verifiedPurchase: Boolean(
+          data.review?.verifiedPurchase ?? data.product?.reviews?.[0]?.verifiedPurchase
+        ),
+      };
     } catch {
       return { ok: false, error: 'تعذر الاتصال بالخادم.' };
     }
@@ -1494,7 +1625,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       couponCode: couponCode || undefined,
       paymentMethod: orderData.paymentMethod,
       clientExpectedTotal: cartTotal,
-      carrierName: orderData.carrierName || 'Aramex Express Tunisie',
+      carrierName: orderData.carrierName || 'NIAPOLOR Delivery Tunisie',
       notes: orderData.notes,
       transferProof: orderData.transferProof,
       clientRequestId: orderData.clientRequestId,
@@ -1510,6 +1641,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (exists) return prev.map(o => (o.id === res.order!.id ? res.order! : o));
       return [res.order!, ...prev];
     });
+    if (currentUser) {
+      void refreshCustomerOrders();
+    }
     clearCart();
     return {
       ok: true,
@@ -1567,7 +1701,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       status: 'new',
       paymentMethod: orderData.paymentMethod,
       paymentStatus: initialPayStatus,
-      carrierName: orderData.carrierName || 'Aramex Express Tunisie',
+      carrierName: orderData.carrierName || 'NIAPOLOR Delivery Tunisie',
       createdAt: now,
       updatedAt: now,
       notes: orderData.notes,
@@ -1628,35 +1762,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [inquiries, setInquiries] = useState<ContactInquiry[]>(() => {
     try {
       const saved = localStorage.getItem('echox_inquiries');
-      return saved ? JSON.parse(saved) : [
-        {
-          id: 'inq_1',
-          senderName: 'كمال التريكي',
-          email: 'kamel.triki@gmail.com',
-          phone: '+216 55 120 900',
-          subject: 'استفسار حول توافق مصباح Matrix LED مع موديل W205',
-          message: 'السلام عليكم، هل مصباح الكريستال يركب مباشرة على موديل 2018 دون الحاجة إلى تعديل أسلاك أو برمجة كمبيوتر؟ شكراً.',
-          createdAt: '2026-11-05T10:15:00Z',
-          read: true,
-          reply: 'وعليكم السلام سي كمال. نعم يتوافق مباشرة Plug & Play مع ضمان التشغيل الكامل.',
-          repliedAt: '2026-11-05T11:00:00Z'
-        }
-      ];
+      if (!saved) return [];
+      const parsed = JSON.parse(saved);
+      return Array.isArray(parsed) ? parsed.filter((inq: ContactInquiry) => inq && inq.id !== 'inq_1') : [];
     } catch {
-      return [
-        {
-          id: 'inq_1',
-          senderName: 'كمال التريكي',
-          email: 'kamel.triki@gmail.com',
-          phone: '+216 55 120 900',
-          subject: 'استفسار حول توافق مصباح Matrix LED مع موديل W205',
-          message: 'السلام عليكم، هل مصباح الكريستال يركب مباشرة على موديل 2018 دون الحاجة إلى تعديل أسلاك أو برمجة كمبيوتر؟ شكراً.',
-          createdAt: '2026-11-05T10:15:00Z',
-          read: true,
-          reply: 'وعليكم السلام سي كمال. نعم يتوافق مباشرة Plug & Play مع ضمان التشغيل الكامل.',
-          repliedAt: '2026-11-05T11:00:00Z'
-        }
-      ];
+      return [];
     }
   });
 
@@ -1916,8 +2026,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       toggleWishlist,
       
       currentUser,
+      customerAuthLoading,
       loginCustomer,
+      registerCustomer,
       logoutCustomer,
+      refreshCustomerOrders,
       addCustomerAddress,
       setDefaultAddress,
       

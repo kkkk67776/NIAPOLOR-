@@ -898,6 +898,325 @@ async function run(): Promise<void> {
     });
     assertEq(okUnsubRes.status, 200, 'Public push unsubscribe with valid HMAC token succeeds (200)');
 
+    // =========================================================
+    // 8. Commercial Credibility, SEO, Customer Auth Isolation & Anti-Fake Review Tests
+    // =========================================================
+    const robotsRes = await fetch(`${baseUrl}/robots.txt`);
+    assertEq(robotsRes.status, 200, 'GET /robots.txt returns 200');
+    const robotsTxt = await robotsRes.text();
+    for (const p of ['/about', '/privacy', '/terms', '/returns', '/shipping', '/faq']) {
+      assertTrue(robotsTxt.includes(p), `robots.txt exposes ${p}`);
+    }
+    assertTrue(robotsTxt.includes('Disallow: /owner'), 'robots.txt disallows /owner');
+
+    const sitemapRes = await fetch(`${baseUrl}/sitemap.xml`);
+    assertEq(sitemapRes.status, 200, 'GET /sitemap.xml returns 200');
+    const sitemapXml = await sitemapRes.text();
+    for (const p of ['/about', '/privacy', '/terms', '/returns', '/shipping', '/faq']) {
+      assertTrue(sitemapXml.includes(p), `sitemap.xml includes ${p}`);
+    }
+
+    const extractCookie = (res: Response, name: string): string => {
+      const getSetCookie = (res.headers as any).getSetCookie;
+      const list: string[] =
+        typeof getSetCookie === 'function'
+          ? getSetCookie.call(res.headers)
+          : [res.headers.get('set-cookie') || ''];
+      for (const raw of list) {
+        const match = raw.match(new RegExp(`${name}=([^;]+)`));
+        if (match) return `${name}=${match[1]}`;
+      }
+      return '';
+    };
+
+    // Customer Registration (requires X-Requested-With)
+    const noHdrCust = await fetch(`${baseUrl}/api/customer/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.88' },
+      body: JSON.stringify({
+        fullName: 'حريف اختبار',
+        email: 'custA@niapolor.tn',
+        phone: '+21622111222',
+        password: 'StrongPassword123!',
+      }),
+    });
+    assertEq(noHdrCust.status, 403, 'Customer register without X-Requested-With rejected (403)');
+
+    const regARes = await fetch(`${baseUrl}/api/customer/register`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'NIAPOLOR-Customer',
+        'x-forwarded-for': '198.51.100.88',
+      },
+      body: JSON.stringify({
+        fullName: 'أحمد التونسي',
+        email: 'custa@niapolor.tn',
+        phone: '+21622111222',
+        password: 'StrongPassword123!',
+      }),
+    });
+    assertEq(regARes.status, 201, 'Customer A registration returns 201');
+    const custACookie = extractCookie(regARes, '__customer_session');
+    assertTrue(custACookie.startsWith('__customer_session=cust1.'), 'HttpOnly __customer_session cookie set');
+
+    const dupRegRes = await fetch(`${baseUrl}/api/customer/register`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'NIAPOLOR-Customer',
+        'x-forwarded-for': '198.51.100.88',
+      },
+      body: JSON.stringify({
+        fullName: 'أحمد مكرر',
+        email: 'custa@niapolor.tn',
+        phone: '+21622111222',
+        password: 'StrongPassword123!',
+      }),
+    });
+    assertEq(dupRegRes.status, 409, 'Duplicate customer email returns 409');
+
+    const meARes = await fetch(`${baseUrl}/api/customer/me`, {
+      headers: { Cookie: custACookie },
+    });
+    assertEq(meARes.status, 200, 'GET /api/customer/me returns 200 with session cookie');
+    const meAJson = (await meARes.json()) as any;
+    assertEq(meAJson.customer.email, 'custa@niapolor.tn', 'Customer A profile loaded');
+    assertEq(meAJson.customer.passwordHash, undefined, 'Customer response never includes passwordHash');
+
+    // Customer cookie must NEVER access admin endpoints
+    const custAdminOrders = await fetch(`${baseUrl}/api/admin/orders`, {
+      headers: { Cookie: custACookie },
+    });
+    assertEq(custAdminOrders.status, 401, 'Customer session cookie blocked from /api/admin/orders (401)');
+
+    const custAdminState = await fetch(`${baseUrl}/api/admin/store/state`, {
+      headers: { Cookie: custACookie },
+    });
+    assertEq(custAdminState.status, 401, 'Customer session cookie blocked from /api/admin/store/state (401)');
+
+    // Validated Tunisian address saved under Customer A
+    const addAddrRes = await fetch(`${baseUrl}/api/customer/addresses`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'NIAPOLOR-Customer',
+        Cookie: custACookie,
+      },
+      body: JSON.stringify({
+        fullName: 'أحمد التونسي',
+        phone: '+21622111222',
+        governorate: 'tunis',
+        delegation: 'المدينة',
+        street: '14 نهج الجمهورية تونس',
+        isDefault: true,
+      }),
+    });
+    assertEq(addAddrRes.status, 200, 'Customer A Tunisian address saved');
+
+    // Register Customer B
+    const regBRes = await fetch(`${baseUrl}/api/customer/register`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'NIAPOLOR-Customer',
+        'x-forwarded-for': '198.51.100.89',
+      },
+      body: JSON.stringify({
+        fullName: 'سارة الساحلي',
+        email: 'custb@niapolor.tn',
+        phone: '+21699888777',
+        password: 'StrongPassword456!',
+      }),
+    });
+    assertEq(regBRes.status, 201, 'Customer B registration returns 201');
+    const custBCookie = extractCookie(regBRes, '__customer_session');
+
+    // Checkout as Customer A for first product in catalog
+    const part8FirstProd = storeData.products[0];
+    const orderARes = await fetch(`${baseUrl}/api/payments/checkout`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: custACookie,
+        'x-forwarded-for': '198.51.100.88',
+      },
+      body: JSON.stringify({
+        customerName: 'أحمد التونسي',
+        customerEmail: 'custa@niapolor.tn',
+        customerPhone: '+21622111222',
+        shippingAddress: {
+          governorate: 'tunis',
+          delegation: 'المدينة',
+          street: '14 نهج الجمهورية تونس',
+        },
+        paymentMethod: 'cod',
+        items: [
+          {
+            productId: part8FirstProd.id,
+            productName: part8FirstProd.name,
+            unitPrice: part8FirstProd.price,
+            quantity: 1,
+          },
+        ],
+      }),
+    });
+    assertEq(orderARes.status, 200, 'Customer A checkout succeeds (200)');
+    const orderAJson = (await orderARes.json()) as any;
+    const orderA = orderAJson.order;
+
+    // Customer B orders list must NOT see Customer A's order
+    const custBOrdersRes = await fetch(`${baseUrl}/api/customer/orders`, {
+      headers: { Cookie: custBCookie },
+    });
+    assertEq(custBOrdersRes.status, 200, 'Customer B GET /api/customer/orders returns 200');
+    const custBOrdersJson = (await custBOrdersRes.json()) as any;
+    assertTrue(
+      !custBOrdersJson.orders.some((o: any) => o.id === orderA.id),
+      'Customer B never sees Customer A orders'
+    );
+
+    const custAOrdersRes = await fetch(`${baseUrl}/api/customer/orders`, {
+      headers: { Cookie: custACookie },
+    });
+    const custAOrdersJson = (await custAOrdersRes.json()) as any;
+    assertTrue(
+      custAOrdersJson.orders.some((o: any) => o.id === orderA.id),
+      'Customer A sees their own server-bound order'
+    );
+
+    // Anti-fake review tests
+    // 1) Unverified visitor spoofing verifiedPurchase: true must get verifiedPurchase === false
+    const spoofRevRes = await fetch(`${baseUrl}/api/store/products/${encodeURIComponent(part8FirstProd.id)}/reviews`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.91' },
+      body: JSON.stringify({
+        authorName: 'زائر غير مشتري',
+        rating: 5,
+        comment: 'تقييم من زائر يحاول تزييف شارة الشراء المؤكد.',
+        verifiedPurchase: true,
+      }),
+    });
+    assertEq(spoofRevRes.status, 200, 'Unverified visitor review accepted (200)');
+    const spoofRevJson = (await spoofRevRes.json()) as any;
+    assertEq(spoofRevJson.review?.verifiedPurchase, false, 'Server overrides client spoofed verifiedPurchase=true to false');
+
+    // 2) XSS HTML comment rejected 400
+    const xssRevRes = await fetch(`${baseUrl}/api/store/products/${encodeURIComponent(part8FirstProd.id)}/reviews`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.91' },
+      body: JSON.stringify({
+        authorName: 'مهاجم',
+        rating: 5,
+        comment: '<script>alert(1)</script> ممتاز',
+      }),
+    });
+    assertEq(xssRevRes.status, 400, 'Review with HTML script tag rejected (400)');
+
+    // 3) Too short comment (< 4 chars) rejected 400
+    const shortRevRes = await fetch(`${baseUrl}/api/store/products/${encodeURIComponent(part8FirstProd.id)}/reviews`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.91' },
+      body: JSON.stringify({
+        authorName: 'قصير',
+        rating: 5,
+        comment: 'ok',
+      }),
+    });
+    assertEq(shortRevRes.status, 400, 'Short <4 char review rejected (400)');
+
+    // 4) Duplicate comment rejected 409
+    const dupRevRes = await fetch(`${baseUrl}/api/store/products/${encodeURIComponent(part8FirstProd.id)}/reviews`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.91' },
+      body: JSON.stringify({
+        authorName: 'مكرر',
+        rating: 5,
+        comment: 'تقييم من زائر يحاول تزييف شارة الشراء المؤكد.',
+      }),
+    });
+    assertEq(dupRevRes.status, 409, 'Duplicate review comment rejected (409)');
+
+    // 5) Fresh admin login confirms Order A delivered (Paid), then Customer A gets verifiedPurchase === true
+    const adm3AcRes = await fetch(`${baseUrl}/api/security/verifyAccessCode`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.12' },
+      body: JSON.stringify({ code: TEST_ACCESS_CODE }),
+    });
+    const adm3AcJson = (await adm3AcRes.json()) as any;
+    const adm3PinRes = await fetch(`${baseUrl}/api/security/verifyPin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.12' },
+      body: JSON.stringify({ pin: TEST_PIN, gateToken: adm3AcJson.gateToken }),
+    });
+    const adm3PinJson = (await adm3PinRes.json()) as any;
+    assertEq(adm3PinRes.status, 200, 'Admin re-login after lockdown for Part 8 passes (200)');
+
+    const deliverRes = await fetch(`${baseUrl}/api/admin/orders/${encodeURIComponent(orderA.id)}/status`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adm3PinJson.sessionToken}`,
+        'X-CSRF-Token': adm3PinJson.csrfToken,
+      },
+      body: JSON.stringify({ status: 'delivered', note: 'تم تسليم الطلب وتحصيل الدفع' }),
+    });
+    assertEq(deliverRes.status, 200, 'Admin marks COD order A delivered & settled (200)');
+
+    // Logged-in verified buyer review
+    const verifiedAuthRevRes = await fetch(
+      `${baseUrl}/api/store/products/${encodeURIComponent(part8FirstProd.id)}/reviews`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: custACookie,
+          'x-forwarded-for': '198.51.100.92',
+        },
+        body: JSON.stringify({
+          authorName: 'أحمد التونسي',
+          rating: 5,
+          comment: 'تجربة شراء ممتازة والمنتج مطابق تماماً للمواصفات.',
+        }),
+      }
+    );
+    assertEq(verifiedAuthRevRes.status, 200, 'Verified Customer A review accepted (200)');
+    const verifiedAuthRevJson = (await verifiedAuthRevRes.json()) as any;
+    assertEq(verifiedAuthRevJson.review?.verifiedPurchase, true, 'Server assigns verifiedPurchase=true for real delivered buyer');
+
+    // Guest buyer verifying via trackingNumber + orderPhone
+    const verifiedTrackRevRes = await fetch(
+      `${baseUrl}/api/store/products/${encodeURIComponent(part8FirstProd.id)}/reviews`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.93' },
+        body: JSON.stringify({
+          authorName: 'أحمد برقم التتبع',
+          rating: 5,
+          comment: 'تقييم مؤكد برقم التتبع ورقم الهاتف التونسي بنجاح.',
+          orderTrackingNumber: orderA.trackingNumber,
+          orderPhone: '+216 22 111 222',
+        }),
+      }
+    );
+    assertEq(verifiedTrackRevRes.status, 200, 'Tracking+phone verified review accepted (200)');
+    const verifiedTrackRevJson = (await verifiedTrackRevRes.json()) as any;
+    assertEq(verifiedTrackRevJson.review?.verifiedPurchase, true, 'Server verifies guest review with delivered tracking + phone');
+
+    // Customer logout clears session
+    const custLogoutRes = await fetch(`${baseUrl}/api/customer/logout`, {
+      method: 'POST',
+      headers: {
+        'X-Requested-With': 'NIAPOLOR-Customer',
+        Cookie: custACookie,
+      },
+    });
+    assertEq(custLogoutRes.status, 200, 'POST /api/customer/logout succeeds (200)');
+    const postLogoutMeRes = await fetch(`${baseUrl}/api/customer/me`, {
+      headers: { Cookie: custACookie },
+    });
+    assertEq(postLogoutMeRes.status, 401, 'Customer session rejected with 401 after logout');
+
     console.log('ALL ECHOX SECURITY & CONTROL ROOM REGRESSION TESTS PASSED');
   } finally {
     if (server) {

@@ -88,7 +88,7 @@ const DEFAULT_CATALOG: Record<string, ProductCatalogEntry> = {
     id: 'prod_titan_drill',
     price: 345.0,
     companyId: 'comp_echox',
-    companyName: 'ECHOX Distribution Tunisie',
+    companyName: 'NIAPOLOR Distribution Tunisie',
     active: true,
   },
   prod_aether_headlight: {
@@ -721,7 +721,7 @@ export async function syncCatalogSnapshot(
       id: p.id,
       price: round3(p.price),
       companyId: p.companyId || 'comp_echox',
-      companyName: p.companyName || 'ECHOX Distribution Tunisie',
+      companyName: p.companyName || 'NIAPOLOR Distribution Tunisie',
       active: p.active !== false,
     };
   }
@@ -1468,7 +1468,13 @@ export async function processServerCheckout(input: ServerCheckoutInput): Promise
 
   const subtotal = round3(verifiedItems.reduce((sum, it) => sum + it.totalPrice, 0));
   const cleanCoupon = (input.couponCode || '').trim().toUpperCase();
-  const discountRate = cleanCoupon === 'ECHOX2026' || cleanCoupon === 'ECHOX10' ? 0.1 : 0;
+  const discountRate =
+    cleanCoupon === 'NIAPOLOR2026' ||
+    cleanCoupon === 'NIAPOLOR10' ||
+    cleanCoupon === 'ECHOX2026' ||
+    cleanCoupon === 'ECHOX10'
+      ? 0.1
+      : 0;
   const discount = round3(subtotal * discountRate);
   const netItemsTotal = Math.max(0, round3(subtotal - discount));
   const taxAmount = round3(netItemsTotal * (cfg.taxRatePercent / 100));
@@ -1503,7 +1509,7 @@ export async function processServerCheckout(input: ServerCheckoutInput): Promise
   const groupedByVendor = new Map<string, { vendorName: string; items: OrderItem[] }>();
   for (const item of verifiedItems) {
     const vId = item.companyId || 'comp_echox';
-    const vName = item.companyName || 'ECHOX Distribution Tunisie';
+    const vName = item.companyName || 'NIAPOLOR Distribution Tunisie';
     if (!groupedByVendor.has(vId)) {
       groupedByVendor.set(vId, { vendorName: vName, items: [] });
     }
@@ -1577,7 +1583,7 @@ export async function processServerCheckout(input: ServerCheckoutInput): Promise
       amount: totalAmount,
       currency: cfg.currency,
       trackingRef: trackingNumber,
-      description: `ECHOX Store Order ${trackingNumber}`,
+      description: `NIAPOLOR Store Order ${trackingNumber}`,
       customerName: input.customerName,
       customerPhone: input.customerPhone,
       customerEmail: input.customerEmail,
@@ -1630,7 +1636,7 @@ export async function processServerCheckout(input: ServerCheckoutInput): Promise
     transferProof: submittedProof,
     subOrders,
     transactionId,
-    carrierName: input.carrierName || 'Aramex Express Tunisie',
+    carrierName: input.carrierName || 'NIAPOLOR Delivery Tunisie',
     createdAt: now,
     updatedAt: now,
     notes: input.notes?.trim() || '',
@@ -1645,7 +1651,7 @@ export async function processServerCheckout(input: ServerCheckoutInput): Promise
             ? `تم تسجيل الطلب (${trackingNumber}) — مرجع التحويل: ${paymentReference}`
             : normalizedMethod === 'online_payment'
             ? `تم تسجيل الطلب (${trackingNumber}) — بانتظار تأكيد الدفع عبر بوابة ${cfg.methods.online_payment.provider}`
-            : 'تم تسجيل الطلب بنجاح عبر منصة ECHOX STORE (الدفع عند الاستلام)',
+            : 'تم تسجيل الطلب بنجاح عبر منصة NIAPOLOR (الدفع عند الاستلام)',
       },
     ],
   };
@@ -2296,7 +2302,7 @@ export async function adminCreateManualOrder(input: Partial<Order>): Promise<{
     status: input.status || 'new',
     paymentMethod,
     paymentStatus,
-    carrierName: (input.carrierName || '').trim() || 'LivriTN Logistics',
+    carrierName: (input.carrierName || '').trim() || 'NIAPOLOR Delivery Tunisie',
     createdAt: now,
     updatedAt: now,
     notes: (input.notes || '').trim() || 'تم التسجيل يدوياً من لوحة التحكم',
@@ -2879,7 +2885,7 @@ export async function createSupportContribution(payload: {
       initialStatus = 'Payment Verification';
       proof = {
         referenceNumber: payload.transferProof.referenceNumber.trim(),
-        senderName: (payload.transferProof.senderName || payload.supporterName || 'داعم ECHOX').trim(),
+        senderName: (payload.transferProof.senderName || payload.supporterName || 'داعم NIAPOLOR').trim(),
         transferDate: payload.transferProof.transferDate || now.split('T')[0],
         receiptImageDataUrl: cleanImg.value,
         notes: payload.transferProof.notes?.trim(),
@@ -2901,8 +2907,8 @@ export async function createSupportContribution(payload: {
       amount: amt,
       currency: cfg.currency,
       trackingRef: supportRef,
-      description: `ECHOX Platform Support ${supportRef}`,
-      customerName: payload.supporterName?.trim() || 'ECHOX Supporter',
+      description: `NIAPOLOR Platform Support ${supportRef}`,
+      customerName: payload.supporterName?.trim() || 'NIAPOLOR Supporter',
       customerPhone: payload.supporterPhone?.trim() || '00000000',
       customerEmail: payload.supporterEmail,
       origin: payload.origin,
@@ -2919,7 +2925,7 @@ export async function createSupportContribution(payload: {
   const supTxn: SupportTransaction = {
     id: `sup_${Date.now()}_${crypto.randomBytes(2).toString('hex')}`,
     supportReference: supportRef,
-    supporterName: payload.supporterName?.trim() || 'داعم ECHOX',
+    supporterName: payload.supporterName?.trim() || 'داعم NIAPOLOR',
     supporterEmail: payload.supporterEmail?.trim() || '',
     supporterPhone: payload.supporterPhone?.trim() || '',
     note: payload.note?.trim() || '',
@@ -3035,4 +3041,64 @@ export async function restorePaymentRecoverySnapshot(
   }
   return { ok: true };
 }
+
+export function hasVerifiedCustomerPurchase(params: {
+  productId: string;
+  customerId?: string;
+  customerPhone?: string;
+  orderTrackingNumber?: string;
+  orderPhone?: string;
+}): boolean {
+  const cleanProductId = String(params.productId || '').trim();
+  if (!cleanProductId) return false;
+
+  const sessionPhoneDigits = normalizePhone(params.customerPhone || '');
+  const trackingCode = String(params.orderTrackingNumber || '').trim().toUpperCase();
+  const trackingPhoneDigits = normalizePhone(params.orderPhone || '');
+
+  return paymentDb.orders.some((o) => {
+    if (!o || o.status === 'cancelled') return false;
+    if (
+      o.paymentStatus === 'Cancelled' ||
+      o.paymentStatus === 'Refunded' ||
+      o.paymentStatus === 'Payment Failed' ||
+      o.paymentStatus === 'failed'
+    ) {
+      return false;
+    }
+    const isCompletedOrPaid =
+      o.paymentStatus === 'Paid' || o.paymentStatus === 'paid' || o.status === 'delivered';
+    if (!isCompletedOrPaid) return false;
+
+    const containsProduct =
+      Array.isArray(o.items) && o.items.some((item) => item.productId === cleanProductId);
+    if (!containsProduct) return false;
+
+    const orderPhoneDigits = normalizePhone(o.customerPhone || '');
+    const matchesCustomerId = Boolean(params.customerId && o.customerId && o.customerId === params.customerId);
+    const matchesSessionPhone = Boolean(sessionPhoneDigits.length === 8 && orderPhoneDigits === sessionPhoneDigits);
+    const matchesTrackingProof = Boolean(
+      trackingCode &&
+        trackingPhoneDigits.length === 8 &&
+        o.trackingNumber.toUpperCase() === trackingCode &&
+        orderPhoneDigits === trackingPhoneDigits
+    );
+
+    return matchesCustomerId || matchesSessionPhone || matchesTrackingProof;
+  });
+}
+
+export function getCustomerScopedOrders(customerId: string, customerPhone?: string): Order[] {
+  const cleanId = String(customerId || '').trim();
+  const phoneDigits = normalizePhone(customerPhone || '');
+  if (!cleanId && phoneDigits.length !== 8) return [];
+  return paymentDb.orders
+    .filter((o) => {
+      const byId = Boolean(cleanId && o.customerId && o.customerId === cleanId);
+      const byPhone = Boolean(phoneDigits.length === 8 && normalizePhone(o.customerPhone || '') === phoneDigits);
+      return byId || byPhone;
+    })
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
 

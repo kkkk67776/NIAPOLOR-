@@ -506,6 +506,51 @@ export default function Header(_props: HeaderProps) {
                 {language === 'ar' ? 'اتصل بنا' : language === 'fr' ? 'Contactez-nous' : 'Contact Us'}
               </button>
 
+              <div className="pt-2 mt-2 border-t border-[#E5E0D5] dark:border-[#2A2A32] space-y-1">
+                <button
+                  type="button"
+                  onClick={() => handleNavClick('about')}
+                  className="w-full text-start block px-3 py-2 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer"
+                >
+                  {t.nav.about}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleNavClick('shipping')}
+                  className="w-full text-start block px-3 py-2 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer"
+                >
+                  {t.nav.shipping}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleNavClick('returns')}
+                  className="w-full text-start block px-3 py-2 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer"
+                >
+                  {t.nav.returns}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleNavClick('faq')}
+                  className="w-full text-start block px-3 py-2 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer"
+                >
+                  {t.nav.faq}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleNavClick('privacy')}
+                  className="w-full text-start block px-3 py-2 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer"
+                >
+                  {t.footer.privacyPolicy}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleNavClick('terms')}
+                  className="w-full text-start block px-3 py-2 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer"
+                >
+                  {t.footer.termsOfService}
+                </button>
+              </div>
+
               <button
                 type="button"
                 onClick={() => {

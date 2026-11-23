@@ -40,13 +40,21 @@ export const ProductDetailModal: React.FC = () => {
   const [reviewAuthor, setReviewAuthor] = useState('');
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState('');
+  const [orderTrackingNumber, setOrderTrackingNumber] = useState('');
+  const [orderPhone, setOrderPhone] = useState('');
+  const [showVerifyFields, setShowVerifyFields] = useState(false);
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [reviewError, setReviewError] = useState('');
   const [showReviewSuccess, setShowReviewSuccess] = useState(false);
+  const [reviewSavedVerified, setReviewSavedVerified] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
 
   useEffect(() => {
     setActiveImageIndex(0);
     setQuantity(1);
     setShareCopied(false);
+    setReviewError('');
+    setShowReviewSuccess(false);
   }, [selectedProductId]);
 
   if (!product) return null;
@@ -60,22 +68,42 @@ export const ProductDetailModal: React.FC = () => {
     .filter(p => p.id !== product.id && p.category === product.category)
     .slice(0, 3);
 
-  const handleReviewSubmit = (e: React.FormEvent) => {
+  const handleReviewSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isOnline) return;
-    if (!reviewAuthor.trim() || !reviewComment.trim()) return;
+    if (!isOnline || reviewSubmitting) return;
+    setReviewError('');
+    setShowReviewSuccess(false);
 
-    addProductReview(product.id, {
-      authorName: reviewAuthor.trim(),
+    const author = reviewAuthor.trim();
+    const comment = reviewComment.trim();
+    if (!author || !comment) return;
+    if (/[<>]/.test(author) || /[<>]/.test(comment)) {
+      setReviewError((t.product as any).reviewErrorHtml || 'يرجى كتابة تقييم نصي سليم خالٍ من وسوم HTML.');
+      return;
+    }
+
+    setReviewSubmitting(true);
+    const res = await addProductReview(product.id, {
+      authorName: author,
       rating: reviewRating,
-      comment: reviewComment.trim(),
-      verifiedPurchase: true
+      comment,
+      ...(orderTrackingNumber.trim() ? { orderTrackingNumber: orderTrackingNumber.trim() } : {}),
+      ...(orderPhone.trim() ? { orderPhone: orderPhone.trim() } : {}),
     });
+    setReviewSubmitting(false);
+
+    if (!res.ok) {
+      setReviewError(res.error || 'تعذر حفظ التقييم على الخادم.');
+      return;
+    }
 
     setReviewAuthor('');
     setReviewComment('');
+    setOrderTrackingNumber('');
+    setOrderPhone('');
+    setReviewSavedVerified(Boolean(res.verifiedPurchase));
     setShowReviewSuccess(true);
-    setTimeout(() => setShowReviewSuccess(false), 3000);
+    setTimeout(() => setShowReviewSuccess(false), 4500);
   };
 
   const handleBuyNow = () => {
@@ -363,9 +391,13 @@ export const ProductDetailModal: React.FC = () => {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-sm text-[#111113] dark:text-[#F7F6F3]">{rev.authorName}</span>
-                        {rev.verifiedPurchase && (
+                        {rev.verifiedPurchase ? (
                           <span className="text-[11px] bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-md font-semibold">
                             {t.product.verifiedPurchase}
+                          </span>
+                        ) : (
+                          <span className="text-[11px] bg-[#F3F1EC] dark:bg-[#23232C] text-[#7A756D] dark:text-[#9A958E] px-2 py-0.5 rounded-md font-semibold">
+                            {(t.product as any).unverifiedReviewBadge}
                           </span>
                         )}
                       </div>
@@ -389,8 +421,16 @@ export const ProductDetailModal: React.FC = () => {
             <div className="p-5 rounded-2xl bg-[#FAF9F7] dark:bg-[#131317] border border-[#E6E2D8] dark:border-[#23232C] space-y-4">
               <h3 className="text-sm font-bold text-[#111113] dark:text-[#F7F6F3]">{t.product.addReviewTitle}</h3>
               {showReviewSuccess && (
-                <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-300 rounded-xl text-xs font-bold">
-                  {t.product.reviewSubmitted}
+                <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-300 rounded-xl text-xs font-bold flex items-center justify-between gap-2 flex-wrap">
+                  <span>{t.product.reviewSubmitted}</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-md bg-white/80 dark:bg-black/25">
+                    {reviewSavedVerified ? t.product.verifiedPurchase : (t.product as any).unverifiedReviewBadge}
+                  </span>
+                </div>
+              )}
+              {reviewError && (
+                <div className="p-3 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 text-red-700 dark:text-red-300 rounded-xl text-xs font-bold">
+                  {reviewError}
                 </div>
               )}
               <form onSubmit={handleReviewSubmit} className="space-y-3">
@@ -432,6 +472,43 @@ export const ProductDetailModal: React.FC = () => {
                     className="w-full px-3 py-2 text-xs rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#18181E] text-[#111113] dark:text-[#F7F6F3] focus:outline-hidden focus:border-[#FF6B00]" 
                   />
                 </div>
+
+                {/* Optional server-side purchase verification inputs */}
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowVerifyFields((prev) => !prev)}
+                    className="text-[11px] font-bold text-[#FF6B00] hover:underline cursor-pointer"
+                  >
+                    {(t.product as any).verifyPurchaseOptional}
+                  </button>
+                  {showVerifyFields && (
+                    <div className="mt-2 p-3 rounded-xl bg-white dark:bg-[#18181E] border border-[#E6E2D8] dark:border-[#23232C] space-y-2.5">
+                      <p className="text-[11px] text-[#7A756D] dark:text-[#8E8980] leading-relaxed">
+                        {(t.product as any).verifyPurchaseHint}
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <input
+                          type="text"
+                          value={orderTrackingNumber}
+                          onChange={(e) => setOrderTrackingNumber(e.target.value)}
+                          placeholder={(t.product as any).orderTrackingPlaceholder}
+                          dir="ltr"
+                          className="w-full px-3 py-2 text-xs rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-[#FAF9F7] dark:bg-[#131317] font-mono focus:outline-hidden focus:border-[#FF6B00]"
+                        />
+                        <input
+                          type="tel"
+                          value={orderPhone}
+                          onChange={(e) => setOrderPhone(e.target.value)}
+                          placeholder={(t.product as any).orderPhonePlaceholder}
+                          dir="ltr"
+                          className="w-full px-3 py-2 text-xs rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-[#FAF9F7] dark:bg-[#131317] font-mono focus:outline-hidden focus:border-[#FF6B00]"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {!isOnline && (
                   <p className="text-[11px] font-bold text-[#FF6B00]">
                     {t.offline.serverActionDisabled}
@@ -439,7 +516,7 @@ export const ProductDetailModal: React.FC = () => {
                 )}
                 <button 
                   type="submit" 
-                  disabled={!isOnline}
+                  disabled={!isOnline || reviewSubmitting}
                   className="px-4 py-2 rounded-xl bg-[#111113] dark:bg-[#FF6B00] hover:bg-[#FF6B00] dark:hover:bg-[#E05E00] text-white text-xs font-bold transition-colors cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed"
                 >
                   {t.product.submitReview}

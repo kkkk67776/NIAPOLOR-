@@ -207,7 +207,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
   };
 
   const applySavedAddress = (addrId: string) => {
-    const addr = currentUser?.addresses.find((a) => a.id === addrId);
+    const addr = (currentUser?.addresses || []).find((a) => a.id === addrId);
     if (!addr) return;
     setFullName(addr.fullName || fullName);
     setPhone(addr.phone || phone);
@@ -302,7 +302,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
         notes: cleanNotes || undefined,
       },
       paymentMethod,
-      carrierName: 'Aramex Tunisie Logistics',
+      carrierName: 'NIAPOLOR Delivery Tunisie',
       notes: cleanNotes || undefined,
       ...(paymentMethod === 'poste_ccp' && (proofRefNumber.trim() || proofImageDataUrl)
         ? {
@@ -731,7 +731,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
               {/* Left / Main Column: Shipping Fields & Payment Method */}
               <div className="lg:col-span-7 space-y-5">
                 {/* Saved Addresses Quick Picker for Logged-In Buyers */}
-                {currentUser && currentUser.addresses.length > 0 && (
+                {currentUser && (currentUser.addresses || []).length > 0 && (
                   <div className="p-3 rounded-2xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#32323C] space-y-2">
                     <span className="text-[11px] font-bold text-[#5A5854] dark:text-[#B5B0A8] block">
                       {language === 'ar'

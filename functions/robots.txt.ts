@@ -9,6 +9,12 @@ export async function onRequestGet(context: PagesFunctionContext): Promise<Respo
 
   const body = `User-agent: *
 Allow: /
+Allow: /about
+Allow: /privacy
+Allow: /terms
+Allow: /returns
+Allow: /shipping
+Allow: /faq
 Allow: /promise
 Allow: /companies
 Allow: /contact

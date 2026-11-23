@@ -18,6 +18,7 @@ import {
 import { appendEdgeAdminNotification, handleEdgeNotificationsRoute } from '../_lib/notificationsEdge';
 import { handleEdgePaymentsRoute } from '../_lib/paymentsEdge';
 import { handleEdgeStoreRoute } from '../_lib/storeEdge';
+import { handleEdgeCustomerRoute } from '../_lib/customerEdge';
 
 const DEFAULT_RENDER_BACKEND = 'https://echox-store.onrender.com';
 const CLOUD_SECURITY_KEY = 'echox:central_security_config';
@@ -453,7 +454,7 @@ export async function onRequest(context: EdgeContext): Promise<Response> {
         'Access-Control-Allow-Credentials': 'true',
         'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
         'Access-Control-Allow-Headers':
-          'Content-Type, Authorization, X-CSRF-Token, X-File-Name, X-Chat-Token, X-Tracking-Phone',
+          'Content-Type, Authorization, X-CSRF-Token, X-File-Name, X-Chat-Token, X-Tracking-Phone, X-Requested-With',
         'Cache-Control': 'no-store',
         'X-Robots-Tag': 'noindex, nofollow',
       },
@@ -503,6 +504,11 @@ export async function onRequest(context: EdgeContext): Promise<Response> {
 
     const secResponse = await handleEdgeSecurityRoute(edgeReq, env, pathname, waitUntil, rawBodyText);
     if (secResponse) return secResponse;
+
+    if (pathname.startsWith('/api/customer/')) {
+      const custResponse = await handleEdgeCustomerRoute(edgeReq, env, pathname);
+      if (custResponse) return custResponse;
+    }
 
     if (pathname.startsWith('/api/store/') || pathname.startsWith('/api/admin/store/')) {
       const storeResponse = await handleEdgeStoreRoute(edgeReq, env, pathname, waitUntil);

@@ -887,6 +887,11 @@ export function isAllowedEdgeOrigin(origin: string, env: EdgeEnv): boolean {
   if (
     origin === 'https://echoxstore.pages.dev' ||
     origin === 'https://echox-store.onrender.com' ||
+    origin === 'https://niapolor.pages.dev' ||
+    origin === 'https://niapolor.com' ||
+    origin === 'https://www.niapolor.com' ||
+    origin === 'https://niapolor.tn' ||
+    origin === 'https://www.niapolor.tn' ||
     (env.SITE_URL && origin === env.SITE_URL.trim().replace(/\/$/, '')) ||
     (env.VITE_SITE_URL && origin === env.VITE_SITE_URL.trim().replace(/\/$/, '')) ||
     (env.CORS_ORIGIN && origin === env.CORS_ORIGIN.trim().replace(/\/$/, ''))
@@ -895,7 +900,11 @@ export function isAllowedEdgeOrigin(origin: string, env: EdgeEnv): boolean {
   }
   try {
     const u = new URL(origin);
-    if (u.protocol === 'https:' && /^([a-z0-9-]+\.)*echox[a-z0-9-]*\.pages\.dev$/i.test(u.hostname)) {
+    if (
+      u.protocol === 'https:' &&
+      (/^([a-z0-9-]+\.)*echox[a-z0-9-]*\.pages\.dev$/i.test(u.hostname) ||
+        /^([a-z0-9-]+\.)*niapolor[a-z0-9-]*\.pages\.dev$/i.test(u.hostname))
+    ) {
       return true;
     }
     if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') {

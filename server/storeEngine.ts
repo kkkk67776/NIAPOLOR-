@@ -60,21 +60,7 @@ const DEFAULT_BANNERS: PromoBanner[] = [
   },
 ];
 
-const DEFAULT_INQUIRIES: ContactInquiry[] = [
-  {
-    id: 'inq_1',
-    senderName: 'كمال التريكي',
-    email: 'kamel.triki@gmail.com',
-    phone: '+216 55 120 900',
-    subject: 'استفسار حول توافق مصباح Matrix LED مع موديل W205',
-    message:
-      'السلام عليكم، هل مصباح الكريستال يركب مباشرة على موديل 2018 دون الحاجة إلى تعديل أسلاك أو برمجة كمبيوتر؟ شكراً.',
-    createdAt: '2026-11-05T10:15:00Z',
-    read: true,
-    reply: 'وعليكم السلام سي كمال. نعم يتوافق مباشرة Plug & Play مع ضمان التشغيل الكامل.',
-    repliedAt: '2026-11-05T11:00:00Z',
-  },
-];
+const DEFAULT_INQUIRIES: ContactInquiry[] = [];
 
 export interface StorefrontDatabase {
   products: Product[];
@@ -131,6 +117,10 @@ function mergeStoreState(raw: Partial<StorefrontDatabase>): StorefrontDatabase {
       announcementText: mergeMultilingual(
         def.siteSettings.announcementText,
         raw.siteSettings?.announcementText
+      ),
+      deliveryTimeEstimate: mergeMultilingual(
+        def.siteSettings.deliveryTimeEstimate,
+        raw.siteSettings?.deliveryTimeEstimate
       ),
     },
     ownerSettings: {
@@ -361,6 +351,25 @@ export async function updateAdminStoreState(
         next.siteSettings.announcementText,
         patch.siteSettings.announcementText
       ),
+      deliveryTimeEstimate: mergeMultilingual(
+        next.siteSettings.deliveryTimeEstimate,
+        patch.siteSettings.deliveryTimeEstimate
+      ),
+      legalEntityName:
+        typeof patch.siteSettings.legalEntityName === 'string'
+          ? patch.siteSettings.legalEntityName.trim().slice(0, 140)
+          : next.siteSettings.legalEntityName,
+      commercialRegisterId:
+        typeof patch.siteSettings.commercialRegisterId === 'string'
+          ? patch.siteSettings.commercialRegisterId.trim().slice(0, 80)
+          : next.siteSettings.commercialRegisterId,
+      returnWindowDays:
+        typeof patch.siteSettings.returnWindowDays === 'number' &&
+        Number.isFinite(patch.siteSettings.returnWindowDays) &&
+        patch.siteSettings.returnWindowDays >= 0 &&
+        patch.siteSettings.returnWindowDays <= 90
+          ? Math.round(patch.siteSettings.returnWindowDays)
+          : next.siteSettings.returnWindowDays,
     };
   }
   if (patch.ownerSettings && typeof patch.ownerSettings === 'object') {
@@ -392,7 +401,13 @@ export async function updateAdminStoreState(
 
 export async function addPublicProductReview(
   productId: string,
-  reviewInput: { authorName: string; rating: number; comment: string; verifiedPurchase?: boolean }
+  reviewInput: {
+    authorName: string;
+    rating: number;
+    comment: string;
+    verifiedPurchase?: boolean;
+    customerId?: string;
+  }
 ): Promise<{ ok: boolean; statusCode?: number; error?: string; product?: Product }> {
   await syncStoreStateIfStale(true);
   const prod = storeDb.products.find((p) => p.id === productId);
@@ -400,11 +415,24 @@ export async function addPublicProductReview(
     return { ok: false, statusCode: 404, error: 'المنتج غير موجود.' };
   }
   const rating = Math.min(5, Math.max(1, Math.round(Number(reviewInput.rating) || 5)));
-  const comment = (reviewInput.comment || '').trim().slice(0, 1000);
-  const authorName = (reviewInput.authorName || '').trim().slice(0, 80) || 'حريف ECHOX';
-  if (!comment) {
-    return { ok: false, statusCode: 400, error: 'يرجى كتابة نص التقييم.' };
+  const comment = String(reviewInput.comment || '').trim().slice(0, 1000);
+  const authorName = String(reviewInput.authorName || '').trim().slice(0, 80) || 'زائر NIAPOLOR';
+
+  if (/<[^>]*>|<script|<iframe|javascript:|onerror=|onload=/i.test(comment) || /<[^>]*>|<script|<iframe|javascript:|onerror=|onload=/i.test(authorName)) {
+    return { ok: false, statusCode: 400, error: 'يُمنع إدخال وسوم HTML أو رموز برمجية غير صالحة في التقييم.' };
   }
+  if (!comment || comment.length < 4) {
+    return { ok: false, statusCode: 400, error: 'يرجى كتابة تقييم واضح لا يقل عن 4 أحرف.' };
+  }
+
+  const normalizedComment = comment.toLowerCase();
+  const isDuplicate = (prod.reviews || [])
+    .slice(0, 15)
+    .some((r) => String(r.comment || '').trim().toLowerCase() === normalizedComment);
+  if (isDuplicate) {
+    return { ok: false, statusCode: 409, error: 'تم تسجيل هذا التعليق مسبقاً لهذا المنتج.' };
+  }
+
   const newRev = {
     id: `rev_${Date.now()}`,
     authorName,
@@ -412,6 +440,7 @@ export async function addPublicProductReview(
     comment,
     date: new Date().toISOString().split('T')[0],
     verifiedPurchase: Boolean(reviewInput.verifiedPurchase),
+    ...(reviewInput.customerId ? { customerId: String(reviewInput.customerId) } : {}),
   };
   const updatedReviews = [newRev, ...(prod.reviews || [])].slice(0, 100);
   const newRating = +(

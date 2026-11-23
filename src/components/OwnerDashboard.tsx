@@ -214,6 +214,12 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
   const [footerWorkingHoursAr, setFooterWorkingHoursAr] = useState(siteSettings.workingHours?.ar || '');
   const [footerWorkingHoursFr, setFooterWorkingHoursFr] = useState(siteSettings.workingHours?.fr || '');
   const [footerWorkingHoursEn, setFooterWorkingHoursEn] = useState(siteSettings.workingHours?.en || '');
+  const [footerLegalEntity, setFooterLegalEntity] = useState(siteSettings.legalEntityName || '');
+  const [footerCommercialId, setFooterCommercialId] = useState(siteSettings.commercialRegisterId || '');
+  const [footerReturnDays, setFooterReturnDays] = useState(String(siteSettings.returnWindowDays ?? 7));
+  const [footerDeliveryAr, setFooterDeliveryAr] = useState(siteSettings.deliveryTimeEstimate?.ar || '');
+  const [footerDeliveryFr, setFooterDeliveryFr] = useState(siteSettings.deliveryTimeEstimate?.fr || '');
+  const [footerDeliveryEn, setFooterDeliveryEn] = useState(siteSettings.deliveryTimeEstimate?.en || '');
   const [footerSavedSuccess, setFooterSavedSuccess] = useState(false);
   const [footerSaveError, setFooterSaveError] = useState('');
   const [footerSaving, setFooterSaving] = useState(false);
@@ -390,6 +396,12 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
     setFooterWorkingHoursAr(siteSettings.workingHours?.ar || '');
     setFooterWorkingHoursFr(siteSettings.workingHours?.fr || '');
     setFooterWorkingHoursEn(siteSettings.workingHours?.en || '');
+    setFooterLegalEntity(siteSettings.legalEntityName || '');
+    setFooterCommercialId(siteSettings.commercialRegisterId || '');
+    setFooterReturnDays(String(siteSettings.returnWindowDays ?? 7));
+    setFooterDeliveryAr(siteSettings.deliveryTimeEstimate?.ar || '');
+    setFooterDeliveryFr(siteSettings.deliveryTimeEstimate?.fr || '');
+    setFooterDeliveryEn(siteSettings.deliveryTimeEstimate?.en || '');
   }, [siteSettings]);
 
   useEffect(() => {
@@ -615,6 +627,14 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
         ar: footerWorkingHoursAr.trim() || siteSettings.workingHours.ar,
         fr: footerWorkingHoursFr.trim() || siteSettings.workingHours.fr,
         en: footerWorkingHoursEn.trim() || siteSettings.workingHours.en
+      },
+      legalEntityName: footerLegalEntity.trim(),
+      commercialRegisterId: footerCommercialId.trim(),
+      returnWindowDays: Math.min(90, Math.max(1, Number(footerReturnDays) || 7)),
+      deliveryTimeEstimate: {
+        ar: footerDeliveryAr.trim(),
+        fr: footerDeliveryFr.trim(),
+        en: footerDeliveryEn.trim(),
       }
     };
 
@@ -2709,6 +2729,93 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
               </div>
             </div>
 
+            {/* Card 5: Legal Entity, Returns & Delivery Settings */}
+            <div className="bg-[#F3F1EC] dark:bg-[#18181D] rounded-3xl p-5 sm:p-6 border border-[#E6E2D8] dark:border-[#23232A] space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-[#E6E2D8] dark:border-[#23232A]">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-[#FF6B00]" />
+                  <h3 className="text-sm font-black text-[#111113] dark:text-[#F7F6F3]">
+                    5. المعطيات القانونية وسياسة الإرجاع والتوصيل (اختياري)
+                  </h3>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-white dark:bg-[#141418] p-4 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-2">
+                  <label className="text-xs font-bold block text-[#111113] dark:text-[#F7F6F3]">الاسم القانوني للشركة / الكيان:</label>
+                  <input
+                    type="text"
+                    value={footerLegalEntity}
+                    onChange={e => setFooterLegalEntity(e.target.value)}
+                    placeholder="اتركه فارغاً إذا لم يُستكمل التسجيل بعد"
+                    className="w-full text-xs py-2.5 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent text-[#111113] dark:text-[#F7F6F3] focus:border-[#FF6B00] outline-none"
+                  />
+                </div>
+
+                <div className="bg-white dark:bg-[#141418] p-4 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-2">
+                  <label className="text-xs font-bold block text-[#111113] dark:text-[#F7F6F3]">المعرّف الجبائي / السجل الوطني (RNE):</label>
+                  <input
+                    type="text"
+                    value={footerCommercialId}
+                    onChange={e => setFooterCommercialId(e.target.value)}
+                    placeholder="مثال: RNE / MF (يُعرض فقط عند إدخاله)"
+                    className="w-full text-xs py-2.5 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent text-[#111113] dark:text-[#F7F6F3] focus:border-[#FF6B00] outline-none font-mono"
+                    dir="ltr"
+                  />
+                </div>
+
+                <div className="bg-white dark:bg-[#141418] p-4 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-2">
+                  <label className="text-xs font-bold block text-[#111113] dark:text-[#F7F6F3]">مدة الإرجاع والاستبدال (بالأيام):</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={90}
+                    value={footerReturnDays}
+                    onChange={e => setFooterReturnDays(e.target.value)}
+                    className="w-full text-xs py-2.5 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent text-[#111113] dark:text-[#F7F6F3] focus:border-[#FF6B00] outline-none font-mono"
+                    dir="ltr"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-white dark:bg-[#141418] p-4 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-2">
+                  <label className="text-xs font-bold block text-[#111113] dark:text-[#F7F6F3]">مهلة التوصيل (بالعربية):</label>
+                  <input
+                    type="text"
+                    value={footerDeliveryAr}
+                    onChange={e => setFooterDeliveryAr(e.target.value)}
+                    placeholder="24-48 ساعة لتونس الكبرى و48-72 ساعة لباقي الولايات"
+                    className="w-full text-xs py-2.5 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent text-[#111113] dark:text-[#F7F6F3] focus:border-[#FF6B00] outline-none"
+                  />
+                </div>
+
+                <div className="bg-white dark:bg-[#141418] p-4 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-2">
+                  <label className="text-xs font-bold block text-[#111113] dark:text-[#F7F6F3]">مهلة التوصيل (بالفرنسية):</label>
+                  <input
+                    type="text"
+                    value={footerDeliveryFr}
+                    onChange={e => setFooterDeliveryFr(e.target.value)}
+                    placeholder="24-48h Grand Tunis, 48-72h autres gouvernorats"
+                    className="w-full text-xs py-2.5 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent text-[#111113] dark:text-[#F7F6F3] focus:border-[#FF6B00] outline-none"
+                    dir="ltr"
+                  />
+                </div>
+
+                <div className="bg-white dark:bg-[#141418] p-4 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-2">
+                  <label className="text-xs font-bold block text-[#111113] dark:text-[#F7F6F3]">مهلة التوصيل (بالإنجليزية):</label>
+                  <input
+                    type="text"
+                    value={footerDeliveryEn}
+                    onChange={e => setFooterDeliveryEn(e.target.value)}
+                    placeholder="24-48h Greater Tunis, 48-72h other governorates"
+                    className="w-full text-xs py-2.5 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent text-[#111113] dark:text-[#F7F6F3] focus:border-[#FF6B00] outline-none"
+                    dir="ltr"
+                  />
+                </div>
+              </div>
+            </div>
+
             {/* Bottom Actions Bar */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-4 bg-[#F3F1EC] dark:bg-[#18181D] rounded-2xl border border-[#E6E2D8] dark:border-[#23232A]">
               <div className="flex items-center gap-2">
@@ -2737,6 +2844,12 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                     setFooterWorkingHoursAr(INITIAL_SITE_SETTINGS.workingHours.ar);
                     setFooterWorkingHoursFr(INITIAL_SITE_SETTINGS.workingHours.fr);
                     setFooterWorkingHoursEn(INITIAL_SITE_SETTINGS.workingHours.en);
+                    setFooterLegalEntity(INITIAL_SITE_SETTINGS.legalEntityName || '');
+                    setFooterCommercialId(INITIAL_SITE_SETTINGS.commercialRegisterId || '');
+                    setFooterReturnDays(String(INITIAL_SITE_SETTINGS.returnWindowDays ?? 7));
+                    setFooterDeliveryAr(INITIAL_SITE_SETTINGS.deliveryTimeEstimate?.ar || '');
+                    setFooterDeliveryFr(INITIAL_SITE_SETTINGS.deliveryTimeEstimate?.fr || '');
+                    setFooterDeliveryEn(INITIAL_SITE_SETTINGS.deliveryTimeEstimate?.en || '');
                   }}
                   className="px-4 py-3 rounded-xl bg-white dark:bg-[#141418] border border-[#D6D0C4] dark:border-[#32323C] text-[#5A5854] dark:text-[#B5B0A8] hover:text-[#111113] dark:hover:text-[#F7F6F3] text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
                 >

@@ -226,6 +226,7 @@ export async function submitServerCheckout(payload: {
   const res = await fetch('/api/payments/checkout', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify(payload),
   });
   const data = await res.json().catch(() => ({}));

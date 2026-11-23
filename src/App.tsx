@@ -27,6 +27,12 @@ const OwnerDashboard = lazy(() => import('./components/OwnerDashboard').then(m =
 const PromiseView = lazy(() => import('./components/StaticPages').then(m => ({ default: m.PromiseView })));
 const CompaniesView = lazy(() => import('./components/StaticPages').then(m => ({ default: m.CompaniesView })));
 const ContactView = lazy(() => import('./components/StaticPages').then(m => ({ default: m.ContactView })));
+const AboutView = lazy(() => import('./components/LegalInfoPages').then(m => ({ default: m.AboutView })));
+const PrivacyView = lazy(() => import('./components/LegalInfoPages').then(m => ({ default: m.PrivacyView })));
+const TermsView = lazy(() => import('./components/LegalInfoPages').then(m => ({ default: m.TermsView })));
+const ReturnsView = lazy(() => import('./components/LegalInfoPages').then(m => ({ default: m.ReturnsView })));
+const ShippingView = lazy(() => import('./components/LegalInfoPages').then(m => ({ default: m.ShippingView })));
+const FaqView = lazy(() => import('./components/LegalInfoPages').then(m => ({ default: m.FaqView })));
 
 const RouteFallback: React.FC = () => {
   return (
@@ -276,6 +282,18 @@ const AppContent: React.FC = () => {
         setCurrentView('wishlist');
       } else if (path === '/contact') {
         setCurrentView('contact');
+      } else if (path === '/about') {
+        setCurrentView('about');
+      } else if (path === '/shipping') {
+        setCurrentView('shipping');
+      } else if (path === '/returns') {
+        setCurrentView('returns');
+      } else if (path === '/faq') {
+        setCurrentView('faq');
+      } else if (path === '/privacy') {
+        setCurrentView('privacy');
+      } else if (path === '/terms') {
+        setCurrentView('terms');
       } else {
         setCurrentView('store');
       }
@@ -374,6 +392,12 @@ const AppContent: React.FC = () => {
                 {currentView === 'my_orders' && <OrderTrackingView />}
                 {(currentView === 'account' || currentView === 'wishlist') && <CustomerPortal />}
                 {currentView === 'contact' && <ContactView />}
+                {currentView === 'about' && <AboutView />}
+                {currentView === 'shipping' && <ShippingView />}
+                {currentView === 'returns' && <ReturnsView />}
+                {currentView === 'faq' && <FaqView />}
+                {currentView === 'privacy' && <PrivacyView />}
+                {currentView === 'terms' && <TermsView />}
               </>
             )}
           </Suspense>
