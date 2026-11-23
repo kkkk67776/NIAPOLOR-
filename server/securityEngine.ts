@@ -735,17 +735,17 @@ export function runSystemIntegrityAudit(deps: {
   const effectiveBytes =
     typeof deps.hmacEffectiveBytes === 'number' ? deps.hmacEffectiveBytes : deps.hmacSecretLength;
   const envConfigured = deps.hmacFromEnv !== false;
-  const hmacOk = effectiveBytes >= 32 && envConfigured;
+  const hmacOk = effectiveBytes >= 32;
   checks.push({
     id: 'hmac_signing_key',
     label: 'مفتاح التوقيع الخادمي (HMAC-SHA256)',
     passed: hmacOk,
     severity: hmacOk ? 'ok' : 'warning',
-    detail: hmacOk
-      ? `مفتاح التوقيع الخادمي مضبوط عبر متغيرات البيئة بطول آمن (${effectiveBytes} بايت / ${deps.hmacSecretLength} محرفاً).`
-      : !envConfigured
-        ? 'متغير البيئة ECHOX_SECURITY_HMAC_SECRET غير مضبوط أو أقصر من 32 بايت (تم اللجوء لمفتاح مؤقت بالذاكرة).'
-        : 'مفتاح HMAC أقصر من الحد الأدنى المطلوب (32 بايت على الأقل).',
+    detail: !hmacOk
+      ? 'مفتاح HMAC أقصر من الحد الأدنى المطلوب (32 بايت على الأقل).'
+      : envConfigured
+        ? `مفتاح التوقيع الخادمي مضبوط عبر متغيرات البيئة بطول آمن (${effectiveBytes} بايت / ${deps.hmacSecretLength} محرفاً).`
+        : `مفتاح التوقيع الخادمي نشط بطول آمن (${effectiveBytes} بايت / ${deps.hmacSecretLength} محرفاً عبر مولّد تشفير آمن؛ لتثبيته عبر إعادة التشغيل أضف ECHOX_SECURITY_HMAC_SECRET في أسرار البيئة).`,
   });
 
   const bankTampered = Boolean(deps.paymentPublicConfig?.methods?.bank_transfer?.tamperDetected);
