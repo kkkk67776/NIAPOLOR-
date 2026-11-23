@@ -583,6 +583,22 @@ async function run(): Promise<void> {
       integrityJson.report.checks.some((c: any) => c.id === 'self_protection_guards' && c.passed === true),
       'Integrity includes passing self_protection_guards check'
     );
+    assertTrue(
+      integrityJson.report.checks.some(
+        (c: any) => c.id === 'hmac_signing_key' && c.passed === true && c.severity === 'ok'
+      ),
+      'Integrity confirms >= 32-byte HMAC-SHA256 signing key from environment with ok severity'
+    );
+    assertTrue(
+      integrityJson.report.checks.some(
+        (c: any) => c.id === 'bank_seal' && c.passed === true && c.severity === 'ok'
+      ),
+      'Integrity confirms bank RIB HMAC seal is valid'
+    );
+    assertTrue(
+      !JSON.stringify(integrityJson).includes(process.env.ECHOX_SECURITY_HMAC_SECRET || ''),
+      'Integrity response never leaks HMAC secret value'
+    );
 
     // Pre-write Self-Protection: reject and quarantine unsafe product media & negative prices
     const unsafeProductPayload = storeData.products.map((p: any, idx: number) =>

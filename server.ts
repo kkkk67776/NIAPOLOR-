@@ -599,26 +599,26 @@ ${entries}
 // Sovereign Security Config (zero plaintext secrets or default codes in source)
 const OWNER_EMAIL = (process.env.ECHOX_OWNER_EMAIL || 'abdelkaderbahri570@gmail.com').trim().toLowerCase();
 
+function getEffectiveHmacByteLength(secret: string): number {
+  const trimmed = (secret || '').trim();
+  if (!trimmed) return 0;
+  if (/^[a-f0-9]+$/i.test(trimmed)) {
+    return Math.floor(trimmed.length / 2);
+  }
+  return Buffer.byteLength(trimmed, 'utf8');
+}
+
+function isStrongHmacSecret(secret: string): boolean {
+  return getEffectiveHmacByteLength(secret) >= 32;
+}
+
 function loadOrCreateHmacSecret(): string {
   const fromEnv = (process.env.ECHOX_SECURITY_HMAC_SECRET || '').trim();
-  if (fromEnv.length >= 16) return fromEnv;
-
-  const secretFile = getDataFilePath('.hmac_secret');
-  try {
-    if (fs.existsSync(secretFile)) {
-      const stored = fs.readFileSync(secretFile, 'utf-8').trim();
-      if (stored.length >= 32) return stored;
-    }
-  } catch {}
+  if (isStrongHmacSecret(fromEnv)) return fromEnv;
 
   const generated = crypto.randomBytes(48).toString('hex');
-  try {
-    fs.writeFileSync(secretFile, generated, { encoding: 'utf-8', mode: 0o600 });
-  } catch (err) {
-    console.warn('[Security] Notice writing runtime HMAC key file:', err);
-  }
   if (process.env.NODE_ENV === 'production') {
-    console.warn('[Security] ECHOX_SECURITY_HMAC_SECRET env var not set; using locally generated secret.');
+    console.warn('[Security] ECHOX_SECURITY_HMAC_SECRET env var not configured with >= 32 bytes; using ephemeral in-memory secret.');
   }
   return generated;
 }
@@ -632,19 +632,18 @@ function getHmacSecret(): string {
 }
 
 async function initHmacSecretFromCloud(): Promise<void> {
-  if ((process.env.ECHOX_SECURITY_HMAC_SECRET || '').trim().length >= 16) {
+  const envSecret = (process.env.ECHOX_SECURITY_HMAC_SECRET || '').trim();
+  if (isStrongHmacSecret(envSecret)) {
+    runtimeHmacSecret = envSecret;
     process.env.ECHOX_RUNTIME_HMAC_SECRET = runtimeHmacSecret;
     return;
   }
   if (!isCloudPersistenceEnabled()) return;
   try {
     const cloudVal = await loadCloudJson<{ secret?: string }>(CLOUD_HMAC_KEY);
-    if (cloudVal && typeof cloudVal.secret === 'string' && cloudVal.secret.length >= 32) {
-      runtimeHmacSecret = cloudVal.secret;
+    if (cloudVal && typeof cloudVal.secret === 'string' && isStrongHmacSecret(cloudVal.secret)) {
+      runtimeHmacSecret = cloudVal.secret.trim();
       process.env.ECHOX_RUNTIME_HMAC_SECRET = runtimeHmacSecret;
-      try {
-        fs.writeFileSync(getDataFilePath('.hmac_secret'), runtimeHmacSecret, { encoding: 'utf-8', mode: 0o600 });
-      } catch {}
       return;
     }
     await saveCloudJson(CLOUD_HMAC_KEY, { secret: runtimeHmacSecret, updatedAt: new Date().toISOString() });
@@ -3731,10 +3730,13 @@ app.get('/api/admin/security/integrity', async (req: Request, res: Response) => 
     syncPaymentDbIfStale(true).catch(() => {}),
   ]);
   const paymentOverview = getAdminPaymentOverview();
+  const currentHmacSecret = getHmacSecret();
   const report = runSystemIntegrityAudit({
     actorIp: getClientIp(req),
     centralSecurityConfig,
-    hmacSecretLength: getHmacSecret().length,
+    hmacSecretLength: currentHmacSecret.length,
+    hmacEffectiveBytes: getEffectiveHmacByteLength(currentHmacSecret),
+    hmacFromEnv: isStrongHmacSecret((process.env.ECHOX_SECURITY_HMAC_SECRET || '').trim()),
     storeState: getStoreRecoverySnapshot(),
     paymentPublicConfig: getAdminPaymentConfig(),
     paymentOrders: paymentOverview.orders,

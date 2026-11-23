@@ -286,31 +286,27 @@ let lastPaymentCloudSyncAt = 0;
 
 let cachedFallbackSecret: string | null = null;
 
+function isStrongSecret(secret: string): boolean {
+  const trimmed = (secret || '').trim();
+  if (!trimmed) return false;
+  const effectiveBytes = /^[a-f0-9]+$/i.test(trimmed)
+    ? Math.floor(trimmed.length / 2)
+    : Buffer.byteLength(trimmed, 'utf8');
+  return effectiveBytes >= 32;
+}
+
 function getBankIntegritySecret(): string {
   const fromEnv = (
     process.env.ECHOX_SECURITY_HMAC_SECRET ||
     process.env.ECHOX_RUNTIME_HMAC_SECRET ||
     ''
   ).trim();
-  if (fromEnv.length >= 16) return fromEnv;
+  if (isStrongSecret(fromEnv)) return fromEnv;
   if (cachedFallbackSecret) return cachedFallbackSecret;
 
-  const secretFile = getDataFilePath('.hmac_secret');
-  try {
-    if (fs.existsSync(secretFile)) {
-      const stored = fs.readFileSync(secretFile, 'utf-8').trim();
-      if (stored.length >= 16) {
-        cachedFallbackSecret = stored;
-        return stored;
-      }
-    }
-  } catch {}
-
   const generated = crypto.randomBytes(48).toString('hex');
-  try {
-    fs.writeFileSync(secretFile, generated, { encoding: 'utf-8', mode: 0o600 });
-  } catch {}
   cachedFallbackSecret = generated;
+  process.env.ECHOX_RUNTIME_HMAC_SECRET = generated;
   return generated;
 }
 
@@ -360,8 +356,7 @@ function computeIbanFingerprint(ibanOrRib: string): string {
 }
 
 export async function ensureInitialBankSealAfterHydrate(): Promise<void> {
-  const legacySeal = computeBankSealWithKey(paymentDb.config.methods.bank_transfer, 'echox-bank-local-seal-v1');
-  if (!paymentDb.config.bankIntegritySeal || paymentDb.config.bankIntegritySeal === legacySeal) {
+  if (!paymentDb.config.bankIntegritySeal) {
     paymentDb.config.bankIntegritySeal = computeBankSeal(paymentDb.config.methods.bank_transfer);
     if (isCloudPersistenceEnabled()) {
       await saveCloudJson(CLOUD_PAYMENT_KEY, paymentDb).catch(() => {});
@@ -381,8 +376,7 @@ export async function hydratePaymentDbFromCloud(): Promise<void> {
   lastPaymentCloudSyncAt = Date.now();
   if (remote && typeof remote === 'object') {
     paymentDb = mergeDatabaseSnapshot(remote);
-    const legacySeal = computeBankSealWithKey(paymentDb.config.methods.bank_transfer, 'echox-bank-local-seal-v1');
-    if (!paymentDb.config.bankIntegritySeal || paymentDb.config.bankIntegritySeal === legacySeal) {
+    if (!paymentDb.config.bankIntegritySeal) {
       paymentDb.config.bankIntegritySeal = computeBankSeal(paymentDb.config.methods.bank_transfer);
       await saveCloudJson(CLOUD_PAYMENT_KEY, paymentDb).catch(() => {});
     }
@@ -392,8 +386,7 @@ export async function hydratePaymentDbFromCloud(): Promise<void> {
       console.warn('[PaymentEngine] Notice syncing cloud snapshot to local file:', err);
     }
   } else {
-    const legacySeal = computeBankSealWithKey(paymentDb.config.methods.bank_transfer, 'echox-bank-local-seal-v1');
-    if (!paymentDb.config.bankIntegritySeal || paymentDb.config.bankIntegritySeal === legacySeal) {
+    if (!paymentDb.config.bankIntegritySeal) {
       paymentDb.config.bankIntegritySeal = computeBankSeal(paymentDb.config.methods.bank_transfer);
     }
     const seedRes = await saveCloudJson(CLOUD_PAYMENT_KEY, paymentDb);

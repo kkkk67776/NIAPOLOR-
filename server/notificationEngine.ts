@@ -341,17 +341,30 @@ export async function unsubscribeAdminPush(endpoint: string): Promise<{ ok: bool
   return { ok: true, subscriptionsCount: db.adminSubscriptions.length };
 }
 
+function resolveNotificationHmacSecret(hmacSecret?: string): string {
+  return (
+    hmacSecret ||
+    process.env.ECHOX_SECURITY_HMAC_SECRET ||
+    process.env.ECHOX_RUNTIME_HMAC_SECRET ||
+    ''
+  ).trim();
+}
+
 export function computePublicUnsubscribeToken(endpoint: string, hmacSecret: string): string {
+  const effectiveSecret = resolveNotificationHmacSecret(hmacSecret);
+  if (!effectiveSecret || !endpoint) return '';
   const sig = crypto
-    .createHmac('sha256', hmacSecret || 'ephemeral')
+    .createHmac('sha256', effectiveSecret)
     .update(`pub_unsub:${endpoint}`)
     .digest('hex');
   return `unsub1.${sig}`;
 }
 
 export function verifyPublicUnsubscribeToken(endpoint: string, token: string, hmacSecret: string): boolean {
-  if (!endpoint || !token || typeof token !== 'string') return false;
-  const expected = computePublicUnsubscribeToken(endpoint, hmacSecret);
+  const effectiveSecret = resolveNotificationHmacSecret(hmacSecret);
+  if (!effectiveSecret || !endpoint || !token || typeof token !== 'string') return false;
+  const expected = computePublicUnsubscribeToken(endpoint, effectiveSecret);
+  if (!expected) return false;
   const a = Buffer.from(token.trim());
   const b = Buffer.from(expected);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
