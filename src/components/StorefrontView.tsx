@@ -191,7 +191,7 @@ export const StorefrontView: React.FC = () => {
           <div className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 py-10 sm:py-14 lg:py-20">
             <div
               dir={language === 'ar' ? 'rtl' : 'ltr'}
-              className="max-w-[78%] xs:max-w-[66%] sm:max-w-lg lg:max-w-xl space-y-4 sm:space-y-5"
+              className="max-w-[82%] sm:max-w-lg lg:max-w-xl space-y-4 sm:space-y-5"
             >
               {/* Brand Eyebrow Lockup */}
               <div className="inline-flex items-center gap-2.5 text-[10px] sm:text-xs font-black uppercase tracking-[0.2em] text-[#FF6B00]">
@@ -220,7 +220,7 @@ export const StorefrontView: React.FC = () => {
                 <button
                   type="button"
                   onClick={scrollToCatalog}
-                  className="inline-flex items-center justify-center gap-2 px-6 sm:px-7 py-3 rounded-xl bg-[#FF6B00] hover:bg-[#E05E00] text-white text-xs sm:text-sm font-black uppercase tracking-wider shadow-[0_12px_28px_-8px_rgba(255,107,0,0.55)] transition-all cursor-pointer active:scale-95"
+                  className="inline-flex items-center justify-center gap-2 min-h-[44px] px-6 sm:px-7 py-3 rounded-xl bg-[#FF6B00] hover:bg-[#E05E00] text-white text-xs sm:text-sm font-black uppercase tracking-wider shadow-[0_12px_28px_-8px_rgba(255,107,0,0.55)] transition-all cursor-pointer active:scale-95"
                 >
                   <span>{t.hero.shopNow}</span>
                   <ArrowLeft className={`w-4 h-4 ${language !== 'ar' ? 'rotate-180' : ''}`} />
@@ -232,7 +232,7 @@ export const StorefrontView: React.FC = () => {
                     setCurrentView('companies');
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                   }}
-                  className="inline-flex items-center justify-center gap-1.5 px-4 sm:px-5 py-3 rounded-xl bg-white/80 dark:bg-[#18181E]/90 hover:bg-white dark:hover:bg-[#1D1D24] border border-[#D6D0C4] dark:border-[#2C2C36] hover:border-[#FF6B00]/60 text-[#111113] dark:text-[#F7F6F3] text-xs font-extrabold transition-all cursor-pointer active:scale-95"
+                  className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-4 sm:px-5 py-3 rounded-xl bg-white/80 dark:bg-[#18181E]/90 hover:bg-white dark:hover:bg-[#1D1D24] border border-[#D6D0C4] dark:border-[#2C2C36] hover:border-[#FF6B00]/60 text-[#111113] dark:text-[#F7F6F3] text-xs font-extrabold transition-all cursor-pointer active:scale-95"
                 >
                   <Store className="w-3.5 h-3.5 text-[#FF6B00]" />
                   <span>{t.hero.exploreSellers || t.nav.companies}</span>
@@ -307,7 +307,7 @@ export const StorefrontView: React.FC = () => {
             <button
               type="button"
               onClick={scrollToCatalog}
-              className="flex items-center gap-1 text-xs font-extrabold text-[#FF6B00] hover:text-[#E05E00] transition-colors cursor-pointer shrink-0"
+              className="inline-flex items-center gap-1 min-h-[44px] px-1 text-xs font-extrabold text-[#FF6B00] hover:text-[#E05E00] transition-colors cursor-pointer shrink-0"
             >
               <span>{t.storefront?.more}</span>
               <ArrowLeft className={`w-3.5 h-3.5 ${language !== 'ar' ? 'rotate-180' : ''}`} />
@@ -374,7 +374,7 @@ export const StorefrontView: React.FC = () => {
               <button
                 type="button"
                 onClick={scrollToCatalog}
-                className="flex items-center gap-1 text-xs font-extrabold text-[#FF6B00] hover:text-[#E05E00] transition-colors cursor-pointer shrink-0"
+                className="inline-flex items-center gap-1 min-h-[44px] px-1 text-xs font-extrabold text-[#FF6B00] hover:text-[#E05E00] transition-colors cursor-pointer shrink-0"
               >
                 <span>{t.storefront?.more}</span>
                 <ArrowLeft className={`w-3.5 h-3.5 ${language !== 'ar' ? 'rotate-180' : ''}`} />
@@ -441,7 +441,7 @@ export const StorefrontView: React.FC = () => {
                         <button
                           type="button"
                           onClick={(e) => handleQuickAdd(e, product)}
-                          className={`w-full py-2 rounded-xl text-[11px] font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer active:scale-95 ${
+                          className={`w-full min-h-[44px] py-2 rounded-xl text-[11px] font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer active:scale-95 ${
                             isAdded ? 'bg-emerald-600 text-white' : 'bg-[#FF6B00] hover:bg-[#E05E00] text-white'
                           }`}
                         >
@@ -485,7 +485,7 @@ export const StorefrontView: React.FC = () => {
               <button
                 type="button"
                 onClick={scrollToCatalog}
-                className="flex items-center gap-1 text-xs font-extrabold text-[#FF6B00] hover:text-[#E05E00] transition-colors cursor-pointer shrink-0"
+                className="inline-flex items-center gap-1 min-h-[44px] px-1 text-xs font-extrabold text-[#FF6B00] hover:text-[#E05E00] transition-colors cursor-pointer shrink-0"
               >
                 <span>{t.storefront?.all}</span>
                 <ArrowLeft className={`w-3.5 h-3.5 ${language !== 'ar' ? 'rotate-180' : ''}`} />
@@ -544,7 +544,7 @@ export const StorefrontView: React.FC = () => {
                       <button
                         type="button"
                         onClick={(e) => handleQuickAdd(e, product)}
-                        className={`px-3 py-1.5 rounded-xl text-[11px] font-black transition-all cursor-pointer active:scale-95 ${
+                        className={`min-w-[44px] min-h-[44px] px-3.5 py-2 rounded-xl text-[11px] font-black flex items-center justify-center transition-all cursor-pointer active:scale-95 ${
                           isAdded
                             ? 'bg-emerald-600 text-white'
                             : 'bg-[#FF6B00] hover:bg-[#E05E00] text-white'
@@ -575,7 +575,7 @@ export const StorefrontView: React.FC = () => {
                 <button
                   type="button"
                   onClick={scrollToCatalog}
-                  className="flex items-center gap-1 text-xs font-extrabold text-[#FF6B00] hover:text-[#E05E00] transition-colors cursor-pointer shrink-0"
+                  className="inline-flex items-center gap-1 min-h-[44px] px-1 text-xs font-extrabold text-[#FF6B00] hover:text-[#E05E00] transition-colors cursor-pointer shrink-0"
                 >
                   <span>{t.storefront?.more}</span>
                   <ArrowLeft className={`w-3.5 h-3.5 ${language !== 'ar' ? 'rotate-180' : ''}`} />
@@ -628,7 +628,7 @@ export const StorefrontView: React.FC = () => {
                             type="button"
                             onClick={(e) => handleQuickAdd(e, product)}
                             aria-label={t.product.addToCart}
-                            className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all cursor-pointer active:scale-95 ${
+                            className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all cursor-pointer active:scale-95 ${
                               isAdded ? 'bg-emerald-600 text-white' : 'bg-[#FF6B00] hover:bg-[#E05E00] text-white'
                             }`}
                           >
@@ -656,7 +656,7 @@ export const StorefrontView: React.FC = () => {
                   key={tab.id}
                   type="button"
                   onClick={() => setSelectedCategory(tab.id)}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-extrabold whitespace-nowrap transition-all cursor-pointer ${
+                  className={`min-h-[44px] px-4 py-2 rounded-xl text-xs font-extrabold whitespace-nowrap transition-all cursor-pointer flex items-center ${
                     active
                       ? 'bg-[#FF6B00] text-white shadow-[0_6px_16px_-4px_rgba(255,107,0,0.45)]'
                       : 'bg-white dark:bg-[#131317] text-[#5A5854] dark:text-[#B5B0A8] hover:text-[#111113] dark:hover:text-white border border-[#E6E2D8] dark:border-[#23232C]'
@@ -678,7 +678,7 @@ export const StorefrontView: React.FC = () => {
               <select
                 value={selectedGovFilter}
                 onChange={(e) => setSelectedGovFilter(e.target.value)}
-                className="text-xs py-1.5 px-3 rounded-xl border border-[#E6E2D8] dark:border-[#23232C] bg-white dark:bg-[#131317] font-bold text-[#111113] dark:text-[#F7F6F3] focus:outline-none focus:border-[#FF6B00] cursor-pointer"
+                className="min-h-[44px] text-xs py-2 px-3 rounded-xl border border-[#E6E2D8] dark:border-[#23232C] bg-white dark:bg-[#131317] font-bold text-[#111113] dark:text-[#F7F6F3] focus:outline-none focus:border-[#FF6B00] cursor-pointer"
               >
                 <option value="all">{t.storefront?.allGovernorates}</option>
                 {TUNISIAN_GOVERNORATES.map((gov) => (
@@ -709,7 +709,7 @@ export const StorefrontView: React.FC = () => {
                 setSelectedCategory('all');
                 setSelectedGovFilter('all');
               }}
-              className="text-xs font-extrabold text-[#FF6B00] hover:underline cursor-pointer"
+              className="min-h-[44px] px-4 inline-flex items-center text-xs font-extrabold text-[#FF6B00] hover:underline cursor-pointer"
             >
               {t.storefront?.resetFilters}
             </button>
@@ -744,7 +744,7 @@ export const StorefrontView: React.FC = () => {
                 setCurrentView('companies');
                 window.scrollTo({ top: 0, behavior: 'smooth' });
               }}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#111113] dark:bg-[#1D1D24] hover:bg-[#FF6B00] dark:hover:bg-[#FF6B00] border border-transparent dark:border-[#2C2C36] text-white text-xs font-bold transition-colors cursor-pointer shrink-0"
+              className="inline-flex items-center justify-center gap-2 min-h-[44px] px-4 py-2.5 rounded-xl bg-[#111113] dark:bg-[#1D1D24] hover:bg-[#FF6B00] dark:hover:bg-[#FF6B00] border border-transparent dark:border-[#2C2C36] text-white text-xs font-bold transition-colors cursor-pointer shrink-0"
             >
               <Store className="w-4 h-4" />
               <span>{t.storefront?.marketplaceCta}</span>

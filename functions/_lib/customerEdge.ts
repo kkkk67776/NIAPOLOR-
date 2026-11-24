@@ -3,6 +3,15 @@ import {
   isValidGovernorate,
   normalizeTunisianPhone,
 } from '../../src/data/governorates';
+import {
+  AuthLang,
+  containsDangerousHtml,
+  getCustomerAuthMessage,
+  isValidCustomerEmail,
+  mapPasswordReasonToMsgKey,
+  resolveCustomerLang,
+  validateCustomerPasswordStrength,
+} from '../../src/lib/customerAuthMessages';
 import type { CustomerAddress, CustomerUser, Order } from '../../src/types/index';
 import {
   checkEdgeSlidingWindowLimit,
@@ -16,7 +25,6 @@ import {
   parseEdgeCookies,
   randomHex,
   resolveSharedHmacSecret,
-  saveEdgeDoc,
   timingSafeEqualHex,
 } from './firestoreEdge';
 
@@ -73,14 +81,7 @@ function bytesToHex(bytes: Uint8Array): string {
 }
 
 async function resolveOrCreateEdgeHmacSecret(env: EdgeEnv): Promise<string | null> {
-  const existing = await resolveSharedHmacSecret(env);
-  if (existing) return existing;
-  const generated = randomHex(48);
-  const saved = await saveEdgeDoc(env, 'echox:security_hmac_secret', {
-    secret: generated,
-    updatedAt: new Date().toISOString(),
-  });
-  return saved.ok ? generated : null;
+  return resolveSharedHmacSecret(env);
 }
 
 async function hashEdgeCustomerPassword(password: string): Promise<string> {
@@ -133,14 +134,6 @@ async function verifyEdgeCustomerPassword(password: string, storedHash: string):
   return timingSafeEqualHex(derivedHex, hashHex.toLowerCase());
 }
 
-function containsDangerousHtml(value: string): boolean {
-  return /<[^>]*>|<script|<iframe|javascript:|onerror=|onload=/i.test(value);
-}
-
-function isValidEmail(email: string): boolean {
-  return /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]{2,}$/.test(email) && email.length <= 140;
-}
-
 function toPublicCustomerUser(rec: StoredCustomerRecord): CustomerUser {
   return {
     id: rec.id,
@@ -154,6 +147,30 @@ function toPublicCustomerUser(rec: StoredCustomerRecord): CustomerUser {
 
 function normalizePhoneDigits(phone: string): string {
   return (phone || '').replace(/\D/g, '').slice(-8);
+}
+
+function extractEdgeLang(request: Request, bodyLang?: unknown): AuthLang {
+  const url = new URL(request.url);
+  return resolveCustomerLang(
+    bodyLang ?? url.searchParams.get('lang'),
+    request.headers.get('accept-language')
+  );
+}
+
+function checkEdgeIdorTampering(
+  request: Request,
+  sessionCustomerId: string,
+  lang: AuthLang,
+  bodyCustomerId?: unknown
+): Response | null {
+  const url = new URL(request.url);
+  const queryId = (url.searchParams.get('customerId') || '').trim();
+  const bId = typeof bodyCustomerId === 'string' ? bodyCustomerId.trim() : '';
+  const supplied = queryId || bId;
+  if (supplied && supplied !== sessionCustomerId) {
+    return jsonResponse({ success: false, error: getCustomerAuthMessage(lang, 'forbiddenIdor') }, 403);
+  }
+  return null;
 }
 
 function buildEdgeCustomerCookie(request: Request, value: string, maxAgeSeconds: number): string {
@@ -209,15 +226,21 @@ export async function verifyEdgeCustomerSession(
   return { customerId, sessionId, expiresAt };
 }
 
-function verifyEdgeCustomerMutationSecurity(request: Request, env: EdgeEnv): Response | null {
-  const reqOrigin = request.headers.get('origin') || '';
+function verifyEdgeCustomerMutationSecurity(request: Request, env: EdgeEnv, lang: AuthLang): Response | null {
+  const reqOrigin = (request.headers.get('origin') || '').trim();
   if (reqOrigin && !isAllowedEdgeOrigin(reqOrigin, env)) {
-    return jsonResponse({ success: false, error: 'Origin not allowed.' }, 403);
+    return jsonResponse({ success: false, error: getCustomerAuthMessage(lang, 'csrfOriginDenied') }, 403);
+  }
+  if (!reqOrigin) {
+    const reqReferer = (request.headers.get('referer') || '').trim();
+    if (reqReferer && !isAllowedEdgeOrigin(reqReferer, env)) {
+      return jsonResponse({ success: false, error: getCustomerAuthMessage(lang, 'csrfOriginDenied') }, 403);
+    }
   }
   const xrw = (request.headers.get('x-requested-with') || '').trim();
   if (xrw !== 'NIAPOLOR-Customer') {
     return jsonResponse(
-      { success: false, error: 'Missing required X-Requested-With customer header.' },
+      { success: false, error: getCustomerAuthMessage(lang, 'csrfHeaderMissing') },
       403
     );
   }
@@ -247,62 +270,61 @@ export async function handleEdgeCustomerRoute(
   const method = request.method.toUpperCase();
 
   if (method === 'POST' && pathname === '/api/customer/register') {
-    const secErr = verifyEdgeCustomerMutationSecurity(request, env);
+    const body = (await request.json().catch(() => ({}))) as {
+      fullName?: string;
+      email?: string;
+      phone?: string;
+      password?: string;
+      confirmPassword?: unknown;
+      lang?: string;
+    };
+    const lang = extractEdgeLang(request, body.lang);
+    const secErr = verifyEdgeCustomerMutationSecurity(request, env, lang);
     if (secErr) return secErr;
 
     const ip = getEdgeClientIp(request);
     const rate = checkEdgeSlidingWindowLimit('custRegister', ip, 10, 15 * 60_000);
     if (!rate.allowed) {
       return jsonResponse(
-        {
-          success: false,
-          error: `تم تجاوز حد التسجيل المؤقت، يرجى الانتظار ${rate.retryAfterSeconds} ثانية.`,
-        },
+        { success: false, error: getCustomerAuthMessage(lang, 'rateLimitRegister') },
         429
       );
     }
 
-    const body = (await request.json().catch(() => ({}))) as {
-      fullName?: string;
-      email?: string;
-      phone?: string;
-      password?: string;
-    };
     const fullName = String(body.fullName || '').trim().slice(0, 100);
     const email = String(body.email || '').trim().toLowerCase();
     const phoneCheck = normalizeTunisianPhone(String(body.phone || ''));
     const password = String(body.password || '');
 
     if (!fullName || fullName.length < 3 || containsDangerousHtml(fullName)) {
-      return jsonResponse(
-        { success: false, error: 'يرجى إدخال الاسم الكامل بشكل صحيح (3 أحرف على الأقل).' },
-        400
-      );
+      return jsonResponse({ success: false, error: getCustomerAuthMessage(lang, 'invalidFullName') }, 400);
     }
-    if (!isValidEmail(email)) {
-      return jsonResponse({ success: false, error: 'يرجى إدخال بريد إلكتروني صالح.' }, 400);
+    if (!isValidCustomerEmail(email)) {
+      return jsonResponse({ success: false, error: getCustomerAuthMessage(lang, 'invalidEmail') }, 400);
     }
     if (!phoneCheck.valid) {
-      return jsonResponse(
-        { success: false, error: 'يرجى إدخال رقم هاتف تونسي صحيح (8 أرقام).' },
-        400
-      );
+      return jsonResponse({ success: false, error: getCustomerAuthMessage(lang, 'invalidPhone') }, 400);
     }
-    if (password.length < 8 || password.length > 128) {
+    const pwdCheck = validateCustomerPasswordStrength(password, body.confirmPassword);
+    if (!pwdCheck.valid) {
       return jsonResponse(
-        { success: false, error: 'كلمة المرور يجب أن تتكون من 8 أحرف على الأقل.' },
+        { success: false, error: getCustomerAuthMessage(lang, mapPasswordReasonToMsgKey(pwdCheck.reason)) },
         400
       );
     }
 
+    const newPhoneDigits = normalizePhoneDigits(phoneCheck.normalized);
     const passwordHash = await hashEdgeCustomerPassword(password);
     const mut = await mutateEdgeDocWithRetry<
       CustomerAccountsDatabase,
-      { conflict?: boolean; customer?: CustomerUser }
+      { conflictKey?: 'duplicateEmail' | 'duplicatePhone'; customer?: CustomerUser }
     >(env, CLOUD_CUSTOMER_KEY, async (raw) => {
       const db = mergeCustomerDb(raw);
       if (db.customers.some((c) => c.email.toLowerCase() === email)) {
-        return { skipWrite: true, result: { conflict: true } };
+        return { skipWrite: true, result: { conflictKey: 'duplicateEmail' } };
+      }
+      if (db.customers.some((c) => normalizePhoneDigits(c.phone) === newPhoneDigits)) {
+        return { skipWrite: true, result: { conflictKey: 'duplicatePhone' } };
       }
       const now = new Date().toISOString();
       const record: StoredCustomerRecord = {
@@ -326,66 +348,75 @@ export async function handleEdgeCustomerRoute(
       };
     });
 
-    if (!mut.ok) return jsonResponse({ success: false, error: mut.error }, mut.statusCode || 503);
-    if (mut.result?.conflict || !mut.result?.customer) {
-      return jsonResponse(
-        { success: false, error: 'هذا البريد الإلكتروني مسجل مسبقاً. يرجى تسجيل الدخول.' },
-        409
-      );
+    if (!mut.ok) return jsonResponse({ success: false, error: getCustomerAuthMessage(lang, 'dbSaveFailed') }, mut.statusCode || 503);
+    if (mut.result?.conflictKey) {
+      return jsonResponse({ success: false, error: getCustomerAuthMessage(lang, mut.result.conflictKey) }, 409);
+    }
+    if (!mut.result?.customer) {
+      return jsonResponse({ success: false, error: getCustomerAuthMessage(lang, 'dbSaveFailed') }, 503);
     }
 
     const cookieVal = await signEdgeCustomerSession(mut.result.customer.id, env);
-    const headers: Record<string, string> = {};
-    if (cookieVal) {
-      headers['Set-Cookie'] = buildEdgeCustomerCookie(request, cookieVal, 14 * 24 * 3600);
+    if (!cookieVal) {
+      return jsonResponse({ success: false, error: getCustomerAuthMessage(lang, 'sessionSignFailed') }, 503);
     }
-    return jsonResponse({ success: true, customer: mut.result.customer }, 201, headers);
+    return jsonResponse({ success: true, customer: mut.result.customer }, 201, {
+      'Set-Cookie': buildEdgeCustomerCookie(request, cookieVal, 14 * 24 * 3600),
+      'Cache-Control': 'no-store',
+    });
   }
 
   if (method === 'POST' && pathname === '/api/customer/login') {
-    const secErr = verifyEdgeCustomerMutationSecurity(request, env);
+    const body = (await request.json().catch(() => ({}))) as {
+      email?: string;
+      password?: string;
+      lang?: string;
+    };
+    const lang = extractEdgeLang(request, body.lang);
+    const secErr = verifyEdgeCustomerMutationSecurity(request, env, lang);
     if (secErr) return secErr;
 
     const ip = getEdgeClientIp(request);
     const rate = checkEdgeSlidingWindowLimit('custLogin', ip, 10, 5 * 60_000);
     if (!rate.allowed) {
-      return jsonResponse(
-        {
-          success: false,
-          error: `محاولات دخول متكررة، يرجى الانتظار ${rate.retryAfterSeconds} ثانية.`,
-        },
-        429
-      );
+      return jsonResponse({ success: false, error: getCustomerAuthMessage(lang, 'rateLimitLogin') }, 429);
     }
 
-    const body = (await request.json().catch(() => ({}))) as { email?: string; password?: string };
     const email = String(body.email || '').trim().toLowerCase();
     const password = String(body.password || '');
-    if (!isValidEmail(email) || !password) {
-      return jsonResponse({ success: false, error: 'يرجى إدخال البريد الإلكتروني وكلمة المرور.' }, 400);
+    if (!isValidCustomerEmail(email) || !password) {
+      return jsonResponse({ success: false, error: getCustomerAuthMessage(lang, 'loginRequiredFields') }, 400);
+    }
+
+    const emailRate = checkEdgeSlidingWindowLimit('custLoginEmail', email, 8, 5 * 60_000);
+    if (!emailRate.allowed) {
+      return jsonResponse({ success: false, error: getCustomerAuthMessage(lang, 'rateLimitLogin') }, 429);
     }
 
     const loaded = await loadEdgeDocWithMeta<Partial<CustomerAccountsDatabase>>(env, CLOUD_CUSTOMER_KEY);
     if (!loaded.ok) {
-      return jsonResponse({ success: false, error: loaded.error || 'تعذر قراءة الحسابات.' }, 503);
+      return jsonResponse({ success: false, error: getCustomerAuthMessage(lang, 'dbReadFailed') }, 503);
     }
     const db = mergeCustomerDb(loaded.data);
     const found = db.customers.find((c) => c.email.toLowerCase() === email);
     if (!found || !(await verifyEdgeCustomerPassword(password, found.passwordHash))) {
-      return jsonResponse({ success: false, error: 'البريد الإلكتروني أو كلمة المرور غير صحيحة.' }, 401);
+      return jsonResponse({ success: false, error: getCustomerAuthMessage(lang, 'invalidCredentials') }, 401);
     }
 
     const customer = toPublicCustomerUser(found);
     const cookieVal = await signEdgeCustomerSession(customer.id, env);
-    const headers: Record<string, string> = {};
-    if (cookieVal) {
-      headers['Set-Cookie'] = buildEdgeCustomerCookie(request, cookieVal, 14 * 24 * 3600);
+    if (!cookieVal) {
+      return jsonResponse({ success: false, error: getCustomerAuthMessage(lang, 'sessionSignFailed') }, 503);
     }
-    return jsonResponse({ success: true, customer }, 200, headers);
+    return jsonResponse({ success: true, customer }, 200, {
+      'Set-Cookie': buildEdgeCustomerCookie(request, cookieVal, 14 * 24 * 3600),
+      'Cache-Control': 'no-store',
+    });
   }
 
   if (method === 'POST' && pathname === '/api/customer/logout') {
-    const secErr = verifyEdgeCustomerMutationSecurity(request, env);
+    const lang = extractEdgeLang(request);
+    const secErr = verifyEdgeCustomerMutationSecurity(request, env, lang);
     if (secErr) return secErr;
     const sess = await verifyEdgeCustomerSession(request, env);
     if (sess) {
@@ -405,25 +436,178 @@ export async function handleEdgeCustomerRoute(
     }
     return jsonResponse({ success: true }, 200, {
       'Set-Cookie': buildEdgeCustomerCookie(request, '', 0),
+      'Cache-Control': 'no-store',
     });
   }
 
   if (method === 'GET' && pathname === '/api/customer/me') {
+    const lang = extractEdgeLang(request);
     const sess = await verifyEdgeCustomerSession(request, env);
-    if (!sess) return jsonResponse({ authenticated: false, customer: null }, 401);
+    if (!sess) {
+      return jsonResponse({ success: false, authenticated: false, customer: null }, 401, {
+        'Cache-Control': 'no-store',
+      });
+    }
+    const idorErr = checkEdgeIdorTampering(request, sess.customerId, lang);
+    if (idorErr) return idorErr;
     const customer = await getEdgeCustomerById(env, sess.customerId);
-    if (!customer) return jsonResponse({ authenticated: false, customer: null }, 401);
-    return jsonResponse({ authenticated: true, customer });
+    if (!customer) {
+      return jsonResponse({ success: false, authenticated: false, customer: null }, 401, {
+        'Cache-Control': 'no-store',
+      });
+    }
+    return jsonResponse({ success: true, authenticated: true, customer }, 200, {
+      'Cache-Control': 'no-store',
+    });
   }
 
-  if (method === 'POST' && pathname === '/api/customer/addresses') {
-    const secErr = verifyEdgeCustomerMutationSecurity(request, env);
+  if (method === 'GET' && pathname === '/api/customer/profile') {
+    const lang = extractEdgeLang(request);
+    const sess = await verifyEdgeCustomerSession(request, env);
+    if (!sess) {
+      return jsonResponse({ success: false, error: getCustomerAuthMessage(lang, 'loginRequiredProfile') }, 401);
+    }
+    const idorErr = checkEdgeIdorTampering(request, sess.customerId, lang);
+    if (idorErr) return idorErr;
+    const customer = await getEdgeCustomerById(env, sess.customerId);
+    if (!customer) {
+      return jsonResponse({ success: false, error: getCustomerAuthMessage(lang, 'accountNotFound') }, 401);
+    }
+    return jsonResponse({ success: true, customer }, 200, { 'Cache-Control': 'no-store' });
+  }
+
+  if (method === 'PATCH' && pathname === '/api/customer/profile') {
+    const body = (await request.json().catch(() => ({}))) as {
+      fullName?: string;
+      phone?: string;
+      customerId?: string;
+      lang?: string;
+    };
+    const lang = extractEdgeLang(request, body.lang);
+    const secErr = verifyEdgeCustomerMutationSecurity(request, env, lang);
     if (secErr) return secErr;
     const sess = await verifyEdgeCustomerSession(request, env);
     if (!sess) {
-      return jsonResponse({ success: false, error: 'يرجى تسجيل الدخول لإدارة العناوين.' }, 401);
+      return jsonResponse({ success: false, error: getCustomerAuthMessage(lang, 'loginRequiredProfile') }, 401);
+    }
+    const idorErr = checkEdgeIdorTampering(request, sess.customerId, lang, body.customerId);
+    if (idorErr) return idorErr;
+
+    const mut = await mutateEdgeDocWithRetry<
+      CustomerAccountsDatabase,
+      { errStatus?: number; errMsg?: string; customer?: CustomerUser }
+    >(env, CLOUD_CUSTOMER_KEY, async (raw) => {
+      const db = mergeCustomerDb(raw);
+      const idx = db.customers.findIndex((c) => c.id === sess.customerId);
+      if (idx === -1) {
+        return { skipWrite: true, result: { errStatus: 404, errMsg: getCustomerAuthMessage(lang, 'accountNotFound') } };
+      }
+      const existing = db.customers[idx];
+      const fullName =
+        body.fullName !== undefined ? String(body.fullName || '').trim().slice(0, 100) : existing.fullName;
+      if (!fullName || fullName.length < 3 || containsDangerousHtml(fullName)) {
+        return { skipWrite: true, result: { errStatus: 400, errMsg: getCustomerAuthMessage(lang, 'invalidFullName') } };
+      }
+
+      let nextPhone = existing.phone;
+      if (body.phone !== undefined) {
+        const phoneCheck = normalizeTunisianPhone(String(body.phone || ''));
+        if (!phoneCheck.valid) {
+          return { skipWrite: true, result: { errStatus: 400, errMsg: getCustomerAuthMessage(lang, 'invalidPhone') } };
+        }
+        const digits = normalizePhoneDigits(phoneCheck.normalized);
+        if (db.customers.some((c) => c.id !== sess.customerId && normalizePhoneDigits(c.phone) === digits)) {
+          return { skipWrite: true, result: { errStatus: 409, errMsg: getCustomerAuthMessage(lang, 'duplicatePhone') } };
+        }
+        nextPhone = phoneCheck.normalized;
+      }
+
+      const now = new Date().toISOString();
+      const updatedCustomer: StoredCustomerRecord = {
+        ...existing,
+        fullName,
+        phone: nextPhone,
+        updatedAt: now,
+      };
+      return {
+        nextDoc: {
+          customers: db.customers.map((c, i) => (i === idx ? updatedCustomer : c)),
+          revokedSessionIds: db.revokedSessionIds,
+          updatedAt: now,
+        },
+        result: { customer: toPublicCustomerUser(updatedCustomer) },
+      };
+    });
+
+    if (!mut.ok) return jsonResponse({ success: false, error: getCustomerAuthMessage(lang, 'dbSaveFailed') }, mut.statusCode || 503);
+    if (mut.result?.errMsg) {
+      return jsonResponse({ success: false, error: mut.result.errMsg }, mut.result.errStatus || 400);
+    }
+    return jsonResponse({ success: true, customer: mut.result?.customer });
+  }
+
+  if (method === 'PUT' && pathname === '/api/customer/wishlist') {
+    const body = (await request.json().catch(() => ({}))) as {
+      wishlist?: unknown;
+      customerId?: string;
+      lang?: string;
+    };
+    const lang = extractEdgeLang(request, body.lang);
+    const secErr = verifyEdgeCustomerMutationSecurity(request, env, lang);
+    if (secErr) return secErr;
+    const sess = await verifyEdgeCustomerSession(request, env);
+    if (!sess) {
+      return jsonResponse({ success: false, error: getCustomerAuthMessage(lang, 'loginRequiredWishlist') }, 401);
+    }
+    const idorErr = checkEdgeIdorTampering(request, sess.customerId, lang, body.customerId);
+    if (idorErr) return idorErr;
+    if (!Array.isArray(body.wishlist)) {
+      return jsonResponse({ success: false, error: getCustomerAuthMessage(lang, 'invalidWishlistPayload') }, 400);
     }
 
+    const sanitizedWishlist = Array.from(
+      new Set(
+        body.wishlist
+          .filter((id): id is string => typeof id === 'string')
+          .map((id) => id.trim())
+          .filter((id) => id.length > 0 && id.length <= 80 && !containsDangerousHtml(id))
+      )
+    ).slice(0, 100);
+
+    const mut = await mutateEdgeDocWithRetry<
+      CustomerAccountsDatabase,
+      { errStatus?: number; errMsg?: string; customer?: CustomerUser }
+    >(env, CLOUD_CUSTOMER_KEY, async (raw) => {
+      const db = mergeCustomerDb(raw);
+      const idx = db.customers.findIndex((c) => c.id === sess.customerId);
+      if (idx === -1) {
+        return { skipWrite: true, result: { errStatus: 404, errMsg: getCustomerAuthMessage(lang, 'accountNotFound') } };
+      }
+      const existing = db.customers[idx];
+      const now = new Date().toISOString();
+      const updatedCustomer: StoredCustomerRecord = {
+        ...existing,
+        wishlist: sanitizedWishlist,
+        updatedAt: now,
+      };
+      return {
+        nextDoc: {
+          customers: db.customers.map((c, i) => (i === idx ? updatedCustomer : c)),
+          revokedSessionIds: db.revokedSessionIds,
+          updatedAt: now,
+        },
+        result: { customer: toPublicCustomerUser(updatedCustomer) },
+      };
+    });
+
+    if (!mut.ok) return jsonResponse({ success: false, error: getCustomerAuthMessage(lang, 'dbSaveFailed') }, mut.statusCode || 503);
+    if (mut.result?.errMsg) {
+      return jsonResponse({ success: false, error: mut.result.errMsg }, mut.result.errStatus || 400);
+    }
+    return jsonResponse({ success: true, customer: mut.result?.customer });
+  }
+
+  if (method === 'POST' && pathname === '/api/customer/addresses') {
     const body = (await request.json().catch(() => ({}))) as {
       fullName?: string;
       phone?: string;
@@ -433,7 +617,18 @@ export async function handleEdgeCustomerRoute(
       street?: string;
       notes?: string;
       isDefault?: boolean;
+      customerId?: string;
+      lang?: string;
     };
+    const lang = extractEdgeLang(request, body.lang);
+    const secErr = verifyEdgeCustomerMutationSecurity(request, env, lang);
+    if (secErr) return secErr;
+    const sess = await verifyEdgeCustomerSession(request, env);
+    if (!sess) {
+      return jsonResponse({ success: false, error: getCustomerAuthMessage(lang, 'loginRequiredAddresses') }, 401);
+    }
+    const idorErr = checkEdgeIdorTampering(request, sess.customerId, lang, body.customerId);
+    if (idorErr) return idorErr;
 
     const mut = await mutateEdgeDocWithRetry<
       CustomerAccountsDatabase,
@@ -442,7 +637,7 @@ export async function handleEdgeCustomerRoute(
       const db = mergeCustomerDb(raw);
       const idx = db.customers.findIndex((c) => c.id === sess.customerId);
       if (idx === -1) {
-        return { skipWrite: true, result: { errStatus: 404, errMsg: 'الحساب غير موجود.' } };
+        return { skipWrite: true, result: { errStatus: 404, errMsg: getCustomerAuthMessage(lang, 'accountNotFound') } };
       }
       const existing = db.customers[idx];
       const fullName = String(body.fullName || existing.fullName || '').trim().slice(0, 100);
@@ -453,19 +648,19 @@ export async function handleEdgeCustomerRoute(
       const notes = String(body.notes || '').trim().slice(0, 200);
 
       if (!fullName || containsDangerousHtml(fullName)) {
-        return { skipWrite: true, result: { errStatus: 400, errMsg: 'اسم المستلم غير صالح.' } };
+        return { skipWrite: true, result: { errStatus: 400, errMsg: getCustomerAuthMessage(lang, 'invalidRecipientName') } };
       }
       if (!phoneCheck.valid) {
-        return { skipWrite: true, result: { errStatus: 400, errMsg: 'رقم الهاتف التونسي غير صالح.' } };
+        return { skipWrite: true, result: { errStatus: 400, errMsg: getCustomerAuthMessage(lang, 'invalidPhone') } };
       }
       if (!isValidGovernorate(governorate)) {
-        return { skipWrite: true, result: { errStatus: 400, errMsg: 'يرجى اختيار ولاية تونسية صالحة.' } };
+        return { skipWrite: true, result: { errStatus: 400, errMsg: getCustomerAuthMessage(lang, 'invalidGovernorate') } };
       }
       if (!delegation || !isValidDelegationForGovernorate(governorate, delegation)) {
-        return { skipWrite: true, result: { errStatus: 400, errMsg: 'يرجى اختيار معتمدية مطابقة للولاية المختارة.' } };
+        return { skipWrite: true, result: { errStatus: 400, errMsg: getCustomerAuthMessage(lang, 'invalidDelegation') } };
       }
       if (!street || street.length < 4 || containsDangerousHtml(street) || containsDangerousHtml(notes)) {
-        return { skipWrite: true, result: { errStatus: 400, errMsg: 'يرجى إدخال عنوان تفصيلي صالح.' } };
+        return { skipWrite: true, result: { errStatus: 400, errMsg: getCustomerAuthMessage(lang, 'invalidStreet') } };
       }
 
       const shouldDefault = Boolean(body.isDefault) || existing.addresses.length === 0;
@@ -503,7 +698,7 @@ export async function handleEdgeCustomerRoute(
       };
     });
 
-    if (!mut.ok) return jsonResponse({ success: false, error: mut.error }, mut.statusCode || 503);
+    if (!mut.ok) return jsonResponse({ success: false, error: getCustomerAuthMessage(lang, 'dbSaveFailed') }, mut.statusCode || 503);
     if (mut.result?.errMsg) {
       return jsonResponse({ success: false, error: mut.result.errMsg }, mut.result.errStatus || 400);
     }
@@ -511,13 +706,20 @@ export async function handleEdgeCustomerRoute(
   }
 
   if (method === 'PATCH' && pathname === '/api/customer/addresses/default') {
-    const secErr = verifyEdgeCustomerMutationSecurity(request, env);
+    const body = (await request.json().catch(() => ({}))) as {
+      addressId?: string;
+      customerId?: string;
+      lang?: string;
+    };
+    const lang = extractEdgeLang(request, body.lang);
+    const secErr = verifyEdgeCustomerMutationSecurity(request, env, lang);
     if (secErr) return secErr;
     const sess = await verifyEdgeCustomerSession(request, env);
     if (!sess) {
-      return jsonResponse({ success: false, error: 'يرجى تسجيل الدخول لإدارة العناوين.' }, 401);
+      return jsonResponse({ success: false, error: getCustomerAuthMessage(lang, 'loginRequiredAddresses') }, 401);
     }
-    const body = (await request.json().catch(() => ({}))) as { addressId?: string };
+    const idorErr = checkEdgeIdorTampering(request, sess.customerId, lang, body.customerId);
+    if (idorErr) return idorErr;
     const addressId = String(body.addressId || '').trim();
 
     const mut = await mutateEdgeDocWithRetry<
@@ -526,10 +728,10 @@ export async function handleEdgeCustomerRoute(
     >(env, CLOUD_CUSTOMER_KEY, async (raw) => {
       const db = mergeCustomerDb(raw);
       const idx = db.customers.findIndex((c) => c.id === sess.customerId);
-      if (idx === -1) return { skipWrite: true, result: { errStatus: 404, errMsg: 'الحساب غير موجود.' } };
+      if (idx === -1) return { skipWrite: true, result: { errStatus: 404, errMsg: getCustomerAuthMessage(lang, 'accountNotFound') } };
       const existing = db.customers[idx];
       if (!existing.addresses.some((a) => a.id === addressId)) {
-        return { skipWrite: true, result: { errStatus: 404, errMsg: 'العنوان غير موجود.' } };
+        return { skipWrite: true, result: { errStatus: 404, errMsg: getCustomerAuthMessage(lang, 'addressNotFound') } };
       }
       const now = new Date().toISOString();
       const updatedCustomer: StoredCustomerRecord = {
@@ -547,7 +749,58 @@ export async function handleEdgeCustomerRoute(
       };
     });
 
-    if (!mut.ok) return jsonResponse({ success: false, error: mut.error }, mut.statusCode || 503);
+    if (!mut.ok) return jsonResponse({ success: false, error: getCustomerAuthMessage(lang, 'dbSaveFailed') }, mut.statusCode || 503);
+    if (mut.result?.errMsg) {
+      return jsonResponse({ success: false, error: mut.result.errMsg }, mut.result.errStatus || 400);
+    }
+    return jsonResponse({ success: true, customer: mut.result?.customer });
+  }
+
+  if (method === 'DELETE' && pathname.startsWith('/api/customer/addresses/')) {
+    const addressId = decodeURIComponent(pathname.slice('/api/customer/addresses/'.length)).trim();
+    const lang = extractEdgeLang(request);
+    const secErr = verifyEdgeCustomerMutationSecurity(request, env, lang);
+    if (secErr) return secErr;
+    const sess = await verifyEdgeCustomerSession(request, env);
+    if (!sess) {
+      return jsonResponse({ success: false, error: getCustomerAuthMessage(lang, 'loginRequiredAddresses') }, 401);
+    }
+    const idorErr = checkEdgeIdorTampering(request, sess.customerId, lang);
+    if (idorErr) return idorErr;
+
+    const mut = await mutateEdgeDocWithRetry<
+      CustomerAccountsDatabase,
+      { errStatus?: number; errMsg?: string; customer?: CustomerUser }
+    >(env, CLOUD_CUSTOMER_KEY, async (raw) => {
+      const db = mergeCustomerDb(raw);
+      const idx = db.customers.findIndex((c) => c.id === sess.customerId);
+      if (idx === -1) return { skipWrite: true, result: { errStatus: 404, errMsg: getCustomerAuthMessage(lang, 'accountNotFound') } };
+      const existing = db.customers[idx];
+      const target = existing.addresses.find((a) => a.id === addressId);
+      if (!target) {
+        return { skipWrite: true, result: { errStatus: 404, errMsg: getCustomerAuthMessage(lang, 'addressNotFound') } };
+      }
+      let remaining = existing.addresses.filter((a) => a.id !== addressId);
+      if (target.isDefault && remaining.length > 0 && !remaining.some((a) => a.isDefault)) {
+        remaining = remaining.map((a, i) => (i === 0 ? { ...a, isDefault: true } : a));
+      }
+      const now = new Date().toISOString();
+      const updatedCustomer: StoredCustomerRecord = {
+        ...existing,
+        addresses: remaining,
+        updatedAt: now,
+      };
+      return {
+        nextDoc: {
+          customers: db.customers.map((c, i) => (i === idx ? updatedCustomer : c)),
+          revokedSessionIds: db.revokedSessionIds,
+          updatedAt: now,
+        },
+        result: { customer: toPublicCustomerUser(updatedCustomer) },
+      };
+    });
+
+    if (!mut.ok) return jsonResponse({ success: false, error: getCustomerAuthMessage(lang, 'dbSaveFailed') }, mut.statusCode || 503);
     if (mut.result?.errMsg) {
       return jsonResponse({ success: false, error: mut.result.errMsg }, mut.result.errStatus || 400);
     }
@@ -555,25 +808,27 @@ export async function handleEdgeCustomerRoute(
   }
 
   if (method === 'GET' && pathname === '/api/customer/orders') {
+    const lang = extractEdgeLang(request);
     const sess = await verifyEdgeCustomerSession(request, env);
     if (!sess) {
-      return jsonResponse({ success: false, error: 'يرجى تسجيل الدخول لعرض طلباتك.' }, 401);
+      return jsonResponse({ success: false, error: getCustomerAuthMessage(lang, 'loginRequiredOrders') }, 401);
     }
+    const idorErr = checkEdgeIdorTampering(request, sess.customerId, lang);
+    if (idorErr) return idorErr;
     const customer = await getEdgeCustomerById(env, sess.customerId);
     if (!customer) {
-      return jsonResponse({ success: false, error: 'الحساب غير موجود.' }, 401);
+      return jsonResponse({ success: false, error: getCustomerAuthMessage(lang, 'accountNotFound') }, 401);
     }
     const payLoaded = await loadEdgeDocWithMeta<{ orders?: Order[] }>(env, CLOUD_PAYMENT_KEY);
     const allOrders = Array.isArray(payLoaded.data?.orders) ? payLoaded.data!.orders : [];
-    const phoneDigits = normalizePhoneDigits(customer.phone);
     const scoped = allOrders
-      .filter((o) => {
-        const byId = Boolean(o.customerId && o.customerId === customer.id);
-        const byPhone = Boolean(phoneDigits.length === 8 && normalizePhoneDigits(o.customerPhone) === phoneDigits);
-        return byId || byPhone;
+      .filter((o) => Boolean(o.customerId && o.customerId === customer.id))
+      .map((o) => {
+        const { trackingTokenHash: _h, trackingToken: _t, ...clean } = o;
+        return clean;
       })
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    return jsonResponse({ success: true, orders: scoped });
+    return jsonResponse({ success: true, orders: scoped }, 200, { 'Cache-Control': 'no-store' });
   }
 
   return null;

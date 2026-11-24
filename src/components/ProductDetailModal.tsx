@@ -125,7 +125,7 @@ export const ProductDetailModal: React.FC = () => {
         <button
           onClick={() => setSelectedProductId(null)}
           aria-label="Close modal"
-          className="absolute top-4 left-4 sm:top-5 sm:left-5 z-20 w-10 h-10 rounded-full bg-white/95 dark:bg-[#131317]/95 hover:bg-white dark:hover:bg-[#1D1D24] border border-[#E6E2D8] dark:border-[#23232C] text-[#5A5854] dark:text-[#B5B0A8] hover:text-[#111113] dark:hover:text-[#F7F6F3] flex items-center justify-center shadow-md transition-all cursor-pointer"
+          className="absolute top-3.5 left-3.5 sm:top-5 sm:left-5 z-20 w-11 h-11 rounded-full bg-white/95 dark:bg-[#131317]/95 hover:bg-white dark:hover:bg-[#1D1D24] border border-[#E6E2D8] dark:border-[#23232C] text-[#5A5854] dark:text-[#B5B0A8] hover:text-[#111113] dark:hover:text-[#F7F6F3] flex items-center justify-center shadow-md transition-all cursor-pointer"
         >
           <X className="w-5 h-5" />
         </button>
@@ -269,20 +269,20 @@ export const ProductDetailModal: React.FC = () => {
 
               {/* Quantity Stepper & Actions */}
               <div className="space-y-3">
-                <div className="flex items-center gap-4">
+                <div className="flex flex-wrap items-center gap-3">
                   <span className="text-xs font-bold text-[#5A5854] dark:text-[#B5B0A8]">{t.product.quantity}</span>
                   <div className="flex items-center border border-[#D6D0C4] dark:border-[#32323C] rounded-xl overflow-hidden bg-white dark:bg-[#131317]">
                     <button
                       onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                      className="p-2 text-[#5A5854] dark:text-[#B5B0A8] hover:bg-[#F3F1EC] dark:hover:bg-[#1D1D24] transition-colors cursor-pointer"
+                      className="min-w-[44px] min-h-[44px] flex items-center justify-center text-[#5A5854] dark:text-[#B5B0A8] hover:bg-[#F3F1EC] dark:hover:bg-[#1D1D24] transition-colors cursor-pointer"
                       aria-label="Decrease quantity"
                     >
                       <Minus className="w-4 h-4" />
                     </button>
-                    <span className="px-4 text-sm font-bold tabular-nums text-[#111113] dark:text-[#F7F6F3]">{quantity}</span>
+                    <span className="px-3 text-sm font-bold tabular-nums text-[#111113] dark:text-[#F7F6F3]">{quantity}</span>
                     <button
                       onClick={() => setQuantity(Math.min(product.stock, quantity + 1))}
-                      className="p-2 text-[#5A5854] dark:text-[#B5B0A8] hover:bg-[#F3F1EC] dark:hover:bg-[#1D1D24] transition-colors cursor-pointer"
+                      className="min-w-[44px] min-h-[44px] flex items-center justify-center text-[#5A5854] dark:text-[#B5B0A8] hover:bg-[#F3F1EC] dark:hover:bg-[#1D1D24] transition-colors cursor-pointer"
                       aria-label="Increase quantity"
                     >
                       <Plus className="w-4 h-4" />
@@ -292,7 +292,7 @@ export const ProductDetailModal: React.FC = () => {
                   {/* Wishlist Button */}
                   <button
                     onClick={() => toggleWishlist(product.id)}
-                    className="p-2.5 rounded-xl border border-[#E6E2D8] dark:border-[#32323C] text-[#5A5854] dark:text-[#B5B0A8] hover:text-red-500 transition-colors cursor-pointer"
+                    className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl border border-[#E6E2D8] dark:border-[#32323C] text-[#5A5854] dark:text-[#B5B0A8] hover:text-red-500 transition-colors cursor-pointer"
                     aria-label="Wishlist"
                   >
                     <Heart className={`w-5 h-5 ${isWishlisted ? 'fill-red-500 text-red-500' : ''}`} />
@@ -314,7 +314,7 @@ export const ProductDetailModal: React.FC = () => {
                       setShareCopied(true);
                       setTimeout(() => setShareCopied(false), 2000);
                     }}
-                    className="px-3 py-2.5 rounded-xl border border-[#E6E2D8] dark:border-[#32323C] text-[#5A5854] dark:text-[#B5B0A8] hover:text-[#FF6B00] hover:border-[#FF6B00] transition-colors flex items-center gap-1.5 text-xs font-bold cursor-pointer"
+                    className="min-h-[44px] px-3.5 py-2.5 rounded-xl border border-[#E6E2D8] dark:border-[#32323C] text-[#5A5854] dark:text-[#B5B0A8] hover:text-[#FF6B00] hover:border-[#FF6B00] transition-colors flex items-center gap-1.5 text-xs font-bold cursor-pointer"
                     aria-label="Share product link"
                   >
                     <Share2 className="w-4 h-4" />
@@ -326,7 +326,7 @@ export const ProductDetailModal: React.FC = () => {
                   <button
                     onClick={() => addToCart(product, quantity)}
                     disabled={product.stock <= 0}
-                    className="py-3 px-4 rounded-xl bg-[#111113] dark:bg-[#18181E] hover:bg-[#23232C] dark:hover:bg-[#23232C] border border-transparent dark:border-[#32323C] text-white font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-sm cursor-pointer disabled:opacity-45"
+                    className="min-h-[48px] py-3 px-4 rounded-xl bg-[#111113] dark:bg-[#18181E] hover:bg-[#23232C] dark:hover:bg-[#23232C] border border-transparent dark:border-[#32323C] text-white font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-sm cursor-pointer disabled:opacity-45"
                   >
                     <ShoppingBag className="w-4 h-4" />
                     <span>{t.product.addToCart}</span>
@@ -334,7 +334,7 @@ export const ProductDetailModal: React.FC = () => {
                   <button
                     onClick={handleBuyNow}
                     disabled={product.stock <= 0}
-                    className="py-3 px-4 rounded-xl bg-[#FF6B00] hover:bg-[#e05e00] text-white font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-sm cursor-pointer disabled:opacity-45"
+                    className="min-h-[48px] py-3 px-4 rounded-xl bg-[#FF6B00] hover:bg-[#e05e00] text-white font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-sm cursor-pointer disabled:opacity-45"
                   >
                     <span>{t.product.buyNow}</span>
                   </button>
@@ -478,7 +478,7 @@ export const ProductDetailModal: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setShowVerifyFields((prev) => !prev)}
-                    className="text-[11px] font-bold text-[#FF6B00] hover:underline cursor-pointer"
+                    className="min-h-[44px] inline-flex items-center text-xs font-bold text-[#FF6B00] hover:underline cursor-pointer"
                   >
                     {(t.product as any).verifyPurchaseOptional}
                   </button>
@@ -494,7 +494,7 @@ export const ProductDetailModal: React.FC = () => {
                           onChange={(e) => setOrderTrackingNumber(e.target.value)}
                           placeholder={(t.product as any).orderTrackingPlaceholder}
                           dir="ltr"
-                          className="w-full px-3 py-2 text-xs rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-[#FAF9F7] dark:bg-[#131317] font-mono focus:outline-hidden focus:border-[#FF6B00]"
+                          className="w-full min-h-[44px] px-3 py-2 text-xs rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-[#FAF9F7] dark:bg-[#131317] font-mono focus:outline-hidden focus:border-[#FF6B00]"
                         />
                         <input
                           type="tel"
@@ -502,7 +502,7 @@ export const ProductDetailModal: React.FC = () => {
                           onChange={(e) => setOrderPhone(e.target.value)}
                           placeholder={(t.product as any).orderPhonePlaceholder}
                           dir="ltr"
-                          className="w-full px-3 py-2 text-xs rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-[#FAF9F7] dark:bg-[#131317] font-mono focus:outline-hidden focus:border-[#FF6B00]"
+                          className="w-full min-h-[44px] px-3 py-2 text-xs rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-[#FAF9F7] dark:bg-[#131317] font-mono focus:outline-hidden focus:border-[#FF6B00]"
                         />
                       </div>
                     </div>
@@ -517,7 +517,7 @@ export const ProductDetailModal: React.FC = () => {
                 <button 
                   type="submit" 
                   disabled={!isOnline || reviewSubmitting}
-                  className="px-4 py-2 rounded-xl bg-[#111113] dark:bg-[#FF6B00] hover:bg-[#FF6B00] dark:hover:bg-[#E05E00] text-white text-xs font-bold transition-colors cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed"
+                  className="min-h-[44px] px-5 py-2.5 rounded-xl bg-[#111113] dark:bg-[#FF6B00] hover:bg-[#FF6B00] dark:hover:bg-[#E05E00] text-white text-xs font-bold transition-colors cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed"
                 >
                   {t.product.submitReview}
                 </button>

@@ -823,8 +823,6 @@ export function randomHex(byteLen: number): string {
   return hex;
 }
 
-let cachedCloudHmacSecret: { secret: string; fetchedAt: number } | null = null;
-
 function isStrongEdgeHmacSecret(secret: string): boolean {
   const trimmed = (secret || '').trim();
   if (!trimmed) return false;
@@ -836,18 +834,7 @@ function isStrongEdgeHmacSecret(secret: string): boolean {
 
 export async function resolveSharedHmacSecret(env: EdgeEnv): Promise<string | null> {
   const fromEnv = (env.ECHOX_SECURITY_HMAC_SECRET || '').trim();
-  if (isStrongEdgeHmacSecret(fromEnv)) return fromEnv;
-
-  if (cachedCloudHmacSecret && Date.now() - cachedCloudHmacSecret.fetchedAt < 30_000) {
-    return cachedCloudHmacSecret.secret;
-  }
-
-  const loaded = await loadEdgeDocWithMeta<{ secret?: string }>(env, 'echox:security_hmac_secret');
-  if (loaded.ok && loaded.data?.secret && isStrongEdgeHmacSecret(loaded.data.secret)) {
-    cachedCloudHmacSecret = { secret: loaded.data.secret.trim(), fetchedAt: Date.now() };
-    return cachedCloudHmacSecret.secret;
-  }
-  return null;
+  return isStrongEdgeHmacSecret(fromEnv) ? fromEnv : null;
 }
 
 export function parseEdgeCookies(request: Request): Record<string, string> {

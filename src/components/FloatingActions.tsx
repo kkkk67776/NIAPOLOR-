@@ -75,7 +75,7 @@ export const FloatingActions: React.FC = () => {
           onClick={() => setHubOpen(!hubOpen)}
           title={t.supportHub.buttonTitle}
           aria-label={t.supportHub.buttonTitle}
-          className="relative flex items-center gap-2 px-3.5 py-2.5 rounded-full bg-[#0B0B0D] dark:bg-[#141418] hover:bg-[#FF6B00] dark:hover:bg-[#FF6B00] text-white shadow-xl hover:scale-105 active:scale-95 transition-all border border-[#23232A] cursor-pointer"
+          className="relative min-w-[44px] min-h-[44px] flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-full bg-[#0B0B0D] dark:bg-[#141418] hover:bg-[#FF6B00] dark:hover:bg-[#FF6B00] text-white shadow-xl active:scale-95 transition-colors border border-[#23232A] cursor-pointer"
         >
           <div className="relative">
             {hubOpen ? <X className="w-5 h-5 text-white" /> : <Phone className="w-5 h-5 text-[#FF6B00]" />}
@@ -98,7 +98,7 @@ export const FloatingActions: React.FC = () => {
                 type="button"
                 onClick={() => setHubOpen(false)}
                 aria-label={t.supportHub.closeLabel}
-                className="text-[#7A756D] hover:text-[#111113] dark:text-[#8E8980] dark:hover:text-[#F7F6F3] p-0.5 cursor-pointer"
+                className="min-w-[44px] min-h-[44px] -m-1.5 flex items-center justify-center text-[#7A756D] hover:text-[#111113] dark:text-[#8E8980] dark:hover:text-[#F7F6F3] rounded-full cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -116,7 +116,7 @@ export const FloatingActions: React.FC = () => {
               target="_blank"
               rel="noreferrer"
               onClick={() => setHubOpen(false)}
-              className="flex items-center justify-between p-2.5 rounded-2xl bg-[#25D366]/10 hover:bg-[#25D366]/20 border border-[#25D366]/20 transition-colors group cursor-pointer"
+              className="min-h-[48px] flex items-center justify-between p-2.5 rounded-2xl bg-[#25D366]/10 hover:bg-[#25D366]/20 border border-[#25D366]/20 transition-colors group cursor-pointer"
             >
               <div className="flex items-center gap-2.5">
                 <span className="w-8 h-8 rounded-xl bg-[#25D366] text-white flex items-center justify-center shrink-0 shadow-xs">
@@ -141,7 +141,7 @@ export const FloatingActions: React.FC = () => {
               <a
                 href={`tel:${siteSettings.supportPhone}`}
                 onClick={() => setHubOpen(false)}
-                className="flex items-center justify-between p-2.5 rounded-2xl bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 transition-colors group cursor-pointer"
+                className="min-h-[48px] flex items-center justify-between p-2.5 rounded-2xl bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 transition-colors group cursor-pointer"
               >
                 <div className="flex items-center gap-2.5">
                   <span className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs">
@@ -165,7 +165,7 @@ export const FloatingActions: React.FC = () => {
                 setHubOpen(false);
                 setChatOpen(true);
               }}
-              className="w-full flex items-center justify-between p-2.5 rounded-2xl bg-[#FF6B00]/10 hover:bg-[#FF6B00]/20 border border-[#FF6B00]/25 transition-colors group cursor-pointer text-start"
+              className="w-full min-h-[48px] flex items-center justify-between p-2.5 rounded-2xl bg-[#FF6B00]/10 hover:bg-[#FF6B00]/20 border border-[#FF6B00]/25 transition-colors group cursor-pointer text-start"
             >
               <div className="flex items-center gap-2.5">
                 <span className="w-8 h-8 rounded-xl bg-[#FF6B00] text-white flex items-center justify-center shrink-0 shadow-xs">
@@ -213,15 +213,15 @@ export const FloatingActions: React.FC = () => {
                 onClick={resetChatSession}
                 title={(t.chat as any).resetChat || 'New Chat'}
                 aria-label={(t.chat as any).resetChat || 'New Chat'}
-                className="text-[#8E8980] hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+                className="min-w-[44px] min-h-[44px] flex items-center justify-center text-[#8E8980] hover:text-white rounded-xl hover:bg-white/10 transition-colors cursor-pointer"
               >
-                <RotateCcw className="w-3.5 h-3.5" />
+                <RotateCcw className="w-4 h-4" />
               </button>
               <button
                 type="button"
                 onClick={() => setChatOpen(false)}
                 aria-label={t.supportHub.closeLabel}
-                className="text-[#8E8980] hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+                className="min-w-[44px] min-h-[44px] flex items-center justify-center text-[#8E8980] hover:text-white rounded-xl hover:bg-white/10 transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -340,7 +340,7 @@ export const FloatingActions: React.FC = () => {
                   type="button"
                   disabled={isChatReplying}
                   onClick={() => handleQuickChip(chip)}
-                  className="px-2.5 py-1 rounded-full bg-[#FAF9F7] dark:bg-[#0B0B0D] border border-[#E6E2D8] dark:border-[#23232A] hover:border-[#FF6B00] hover:text-[#FF6B00] text-[10px] font-bold text-[#5A5854] dark:text-[#B5B0A8] shrink-0 transition-colors cursor-pointer disabled:opacity-50"
+                  className="min-h-[38px] px-3 py-1.5 rounded-full bg-[#FAF9F7] dark:bg-[#0B0B0D] border border-[#E6E2D8] dark:border-[#23232A] hover:border-[#FF6B00] hover:text-[#FF6B00] text-[11px] font-bold text-[#5A5854] dark:text-[#B5B0A8] shrink-0 transition-colors cursor-pointer disabled:opacity-50"
                 >
                   {chip}
                 </button>
@@ -362,13 +362,13 @@ export const FloatingActions: React.FC = () => {
               placeholder={isOnline ? t.chat.placeholder : t.offline.chatOfflineNotice}
               value={chatInput}
               onChange={e => setChatInput(e.target.value)}
-              className="flex-1 text-xs py-2 px-3 rounded-xl border border-[#E6E2D8] dark:border-[#23232A] dark:bg-[#0B0B0D] dark:text-white focus:outline-none focus:border-[#FF6B00] disabled:opacity-60"
+              className="flex-1 min-h-[44px] text-xs py-2 px-3 rounded-xl border border-[#E6E2D8] dark:border-[#23232A] dark:bg-[#0B0B0D] dark:text-white focus:outline-none focus:border-[#FF6B00] disabled:opacity-60"
             />
             <button
               type="submit"
               disabled={!chatInput.trim() || isChatReplying || !isOnline}
               aria-label={t.chat.send}
-              className="p-2 bg-[#FF6B00] hover:bg-[#e05e00] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl shadow-xs cursor-pointer"
+              className="min-w-[44px] min-h-[44px] flex items-center justify-center bg-[#FF6B00] hover:bg-[#e05e00] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl shadow-xs cursor-pointer"
             >
               <Send className="w-4 h-4" />
             </button>

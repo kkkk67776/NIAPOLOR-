@@ -18,6 +18,7 @@ import {
 import {
   getPaymentRecoverySnapshot,
   hardRemoveCatalogProduct,
+  registerStoreProductBridge,
 } from './paymentEngine';
 import { removePublicAnnouncementsForProduct } from './notificationEngine';
 import { normalizeProductImageUrl } from '../src/lib/imageUrl';
@@ -157,6 +158,74 @@ async function persistStoreState(state: StorefrontDatabase) {
 
 let storeDb: StorefrontDatabase = loadStoreState();
 let lastStoreCloudSyncAt = 0;
+
+let storeWriteQueue: Promise<void> = Promise.resolve();
+
+function withStoreMutationLock<T>(fn: () => Promise<T>): Promise<T> {
+  const run = storeWriteQueue.then(fn, fn);
+  storeWriteQueue = run.then(
+    () => undefined,
+    () => undefined
+  );
+  return run;
+}
+
+export function getStoreProductsSnapshot(): Product[] {
+  return storeDb.products.map((p) => ({ ...p }));
+}
+
+export async function adjustStoreProductsStockBatch(
+  adjustments: Array<{ productId: string; delta: number }>
+): Promise<{ ok: boolean; error?: string }> {
+  if (!Array.isArray(adjustments) || adjustments.length === 0) {
+    return { ok: true };
+  }
+  return withStoreMutationLock(async () => {
+    await syncStoreStateIfStale(true);
+    const prev = storeDb;
+    const adjMap = new Map<string, number>();
+    for (const adj of adjustments) {
+      if (!adj?.productId || !Number.isFinite(adj.delta)) continue;
+      adjMap.set(adj.productId, (adjMap.get(adj.productId) || 0) + Math.trunc(adj.delta));
+    }
+    if (adjMap.size === 0) return { ok: true };
+
+    const updatedProducts = storeDb.products.map((prod) => {
+      const delta = adjMap.get(prod.id);
+      if (!delta) return prod;
+      const curStock = typeof prod.stock === 'number' && Number.isFinite(prod.stock) ? Math.max(0, Math.floor(prod.stock)) : 0;
+      const nextStock = Math.max(0, curStock + delta);
+      return {
+        ...prod,
+        stock: nextStock,
+      };
+    });
+
+    const next: StorefrontDatabase = {
+      ...storeDb,
+      products: updatedProducts,
+      updatedAt: new Date().toISOString(),
+    };
+    const persisted = await persistStoreState(next);
+    if (!persisted.ok) {
+      storeDb = prev;
+      return { ok: false, error: persisted.error || 'تعذر مزامنة المخزون مع المتجر.' };
+    }
+    storeDb = next;
+    lastStoreCloudSyncAt = Date.now();
+    return { ok: true };
+  });
+}
+
+let bridgeInitialized = false;
+export function initStorePaymentBridge(): void {
+  if (bridgeInitialized) return;
+  bridgeInitialized = true;
+  registerStoreProductBridge({
+    getProducts: () => getStoreProductsSnapshot(),
+    adjustStockBatch: adjustStoreProductsStockBatch,
+  });
+}
 
 export async function hydrateStoreStateFromCloud(): Promise<void> {
   if (!isCloudPersistenceEnabled()) return;

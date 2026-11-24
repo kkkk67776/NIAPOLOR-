@@ -19,6 +19,7 @@ const PRIVATE_OR_MUTATING_API_PREFIXES = [
   '/api/admin/',
   '/api/security/',
   '/api/owner/',
+  '/api/customer/',
   '/api/payments/checkout',
   '/api/payments/bank-transfer/',
   '/api/payments/request-refund',

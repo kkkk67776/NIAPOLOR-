@@ -77,11 +77,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
               toggleWishlist(product.id);
             }}
             aria-label="Toggle Wishlist"
-            className={`absolute top-2.5 ${language === 'ar' ? 'left-2.5' : 'right-2.5'} w-8 h-8 rounded-full bg-white/95 dark:bg-[#18181E]/90 border border-[#E6E2D8] dark:border-[#2C2C36] flex items-center justify-center transition-all cursor-pointer ${
+            className={`absolute top-2 ${language === 'ar' ? 'left-2' : 'right-2'} w-11 h-11 rounded-full bg-white/95 dark:bg-[#18181E]/90 border border-[#E6E2D8] dark:border-[#2C2C36] flex items-center justify-center transition-all cursor-pointer ${
               isWishlisted ? 'text-red-500 border-red-500/40' : 'text-[#7A756D] dark:text-[#9A958E] hover:text-red-500'
             }`}
           >
-            <Heart className={`w-3.5 h-3.5 ${isWishlisted ? 'fill-red-500' : ''}`} />
+            <Heart className={`w-4 h-4 ${isWishlisted ? 'fill-red-500' : ''}`} />
           </button>
         </div>
 
@@ -133,7 +133,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
           type="button"
           onClick={handleAddToCart}
           disabled={product.stock <= 0}
-          className={`w-full py-2.5 rounded-xl text-xs font-extrabold tracking-wide flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed ${
+          className={`w-full min-h-[44px] py-2.5 rounded-xl text-xs font-extrabold tracking-wide flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed ${
             isAddedRecently
               ? 'bg-emerald-600 text-white'
               : 'bg-[#FF6B00] hover:bg-[#E05E00] text-white'

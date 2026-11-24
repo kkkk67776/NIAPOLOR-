@@ -343,6 +343,10 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
   // 6. Orders States & Manual Order Form
   const [orderSearch, setOrderSearch] = useState('');
   const [orderStatusFilter, setOrderStatusFilter] = useState<string>('all');
+  const [orderPaymentFilter, setOrderPaymentFilter] = useState<string>('all');
+  const [cancelOrderPrompt, setCancelOrderPrompt] = useState<{ orderId: string; trackingNumber: string } | null>(null);
+  const [cancelReasonInput, setCancelReasonInput] = useState('');
+  const [orderStatusSuccess, setOrderStatusSuccess] = useState<string | null>(null);
   const [showAddManualOrderModal, setShowAddManualOrderModal] = useState(false);
   const [manualCustName, setManualCustName] = useState('');
   const [manualCustPhone, setManualCustPhone] = useState('');
@@ -1203,11 +1207,15 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
   );
 
   const filteredOrders = orders.filter(o => {
-    const matchSearch = o.trackingNumber.toLowerCase().includes(orderSearch.toLowerCase()) ||
-      o.customerName.toLowerCase().includes(orderSearch.toLowerCase()) ||
-      o.customerPhone.includes(orderSearch);
+    const q = orderSearch.trim().toLowerCase();
+    const matchSearch = !q ||
+      o.trackingNumber.toLowerCase().includes(q) ||
+      o.customerName.toLowerCase().includes(q) ||
+      o.customerPhone.includes(q) ||
+      (o.paymentReference && o.paymentReference.toLowerCase().includes(q));
     const matchStatus = orderStatusFilter === 'all' || o.status === orderStatusFilter;
-    return matchSearch && matchStatus;
+    const matchPayment = orderPaymentFilter === 'all' || o.paymentStatus === orderPaymentFilter;
+    return matchSearch && matchStatus && matchPayment;
   });
 
   return (
@@ -3284,23 +3292,58 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
             </div>
           )}
 
-          {/* Status Filter Chips */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-            {['all', 'new', 'under_confirmation', 'preparing', 'out_for_delivery', 'delivered', 'cancelled'].map(st => (
-              <button
-                key={st}
-                type="button"
-                onClick={() => setOrderStatusFilter(st)}
-                className={`px-3 py-1 rounded-full text-xs font-bold shrink-0 transition-all cursor-pointer ${
-                  orderStatusFilter === st
-                    ? 'bg-[#111113] dark:bg-[#F7F6F3] text-white dark:text-[#111113]'
-                    : 'bg-[#F3F1EC] dark:bg-[#18181D] text-[#5A5854] dark:text-[#B5B0A8] border border-[#E6E2D8] dark:border-[#23232A]'
-                }`}
-              >
-                {st === 'all' ? 'كافة الحالات' : st}
-              </button>
-            ))}
+          {/* Status & Payment Status Filters */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+              {['all', 'new', 'under_confirmation', 'preparing', 'out_for_delivery', 'delivered', 'cancelled'].map(st => (
+                <button
+                  key={st}
+                  type="button"
+                  onClick={() => setOrderStatusFilter(st)}
+                  className={`px-3 py-1 rounded-full text-xs font-bold shrink-0 transition-all cursor-pointer ${
+                    orderStatusFilter === st
+                      ? 'bg-[#111113] dark:bg-[#F7F6F3] text-white dark:text-[#111113]'
+                      : 'bg-[#F3F1EC] dark:bg-[#18181D] text-[#5A5854] dark:text-[#B5B0A8] border border-[#E6E2D8] dark:border-[#23232A]'
+                  }`}
+                >
+                  {st === 'all' ? 'كافة الحالات' : st}
+                </button>
+              ))}
+            </div>
+
+            <select
+              value={orderPaymentFilter}
+              onChange={(e) => setOrderPaymentFilter(e.target.value)}
+              className="text-xs py-1.5 px-3 rounded-xl border border-[#E6E2D8] dark:border-[#23232A] bg-[#F3F1EC] dark:bg-[#18181D] text-[#111113] dark:text-[#F7F6F3] font-bold cursor-pointer shrink-0"
+              aria-label="Payment Status Filter"
+            >
+              <option value="all">كل حالات الدفع</option>
+              <option value="Paid">مدفوع (Paid)</option>
+              <option value="Cash on Delivery">الدفع عند الاستلام</option>
+              <option value="Awaiting Bank Transfer">بانتظار التحويل</option>
+              <option value="Payment Verification">قيد مراجعة الوصل</option>
+              <option value="Pending Payment">بانتظار الدفع</option>
+              <option value="Payment Failed">فشل الدفع</option>
+              <option value="Cancelled">ملغى (Cancelled)</option>
+              <option value="Refunded">مسترجع (Refunded)</option>
+            </select>
           </div>
+
+          {orderStatusSuccess && (
+            <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-xs font-bold text-emerald-700 dark:text-emerald-300 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>{orderStatusSuccess}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOrderStatusSuccess(null)}
+                className="text-[#7A756D] dark:text-[#8E8980] hover:text-[#111113] dark:hover:text-[#F7F6F3] cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
 
           {orderStatusError && (
             <div className="p-3.5 rounded-2xl bg-red-500/10 border border-red-500/30 text-xs font-bold text-red-600 dark:text-red-400 flex items-center justify-between gap-2">
@@ -3422,31 +3465,91 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   {/* Status Selection */}
                   <div className="pt-2 border-t border-[#E6E2D8] dark:border-[#23232A] flex items-center justify-between gap-2">
                     <span className="text-[11px] font-bold text-[#7A756D] dark:text-[#8E8980]">حالة الشحن:</span>
-                    <select
-                      value={o.status}
-                      onChange={async e => {
-                        const targetStatus = e.target.value as OrderStatus;
-                        setOrderStatusError(null);
-                        const res = await updateOrderStatus(o.id, targetStatus);
-                        if (!res.ok) {
-                          setOrderStatusError(res.error || t.payments.shippingBlockedUnpaid);
-                        }
-                      }}
-                      className="text-xs py-1 px-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418] font-bold text-[#111113] dark:text-[#F7F6F3] cursor-pointer"
-                    >
-                      <option value="new" className="bg-white dark:bg-[#141418] text-[#111113] dark:text-[#F7F6F3]">جديد (New)</option>
-                      <option value="under_confirmation" className="bg-white dark:bg-[#141418] text-[#111113] dark:text-[#F7F6F3]">قيد التأكيد (Confirmation)</option>
-                      <option value="preparing" disabled={!shipAllowed} className="bg-white dark:bg-[#141418] text-[#111113] dark:text-[#F7F6F3]">قيد التجهيز (Preparing)</option>
-                      <option value="out_for_delivery" disabled={!shipAllowed} className="bg-white dark:bg-[#141418] text-[#111113] dark:text-[#F7F6F3]">خرج للتسليم (Out for delivery)</option>
-                      <option value="delivered" disabled={!shipAllowed} className="bg-white dark:bg-[#141418] text-[#111113] dark:text-[#F7F6F3]">تم التسليم (Delivered)</option>
-                      <option value="cancelled" className="bg-white dark:bg-[#141418] text-[#111113] dark:text-[#F7F6F3]">ملغى (Cancelled)</option>
-                    </select>
+                      <select
+                        value={o.status}
+                        onChange={async e => {
+                          const targetStatus = e.target.value as OrderStatus;
+                          setOrderStatusError(null);
+                          setOrderStatusSuccess(null);
+                          if (targetStatus === 'cancelled' && o.status !== 'cancelled') {
+                            setCancelReasonInput('');
+                            setCancelOrderPrompt({ orderId: o.id, trackingNumber: o.trackingNumber });
+                            return;
+                          }
+                          const res = await updateOrderStatus(o.id, targetStatus);
+                          if (!res.ok) {
+                            setOrderStatusError(res.error || t.payments.shippingBlockedUnpaid);
+                          } else {
+                            setOrderStatusSuccess(`تم تحديث حالة الطلب ${o.trackingNumber} إلى ${targetStatus}`);
+                          }
+                        }}
+                        className="text-xs py-1 px-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418] font-bold text-[#111113] dark:text-[#F7F6F3] cursor-pointer"
+                      >
+                        <option value="new" className="bg-white dark:bg-[#141418] text-[#111113] dark:text-[#F7F6F3]">جديد (New)</option>
+                        <option value="under_confirmation" className="bg-white dark:bg-[#141418] text-[#111113] dark:text-[#F7F6F3]">قيد التأكيد (Confirmation)</option>
+                        <option value="preparing" disabled={!shipAllowed} className="bg-white dark:bg-[#141418] text-[#111113] dark:text-[#F7F6F3]">قيد التجهيز (Preparing)</option>
+                        <option value="out_for_delivery" disabled={!shipAllowed} className="bg-white dark:bg-[#141418] text-[#111113] dark:text-[#F7F6F3]">خرج للتسليم (Out for delivery)</option>
+                        <option value="delivered" disabled={!shipAllowed} className="bg-white dark:bg-[#141418] text-[#111113] dark:text-[#F7F6F3]">تم التسليم (Delivered)</option>
+                        <option value="cancelled" className="bg-white dark:bg-[#141418] text-[#111113] dark:text-[#F7F6F3]">ملغى (Cancelled)</option>
+                      </select>
+                    </div>
                   </div>
-                </div>
                 );
               })
             )}
           </div>
+
+          {cancelOrderPrompt && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs"
+              onClick={() => setCancelOrderPrompt(null)}
+            >
+              <div
+                className="w-full max-w-md rounded-3xl bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#23232A] p-5 space-y-4 shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h4 className="text-sm font-black">
+                  تأكيد إلغاء الطلب ({cancelOrderPrompt.trackingNumber})
+                </h4>
+                <p className="text-xs text-[#5A5854] dark:text-[#B5B0A8]">
+                  سيتم إلغاء الطلب وإرجاع الكميات المخصومة إلى المخزون تلقائياً لمرة واحدة وتسجيل ذلك في سجل المخزون.
+                </p>
+                <textarea
+                  rows={3}
+                  value={cancelReasonInput}
+                  onChange={(e) => setCancelReasonInput(e.target.value)}
+                  placeholder="سبب الإلغاء (اختياري)..."
+                  className="w-full text-xs p-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent outline-none focus:border-[#FF6B00]"
+                />
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCancelOrderPrompt(null)}
+                    className="px-4 py-2 rounded-xl bg-[#F3F1EC] dark:bg-[#18181D] text-xs font-bold cursor-pointer"
+                  >
+                    تراجع
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const target = cancelOrderPrompt;
+                      const reason = cancelReasonInput.trim() || 'Cancelled by admin';
+                      setCancelOrderPrompt(null);
+                      const res = await updateOrderStatus(target.orderId, 'cancelled', reason, reason);
+                      if (!res.ok) {
+                        setOrderStatusError(res.error || 'تعذر إلغاء الطلب');
+                      } else {
+                        setOrderStatusSuccess(`تم إلغاء الطلب ${target.trackingNumber} وإرجاع المخزون بنجاح ✓`);
+                      }
+                    }}
+                    className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold cursor-pointer"
+                  >
+                    تأكيد الإلغاء وإرجاع المخزون
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

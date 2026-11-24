@@ -209,6 +209,8 @@ async function run(): Promise<void> {
     const validData = (await validRes.json()) as any;
     assertTrue(validData.success === true, 'Checkout response success === true');
     const order = validData.order;
+    const trackingToken: string = validData.trackingToken;
+    assertTrue(typeof trackingToken === 'string' && trackingToken.length >= 16, 'Checkout returns trackingToken');
     assertEq(order.customerEmail, '', 'Empty optional email persisted safely as empty string');
     assertEq(order.customerPhone, '+216 55 123 456', 'Tunisian phone normalized cleanly');
     assertEq(order.shippingAddress.governorate, 'sfax', 'Governorate saved separately');
@@ -223,21 +225,25 @@ async function run(): Promise<void> {
     assertEq(order.shippingFee, expectedShipping, 'Existing shipping fee rules preserved');
     assertEq(order.subtotal, prod.price, 'Subtotal matches product price');
 
-    // Verify public tracking returns separate governorate & delegation with masked PII, and unmasks with phone proof
-    const trackRes = await fetch(`${baseUrl}/api/payments/track/${encodeURIComponent(order.trackingNumber)}`);
-    assertEq(trackRes.status, 200, 'Public tracking returns 200 for new order');
+    // Verify public tracking requires trackingToken, rejects phone-only, and masks guest PII while returning governorate & delegation
+    const anonTrackRes = await fetch(`${baseUrl}/api/payments/track/${encodeURIComponent(order.trackingNumber)}`);
+    assertEq(anonTrackRes.status, 401, 'Anonymous tracking without token rejected (401)');
+
+    const phoneOnlyTrackRes = await fetch(`${baseUrl}/api/payments/track/${encodeURIComponent(order.trackingNumber)}?phone=55123456`);
+    assertEq(phoneOnlyTrackRes.status, 401, 'Phone-only tracking rejected (401)');
+
+    const trackRes = await fetch(`${baseUrl}/api/payments/track`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trackingNumber: order.trackingNumber, trackingToken }),
+    });
+    assertEq(trackRes.status, 200, 'Token-authorized tracking returns 200 for new order');
     const trackJson = (await trackRes.json()) as any;
-    assertEq(trackJson.order.piiMasked, true, 'Anonymous tracking marks PII as masked');
-    assertEq(trackJson.order.shippingAddress.street, '***', 'Anonymous tracking masks street address');
+    assertEq(trackJson.order.piiMasked, true, 'Guest token tracking marks PII as masked');
+    assertEq(trackJson.order.shippingAddress.street, '***', 'Guest token tracking masks street address');
     assertEq(trackJson.order.shippingAddress.governorate, 'sfax', 'Tracked order exposes governorate');
     assertEq(trackJson.order.shippingAddress.delegation, 'ساقية الزيت', 'Tracked order exposes delegation');
     assertEq(getGovernorateName(trackJson.order.shippingAddress.governorate, 'ar'), 'صفاقس', 'Governorate name resolves');
-
-    const unmaskedTrackRes = await fetch(`${baseUrl}/api/payments/track/${encodeURIComponent(order.trackingNumber)}?phone=55123456`);
-    assertEq(unmaskedTrackRes.status, 200, 'Tracking with phone proof returns 200');
-    const unmaskedTrackJson = (await unmaskedTrackRes.json()) as any;
-    assertEq(unmaskedTrackJson.order.piiMasked, false, 'Matching phone proof unmasks recipient PII');
-    assertEq(unmaskedTrackJson.order.shippingAddress.street, 'حي الأنس نهج الزيتون منزل 14', 'Unmasked street returned with phone proof');
 
     // Verify admin sees full order & notification includes governorate + delegation
     const codeRes = await fetch(`${baseUrl}/api/security/verifyAccessCode`, {

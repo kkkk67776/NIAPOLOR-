@@ -1,12 +1,16 @@
 import type {
+  CouponRule,
   FinancialActivityLog,
+  InventoryAuditEntry,
   Order,
+  OrderItem,
   OrderStatus,
   PaymentMethodType,
   PaymentStatus,
   PaymentSystemPublicConfig,
   PaymentTransaction,
   PosteCcpTransferDetails,
+  Product,
   RefundRequest,
   SupportTransaction,
   TransferProof,
@@ -14,6 +18,24 @@ import type {
   VendorSubOrder,
 } from '../types';
 import { getAdminAuthHeaders, notifySessionExpired } from './security';
+
+export interface ServerQuoteResponse {
+  ok: boolean;
+  priceChanged?: boolean;
+  code?: string;
+  error?: string;
+  updatedPrices?: Array<{ productId: string; oldPrice: number; newPrice: number }>;
+  verifiedItems?: OrderItem[];
+  subtotal?: number;
+  discount?: number;
+  coupon?: CouponRule | null;
+  taxAmount?: number;
+  shippingFee?: number;
+  estimatedDelivery?: string;
+  freeShippingApplied?: boolean;
+  totalAmount?: number;
+  currency?: string;
+}
 
 export interface AdminPaymentOverviewResponse {
   config: PaymentSystemPublicConfig;
@@ -34,6 +56,7 @@ export interface AdminPaymentOverviewResponse {
   supportTransactions: SupportTransaction[];
   supportTotalPaid: number;
   activityLogs: FinancialActivityLog[];
+  inventoryLogs?: InventoryAuditEntry[];
 }
 
 export interface ScopedVendorFinancialsResponse {
@@ -183,61 +206,210 @@ export async function fetchPosteCcpTransferDetails(): Promise<{
   };
 }
 
-export async function trackOrderServer(code: string, phone?: string): Promise<{ ok: boolean; order?: Order; error?: string }> {
-  const qs = phone && phone.trim() ? `?phone=${encodeURIComponent(phone.trim())}` : '';
-  const res = await fetch(`/api/payments/track/${encodeURIComponent(code)}${qs}`, { cache: 'no-store' });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || !data.success) {
-    return { ok: false, error: data.error || 'Order not found' };
+const GUEST_TOKENS_STORAGE_KEY = 'echox_guest_tracking_tokens';
+
+export function saveGuestTrackingToken(trackingNumber: string, token?: string): void {
+  if (typeof window === 'undefined' || !trackingNumber || !token) return;
+  try {
+    const cleanNum = trackingNumber.trim().toUpperCase();
+    const cleanTok = token.trim();
+    if (!cleanNum || !cleanTok) return;
+    const raw = window.localStorage.getItem(GUEST_TOKENS_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+    const next: Record<string, string> = { ...(parsed && typeof parsed === 'object' ? parsed : {}), [cleanNum]: cleanTok };
+    const entries = Object.entries(next).slice(-40);
+    window.localStorage.setItem(GUEST_TOKENS_STORAGE_KEY, JSON.stringify(Object.fromEntries(entries)));
+  } catch {
+    // ignore storage quota errors
   }
-  return { ok: true, order: data.order };
 }
 
-export async function submitServerCheckout(payload: {
-  customerId?: string;
-  customerName: string;
-  customerEmail?: string;
-  customerPhone: string;
-  shippingAddress: Order['shippingAddress'];
+export function getGuestTrackingToken(trackingNumber: string): string | undefined {
+  if (typeof window === 'undefined' || !trackingNumber) return undefined;
+  try {
+    const cleanNum = trackingNumber.trim().toUpperCase();
+    const raw = window.localStorage.getItem(GUEST_TOKENS_STORAGE_KEY);
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw) as Record<string, string>;
+    const val = parsed?.[cleanNum];
+    return typeof val === 'string' && val.trim().length > 0 ? val.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function trackOrderServer(
+  code: string,
+  options?: { trackingToken?: string }
+): Promise<{ ok: boolean; statusCode?: number; order?: Order; error?: string }> {
+  const cleanCode = (code || '').trim();
+  const effectiveToken = options?.trackingToken?.trim() || getGuestTrackingToken(cleanCode);
+  const res = await fetch('/api/payments/track', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(effectiveToken ? { 'x-tracking-token': effectiveToken } : {}),
+    },
+    credentials: 'include',
+    cache: 'no-store',
+    body: JSON.stringify({
+      trackingNumber: cleanCode,
+      ...(effectiveToken ? { trackingToken: effectiveToken } : {}),
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) {
+    return { ok: false, statusCode: res.status, error: data.error || 'Order not found' };
+  }
+  return { ok: true, statusCode: res.status, order: data.order };
+}
+
+export async function quoteServerOrder(payload: {
   items: Array<{
     productId: string;
-    productName: { ar: string; fr: string; en: string };
+    productName?: { ar: string; fr: string; en: string };
     productImage?: string;
-    unitPrice: number;
+    unitPrice?: number;
     quantity: number;
-    companyId?: string;
-    companyName?: string;
   }>;
+  governorate?: string;
+  delegation?: string;
   couponCode?: string;
-  paymentMethod: PaymentMethodType;
-  clientExpectedTotal?: number;
-  carrierName?: string;
-  notes?: string;
-  transferProof?: Partial<TransferProof>;
-  clientRequestId?: string;
-}): Promise<{
+}): Promise<ServerQuoteResponse> {
+  const res = await fetch('/api/payments/quote', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    cache: 'no-store',
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) {
+    return {
+      ok: false,
+      code: data.code,
+      error: data.error || 'Failed to compute server order quote',
+    };
+  }
+  return {
+    ok: true,
+    priceChanged: Boolean(data.priceChanged),
+    code: data.code,
+    updatedPrices: data.updatedPrices,
+    verifiedItems: data.verifiedItems,
+    subtotal: data.subtotal,
+    discount: data.discount,
+    coupon: data.coupon,
+    taxAmount: data.taxAmount,
+    shippingFee: data.shippingFee,
+    estimatedDelivery: data.estimatedDelivery,
+    freeShippingApplied: data.freeShippingApplied,
+    totalAmount: data.totalAmount,
+    currency: data.currency,
+  };
+}
+
+export async function applyServerCoupon(payload: {
+  couponCode: string;
+  items?: Array<{ productId: string; quantity: number }>;
+  subtotal?: number;
+}): Promise<{ ok: boolean; discount?: number; coupon?: CouponRule | null; error?: string; code?: string }> {
+  const res = await fetch('/api/payments/apply-coupon', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    cache: 'no-store',
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) {
+    return { ok: false, code: data.code, error: data.error || 'Invalid coupon' };
+  }
+  return { ok: true, discount: data.discount, coupon: data.coupon };
+}
+
+export async function recoverCheckoutStatus(clientRequestId: string): Promise<{
   ok: boolean;
+  found: boolean;
   order?: Order;
   transaction?: PaymentTransaction;
   paymentUrl?: string;
+  trackingToken?: string;
   transferDetails?: PosteCcpTransferDetails;
+}> {
+  const res = await fetch('/api/payments/checkout/status', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    cache: 'no-store',
+    body: JSON.stringify({ clientRequestId }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.ok) {
+    return { ok: false, found: false };
+  }
+  return data;
+}
+
+export async function submitServerCheckout(
+  payload: {
+    customerId?: string;
+    customerName: string;
+    customerEmail?: string;
+    customerPhone: string;
+    shippingAddress: Order['shippingAddress'];
+    items: Array<{
+      productId: string;
+      productName: { ar: string; fr: string; en: string };
+      productImage?: string;
+      unitPrice: number;
+      quantity: number;
+      companyId?: string;
+      companyName?: string;
+    }>;
+    couponCode?: string;
+    paymentMethod: PaymentMethodType;
+    clientExpectedTotal?: number;
+    carrierName?: string;
+    notes?: string;
+    transferProof?: Partial<TransferProof>;
+    clientRequestId?: string;
+  },
+  options?: { signal?: AbortSignal }
+): Promise<{
+  ok: boolean;
+  code?: string;
+  order?: Order;
+  transaction?: PaymentTransaction;
+  paymentUrl?: string;
+  trackingToken?: string;
+  transferDetails?: PosteCcpTransferDetails;
+  updatedPrices?: Array<{ productId: string; oldPrice: number; newPrice: number }>;
+  updatedQuote?: ServerQuoteResponse;
   error?: string;
 }> {
   const res = await fetch('/api/payments/checkout', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
+    signal: options?.signal,
     body: JSON.stringify(payload),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.success) {
-    return { ok: false, error: data.error || 'Checkout validation failed' };
+    return {
+      ok: false,
+      code: data.code,
+      error: data.error || 'Checkout validation failed',
+      updatedPrices: data.updatedPrices,
+      updatedQuote: data.updatedQuote,
+    };
   }
   return {
     ok: true,
     order: data.order,
     transaction: data.transaction,
     paymentUrl: data.paymentUrl,
+    trackingToken: data.trackingToken,
     transferDetails: data.transferDetails,
   };
 }
@@ -274,18 +446,22 @@ export async function verifyGatewayReturnClient(params: {
 
 export async function submitBankTransferProofClient(payload: {
   trackingNumber: string;
-  customerPhone?: string;
+  trackingToken?: string;
   referenceNumber: string;
   senderName: string;
   transferDate?: string;
   receiptImageDataUrl?: string;
   notes?: string;
 }): Promise<{ ok: boolean; order?: Order; error?: string }> {
+  const token = payload.trackingToken?.trim() || getGuestTrackingToken(payload.trackingNumber);
   const res = await fetch('/api/payments/bank-transfer/proof', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { 'x-tracking-token': token } : {}),
+    },
     credentials: 'include',
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ...payload, ...(token ? { trackingToken: token } : {}) }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.success) {
@@ -296,18 +472,22 @@ export async function submitBankTransferProofClient(payload: {
 
 export async function submitPosteCcpProofClient(payload: {
   trackingNumber: string;
-  customerPhone?: string;
+  trackingToken?: string;
   referenceNumber: string;
   senderName: string;
   transferDate?: string;
   receiptImageDataUrl?: string;
   notes?: string;
 }): Promise<{ ok: boolean; order?: Order; error?: string }> {
+  const token = payload.trackingToken?.trim() || getGuestTrackingToken(payload.trackingNumber);
   const res = await fetch('/api/payments/poste-ccp/proof', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { 'x-tracking-token': token } : {}),
+    },
     credentials: 'include',
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ...payload, ...(token ? { trackingToken: token } : {}) }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.success) {
@@ -318,13 +498,18 @@ export async function submitPosteCcpProofClient(payload: {
 
 export async function submitRefundOrCancelRequest(payload: {
   trackingNumber: string;
-  customerPhone?: string;
+  trackingToken?: string;
   reason: string;
 }): Promise<{ ok: boolean; error?: string }> {
+  const token = payload.trackingToken?.trim() || getGuestTrackingToken(payload.trackingNumber);
   const res = await fetch('/api/payments/request-refund', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { 'x-tracking-token': token } : {}),
+    },
+    credentials: 'include',
+    body: JSON.stringify({ ...payload, ...(token ? { trackingToken: token } : {}) }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.success) {
@@ -382,8 +567,17 @@ export async function fetchAdminPaymentOverview(): Promise<AdminPaymentOverviewR
   return data;
 }
 
-export async function fetchAdminOrders(): Promise<Order[]> {
-  const res = await fetch('/api/admin/orders', {
+export async function fetchAdminOrders(filters?: {
+  q?: string;
+  status?: string;
+  paymentStatus?: string;
+}): Promise<Order[]> {
+  const qs = new URLSearchParams();
+  if (filters?.q) qs.set('q', filters.q);
+  if (filters?.status) qs.set('status', filters.status);
+  if (filters?.paymentStatus) qs.set('paymentStatus', filters.paymentStatus);
+  const queryStr = qs.toString() ? `?${qs.toString()}` : '';
+  const res = await fetch(`/api/admin/orders${queryStr}`, {
     credentials: 'include',
     cache: 'no-store',
     headers: getAdminAuthHeaders(),
@@ -547,7 +741,17 @@ export async function verifyAdminSupportTransaction(id: string, action: 'approve
 }
 
 export async function syncAdminCatalogToPaymentEngine(
-  products: Array<{ id: string; price: number; companyId?: string; companyName?: string; active?: boolean }>
+  products: Array<{
+    id: string;
+    sku?: string;
+    name?: Product['name'];
+    images?: string[];
+    stock?: number;
+    price: number;
+    companyId?: string;
+    companyName?: string;
+    active?: boolean;
+  }>
 ): Promise<void> {
   try {
     await fetch('/api/admin/payments/catalog-sync', {

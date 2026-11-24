@@ -18,6 +18,8 @@ import {
 import { appendEdgeAdminNotification, handleEdgeNotificationsRoute } from '../_lib/notificationsEdge';
 import { handleEdgePaymentsRoute } from '../_lib/paymentsEdge';
 import { handleEdgeStoreRoute } from '../_lib/storeEdge';
+import { handleEdgeCustomerRoute } from '../_lib/customerEdge';
+import { resolveSharedHmacSecret } from '../_lib/firestoreEdge';
 
 const DEFAULT_RENDER_BACKEND = 'https://echox-store.onrender.com';
 const CLOUD_SECURITY_KEY = 'echox:central_security_config';
@@ -119,6 +121,7 @@ async function handleEdgeSecurityRoute(
   }
 
   if (method === 'GET' && pathname === '/api/security/systemStatus') {
+    const hmacReady = Boolean(await resolveSharedHmacSecret(env));
     const adminSess = await verifyEdgeOwnerSession(request, env);
     const isAdmin = Boolean(adminSess && adminSess.codeVerified);
     if (!isAdmin) {
@@ -126,6 +129,8 @@ async function handleEdgeSecurityRoute(
         argon2idEnabled: true,
         hashingAlgorithm: 'Argon2id (m=65536, t=3, p=4)',
         serverSideEnforced: true,
+        hmacConfigured: hmacReady,
+        securityReady: hmacReady,
         accessCodeConfigured: true,
         pinConfigured: true,
         edgeMode: true,
@@ -138,6 +143,8 @@ async function handleEdgeSecurityRoute(
       argon2idEnabled: true,
       hashingAlgorithm: 'Argon2id (m=65536, t=3, p=4)',
       serverSideEnforced: true,
+      hmacConfigured: hmacReady,
+      securityReady: hmacReady,
       storageMode: persistence.storageMode,
       durablePersistence: persistence.durable,
       persistence,
@@ -453,7 +460,7 @@ export async function onRequest(context: EdgeContext): Promise<Response> {
         'Access-Control-Allow-Credentials': 'true',
         'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
         'Access-Control-Allow-Headers':
-          'Content-Type, Authorization, X-CSRF-Token, X-File-Name, X-Chat-Token, X-Tracking-Phone',
+          'Content-Type, Authorization, X-CSRF-Token, X-File-Name, X-Chat-Token, X-Tracking-Phone, X-Requested-With',
         'Cache-Control': 'no-store',
         'X-Robots-Tag': 'noindex, nofollow',
       },
@@ -501,8 +508,41 @@ export async function onRequest(context: EdgeContext): Promise<Response> {
       });
     }
 
+    const isSensitiveEdgePath =
+      pathname === '/api/createOwnerSession' ||
+      pathname.startsWith('/api/owner/') ||
+      (pathname.startsWith('/api/security/') &&
+        pathname !== '/api/security/status' &&
+        pathname !== '/api/security/systemStatus') ||
+      pathname.startsWith('/api/admin/') ||
+      pathname.startsWith('/api/customer/') ||
+      (pathname.startsWith('/api/payments/') &&
+        pathname !== '/api/payments/config' &&
+        !pathname.startsWith('/api/payments/track/')) ||
+      pathname.startsWith('/api/support/') ||
+      pathname.startsWith('/api/vendor/') ||
+      pathname.startsWith('/api/chat/session/') ||
+      pathname.startsWith('/api/notifications/public/');
+
+    if (isSensitiveEdgePath && !(await resolveSharedHmacSecret(env))) {
+      return jsonResponse(
+        {
+          success: false,
+          code: 'HMAC_SECRET_NOT_CONFIGURED',
+          error:
+            'تعذر تشغيل الوظائف الأمنية الحساسة: متغير البيئة ECHOX_SECURITY_HMAC_SECRET غير مضبوط أو أقصر من 32 بايت.',
+        },
+        503
+      );
+    }
+
     const secResponse = await handleEdgeSecurityRoute(edgeReq, env, pathname, waitUntil, rawBodyText);
     if (secResponse) return secResponse;
+
+    if (pathname.startsWith('/api/customer/')) {
+      const custResponse = await handleEdgeCustomerRoute(edgeReq, env, pathname);
+      if (custResponse) return custResponse;
+    }
 
     if (pathname.startsWith('/api/store/') || pathname.startsWith('/api/admin/store/')) {
       const storeResponse = await handleEdgeStoreRoute(edgeReq, env, pathname, waitUntil);

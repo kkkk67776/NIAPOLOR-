@@ -19,8 +19,14 @@ import {
   XCircle,
   Loader2,
   FileImage,
+  Truck,
+  Tag,
+  Package,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
+import { TUNISIAN_GOVERNORATES } from '../data/governorates';
 import {
   AdminPaymentOverviewResponse,
   fetchAdminPaymentOverview,
@@ -33,9 +39,22 @@ import {
   verifyAdminPaymentAction,
   verifyAdminSupportTransaction,
 } from '../lib/payments';
-import { Order, PaymentStatus } from '../types';
+import {
+  CouponRule,
+  GovernorateShippingRule,
+  Order,
+  PaymentStatus,
+} from '../types';
 
-type SubTab = 'settings' | 'ccp_reviews' | 'transactions' | 'vendors' | 'support' | 'logs';
+type SubTab =
+  | 'settings'
+  | 'shipping_coupons'
+  | 'ccp_reviews'
+  | 'transactions'
+  | 'vendors'
+  | 'support'
+  | 'logs'
+  | 'inventory';
 
 export const PaymentManagementTab: React.FC = () => {
   const {
@@ -137,6 +156,25 @@ export const PaymentManagementTab: React.FC = () => {
   } | null>(null);
   const [reasonText, setReasonText] = useState('');
 
+  // Governorate Shipping Rules & Coupons Manager states
+  const [shippingRules, setShippingRules] = useState<Record<string, GovernorateShippingRule>>(
+    paymentConfig.shippingRules || {}
+  );
+  const [selectedGovOverride, setSelectedGovOverride] = useState<string>('tunis');
+  const [overrideDelName, setOverrideDelName] = useState('');
+  const [overrideDelFee, setOverrideDelFee] = useState('');
+  const [overrideDelEst, setOverrideDelEst] = useState('');
+  const [overrideDelEnabled, setOverrideDelEnabled] = useState(true);
+
+  const [coupons, setCoupons] = useState<CouponRule[]>(paymentConfig.coupons || []);
+  const [newCouponCode, setNewCouponCode] = useState('');
+  const [newCouponType, setNewCouponType] = useState<'percentage' | 'fixed'>('percentage');
+  const [newCouponValue, setNewCouponValue] = useState('10');
+  const [newCouponMin, setNewCouponMin] = useState('');
+  const [newCouponMax, setNewCouponMax] = useState('');
+  const [newCouponExpires, setNewCouponExpires] = useState('');
+  const [savingShippingCoupons, setSavingShippingCoupons] = useState(false);
+
   const showBanner = (type: 'ok' | 'err', text: string) => {
     setBannerMsg({ type, text });
     setTimeout(() => setBannerMsg(null), 6000);
@@ -148,6 +186,10 @@ export const PaymentManagementTab: React.FC = () => {
       await syncAdminCatalogToPaymentEngine(
         products.map((p) => ({
           id: p.id,
+          sku: p.sku,
+          name: p.name,
+          images: p.images,
+          stock: p.stock,
           price: p.price,
           companyId: p.companyId,
           companyName: p.companyName,
@@ -166,9 +208,19 @@ export const PaymentManagementTab: React.FC = () => {
       setTaxRate(String(cfg.taxRatePercent));
       if (typeof cfg.standardShippingFee === 'number') {
         setShippingFee(String(cfg.standardShippingFee));
+      } else if (cfg.standardShippingFee === null) {
+        setShippingFee('');
       }
       if (typeof cfg.freeShippingThreshold === 'number') {
         setFreeShippingThreshold(String(cfg.freeShippingThreshold));
+      } else if (cfg.freeShippingThreshold === null) {
+        setFreeShippingThreshold('');
+      }
+      if (cfg.shippingRules) {
+        setShippingRules(cfg.shippingRules);
+      }
+      if (Array.isArray(cfg.coupons)) {
+        setCoupons(cfg.coupons);
       }
       setCodEnabled(cfg.methods.cod.enabled);
       setPosteCcpEnabled(cfg.methods.poste_ccp?.enabled ?? true);
@@ -198,15 +250,17 @@ export const PaymentManagementTab: React.FC = () => {
     setSavingConfig(true);
     const parsedComm = parseFloat(commissionRate);
     const parsedTax = parseFloat(taxRate);
-    const parsedShipFee = parseFloat(shippingFee);
-    const parsedFreeThresh = parseFloat(freeShippingThreshold);
+    const parsedShipFee = shippingFee.trim() === '' ? null : parseFloat(shippingFee);
+    const parsedFreeThresh = freeShippingThreshold.trim() === '' ? null : parseFloat(freeShippingThreshold);
 
     const payload: any = {
       currency,
       commissionRatePercent: Number.isFinite(parsedComm) ? parsedComm : 10,
       taxRatePercent: Number.isFinite(parsedTax) ? parsedTax : 0,
-      standardShippingFee: Number.isFinite(parsedShipFee) ? parsedShipFee : 8,
-      freeShippingThreshold: Number.isFinite(parsedFreeThresh) ? parsedFreeThresh : 200,
+      standardShippingFee: parsedShipFee === null ? null : (Number.isFinite(parsedShipFee) ? parsedShipFee : 8),
+      freeShippingThreshold: parsedFreeThresh === null ? null : (Number.isFinite(parsedFreeThresh) ? parsedFreeThresh : 200),
+      shippingRules,
+      coupons,
       codEnabled,
       posteCcpEnabled,
       bankTransfer: {
@@ -270,8 +324,8 @@ export const PaymentManagementTab: React.FC = () => {
 
     // Keep SiteSettings shipping & bank flag aligned
     updateSiteSettings({
-      standardShippingFee: Number.isFinite(parsedShipFee) ? parsedShipFee : siteSettings.standardShippingFee,
-      freeShippingThreshold: Number.isFinite(parsedFreeThresh)
+      standardShippingFee: parsedShipFee !== null && Number.isFinite(parsedShipFee) ? parsedShipFee : siteSettings.standardShippingFee,
+      freeShippingThreshold: parsedFreeThresh !== null && Number.isFinite(parsedFreeThresh)
         ? parsedFreeThresh
         : siteSettings.freeShippingThreshold,
       enableCOD: codEnabled,
@@ -496,6 +550,11 @@ export const PaymentManagementTab: React.FC = () => {
               icon: CreditCard,
             },
             {
+              id: 'shipping_coupons' as SubTab,
+              label: language === 'ar' ? 'الشحن والولايات والكوبونات' : 'Shipping & Coupons',
+              icon: Truck,
+            },
+            {
               id: 'ccp_reviews' as SubTab,
               label:
                 (language === 'ar' ? 'مراجعة تحويلات Poste / CCP' : 'Poste / CCP Reviews') +
@@ -527,6 +586,13 @@ export const PaymentManagementTab: React.FC = () => {
               id: 'logs' as SubTab,
               label: language === 'ar' ? 'سجل التدقيق المالي' : 'Financial Logs',
               icon: History,
+            },
+            {
+              id: 'inventory' as SubTab,
+              label:
+                (language === 'ar' ? 'سجل المخزون' : 'Inventory Logs') +
+                ` (${overview?.inventoryLogs?.length || 0})`,
+              icon: Package,
             },
           ].map((item) => {
             const Icon = item.icon;
@@ -1707,6 +1773,383 @@ export const PaymentManagementTab: React.FC = () => {
         </div>
       )}
 
+      {/* SUB-TAB 1.2: GOVERNORATE SHIPPING MATRIX & DYNAMIC COUPONS */}
+      {subTab === 'shipping_coupons' && (
+        <div className="space-y-5">
+          {/* Governorate Shipping Matrix */}
+          <div className="p-4 sm:p-5 rounded-3xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-black flex items-center gap-2">
+                  <Truck className="w-4 h-4 text-[#FF6B00]" />
+                  <span>قواعد الشحن والتوصيل حسب الولاية والمعتمدية (24 ولاية)</span>
+                </h3>
+                <p className="text-[11px] text-[#7A756D] dark:text-[#8E8980] mt-0.5">
+                  تعطيل أي ولاية يمنع الطلب إليها نهائياً (HTTP 400). ترك المعلوم فارغاً يعتمد التسعيرة القياسية ما لم تكن فارغة أيضاً.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={savingShippingCoupons}
+                onClick={async () => {
+                  setSavingShippingCoupons(true);
+                  const res = await saveAdminPaymentConfig({ shippingRules, coupons });
+                  setSavingShippingCoupons(false);
+                  if (!res.ok) {
+                    showBanner('err', res.error || 'تعذر حفظ قواعد الشحن والكوبونات.');
+                  } else {
+                    await refreshPaymentConfig();
+                    await loadAll();
+                    showBanner('ok', 'تم حفظ قواعد الشحن والكوبونات على الخادم بنجاح ✓');
+                  }
+                }}
+                className="px-4 py-2 rounded-xl bg-[#FF6B00] hover:bg-[#e05e00] text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shrink-0 disabled:opacity-60"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>{savingShippingCoupons ? 'جاري الحفظ...' : 'حفظ قواعد الشحن والكوبونات'}</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 max-h-[380px] overflow-y-auto pe-1">
+              {TUNISIAN_GOVERNORATES.map((gov) => {
+                const rule: GovernorateShippingRule = shippingRules[gov.id] || {
+                  governorateId: gov.id,
+                  enabled: true,
+                  fee: null,
+                  estimatedDelivery: gov.deliveryEstimateDays,
+                };
+                return (
+                  <div
+                    key={gov.id}
+                    className="p-3 rounded-2xl bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#32323C] space-y-2 text-xs"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-black">
+                        {gov.nameAr} ({gov.nameFr})
+                      </span>
+                      <label className="flex items-center gap-1.5 cursor-pointer font-bold text-[11px]">
+                        <input
+                          type="checkbox"
+                          checked={rule.enabled !== false}
+                          onChange={(e) => {
+                            setShippingRules((prev) => ({
+                              ...prev,
+                              [gov.id]: { ...rule, governorateId: gov.id, enabled: e.target.checked },
+                            }));
+                          }}
+                          className="accent-[#FF6B00] w-3.5 h-3.5"
+                        />
+                        <span>{rule.enabled !== false ? 'مفعّل' : 'معطّل'}</span>
+                      </label>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] text-[#7A756D] dark:text-[#8E8980] block">المعلوم (د.ت)</label>
+                        <input
+                          type="number"
+                          step="0.5"
+                          min="0"
+                          placeholder="قياسي"
+                          value={typeof rule.fee === 'number' ? String(rule.fee) : ''}
+                          onChange={(e) => {
+                            const val = e.target.value.trim();
+                            const num = val === '' ? null : parseFloat(val);
+                            setShippingRules((prev) => ({
+                              ...prev,
+                              [gov.id]: {
+                                ...rule,
+                                governorateId: gov.id,
+                                fee: num !== null && Number.isFinite(num) ? num : null,
+                              },
+                            }));
+                          }}
+                          className="w-full text-[11px] py-1.5 px-2.5 rounded-lg border border-[#D6D0C4] dark:border-[#32323C] bg-transparent font-mono"
+                          dir="ltr"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-[#7A756D] dark:text-[#8E8980] block">مدة التوصيل</label>
+                        <input
+                          type="text"
+                          value={rule.estimatedDelivery || ''}
+                          onChange={(e) => {
+                            setShippingRules((prev) => ({
+                              ...prev,
+                              [gov.id]: {
+                                ...rule,
+                                governorateId: gov.id,
+                                estimatedDelivery: e.target.value,
+                              },
+                            }));
+                          }}
+                          placeholder="24-48 ساعة"
+                          className="w-full text-[11px] py-1.5 px-2.5 rounded-lg border border-[#D6D0C4] dark:border-[#32323C] bg-transparent"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Optional Delegation Override Editor */}
+            <div className="p-3.5 rounded-2xl bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#32323C] space-y-2.5 text-xs">
+              <p className="font-black">استثناء مخصص لمعتمدية (Delegation Override)</p>
+              <div className="grid grid-cols-1 sm:grid-cols-5 gap-2 items-center">
+                <select
+                  value={selectedGovOverride}
+                  onChange={(e) => setSelectedGovOverride(e.target.value)}
+                  className="text-xs py-2 px-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418] font-bold"
+                >
+                  {TUNISIAN_GOVERNORATES.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.nameAr}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="text"
+                  value={overrideDelName}
+                  onChange={(e) => setOverrideDelName(e.target.value)}
+                  placeholder="اسم المعتمدية..."
+                  className="text-xs py-2 px-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent"
+                />
+                <input
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  value={overrideDelFee}
+                  onChange={(e) => setOverrideDelFee(e.target.value)}
+                  placeholder="السعر (د.ت)"
+                  className="text-xs py-2 px-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent font-mono"
+                  dir="ltr"
+                />
+                <input
+                  type="text"
+                  value={overrideDelEst}
+                  onChange={(e) => setOverrideDelEst(e.target.value)}
+                  placeholder="المدة (مثال: نفس اليوم)"
+                  className="text-xs py-2 px-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent"
+                />
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-1 text-[11px] font-bold">
+                    <input
+                      type="checkbox"
+                      checked={overrideDelEnabled}
+                      onChange={(e) => setOverrideDelEnabled(e.target.checked)}
+                      className="accent-[#FF6B00]"
+                    />
+                    <span>مفعل</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const cleanDel = overrideDelName.trim();
+                      if (!cleanDel) return;
+                      const govRule = shippingRules[selectedGovOverride] || {
+                        governorateId: selectedGovOverride,
+                        enabled: true,
+                        fee: null,
+                        estimatedDelivery: '24-48 ساعة',
+                      };
+                      const numFee = overrideDelFee.trim() === '' ? undefined : parseFloat(overrideDelFee);
+                      setShippingRules((prev) => ({
+                        ...prev,
+                        [selectedGovOverride]: {
+                          ...govRule,
+                          delegationOverrides: {
+                            ...(govRule.delegationOverrides || {}),
+                            [cleanDel]: {
+                              enabled: overrideDelEnabled,
+                              ...(typeof numFee === 'number' && Number.isFinite(numFee) ? { fee: numFee } : {}),
+                              ...(overrideDelEst.trim() ? { estimatedDelivery: overrideDelEst.trim() } : {}),
+                            },
+                          },
+                        },
+                      }));
+                      setOverrideDelName('');
+                      setOverrideDelFee('');
+                      setOverrideDelEst('');
+                    }}
+                    className="px-3 py-2 rounded-xl bg-[#111113] dark:bg-[#FF6B00] text-white text-[11px] font-bold cursor-pointer shrink-0"
+                  >
+                    + إضافة
+                  </button>
+                </div>
+              </div>
+              {Object.entries(shippingRules[selectedGovOverride]?.delegationOverrides || {}).length > 0 && (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {Object.entries(shippingRules[selectedGovOverride]?.delegationOverrides || {}).map(([delKey, ov]) => (
+                    <span
+                      key={delKey}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#32323C] text-[11px]"
+                    >
+                      <strong>{delKey}</strong>
+                      <span>({ov.enabled === false ? 'معطل' : `${ov.fee ?? '—'} د.ت`})</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const govRule = shippingRules[selectedGovOverride];
+                          if (!govRule?.delegationOverrides) return;
+                          const nextOv = { ...govRule.delegationOverrides };
+                          delete nextOv[delKey];
+                          setShippingRules((prev) => ({
+                            ...prev,
+                            [selectedGovOverride]: { ...govRule, delegationOverrides: nextOv },
+                          }));
+                        }}
+                        className="text-red-600 font-bold cursor-pointer"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Dynamic Coupons Manager */}
+          <div className="p-4 sm:p-5 rounded-3xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] space-y-4">
+            <h3 className="text-sm font-black flex items-center gap-2">
+              <Tag className="w-4 h-4 text-[#FF6B00]" />
+              <span>إدارة كوبونات الخصم الخادمية (Coupons)</span>
+            </h3>
+
+            <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 items-center text-xs">
+              <input
+                type="text"
+                value={newCouponCode}
+                onChange={(e) => setNewCouponCode(e.target.value.toUpperCase())}
+                placeholder="الكود (SUMMER15)"
+                dir="ltr"
+                className="py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418] font-mono font-bold uppercase"
+              />
+              <select
+                value={newCouponType}
+                onChange={(e) => setNewCouponType(e.target.value as 'percentage' | 'fixed')}
+                className="py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418] font-bold"
+              >
+                <option value="percentage">نسبة %</option>
+                <option value="fixed">مبلغ ثابت ({currentCfg.currency})</option>
+              </select>
+              <input
+                type="number"
+                step="0.5"
+                min="0"
+                value={newCouponValue}
+                onChange={(e) => setNewCouponValue(e.target.value)}
+                placeholder="القيمة"
+                dir="ltr"
+                className="py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418] font-mono"
+              />
+              <input
+                type="number"
+                step="1"
+                min="0"
+                value={newCouponMin}
+                onChange={(e) => setNewCouponMin(e.target.value)}
+                placeholder="الحد الأدنى للطلب"
+                dir="ltr"
+                className="py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418] font-mono"
+              />
+              <input
+                type="number"
+                step="1"
+                min="0"
+                value={newCouponMax}
+                onChange={(e) => setNewCouponMax(e.target.value)}
+                placeholder="أقصى خصم"
+                dir="ltr"
+                className="py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418] font-mono"
+              />
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="date"
+                  value={newCouponExpires}
+                  onChange={(e) => setNewCouponExpires(e.target.value)}
+                  className="w-full py-2 px-2 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418] font-mono text-[11px]"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const clean = newCouponCode.trim().toUpperCase();
+                    const val = parseFloat(newCouponValue);
+                    if (!clean || !Number.isFinite(val) || val <= 0) return;
+                    const minVal = newCouponMin.trim() ? parseFloat(newCouponMin) : undefined;
+                    const maxVal = newCouponMax.trim() ? parseFloat(newCouponMax) : undefined;
+                    const nextRule: CouponRule = {
+                      code: clean,
+                      discountType: newCouponType,
+                      discountValue: val,
+                      active: true,
+                      ...(typeof minVal === 'number' && Number.isFinite(minVal) ? { minSubtotal: minVal } : {}),
+                      ...(typeof maxVal === 'number' && Number.isFinite(maxVal) ? { maxDiscount: maxVal } : {}),
+                      ...(newCouponExpires ? { expiresAt: new Date(`${newCouponExpires}T23:59:59Z`).toISOString() } : {}),
+                    };
+                    setCoupons((prev) => [...prev.filter((c) => c.code !== clean), nextRule]);
+                    setNewCouponCode('');
+                  }}
+                  className="p-2 rounded-xl bg-[#FF6B00] text-white cursor-pointer shrink-0"
+                  title="إضافة كوبون"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              {coupons.map((cp) => (
+                <div
+                  key={cp.code}
+                  className="p-3 rounded-2xl bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#32323C] flex flex-wrap items-center justify-between gap-2 text-xs"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono font-black text-[#FF6B00]">{cp.code}</span>
+                    <span className="font-bold">
+                      {cp.discountType === 'percentage' ? `${cp.discountValue}%` : `${cp.discountValue.toFixed(3)} ${currentCfg.currency}`}
+                    </span>
+                    {typeof cp.minSubtotal === 'number' && (
+                      <span className="text-[11px] text-[#7A756D]">Min: {cp.minSubtotal}</span>
+                    )}
+                    {typeof cp.maxDiscount === 'number' && (
+                      <span className="text-[11px] text-[#7A756D]">Max: {cp.maxDiscount}</span>
+                    )}
+                    {cp.expiresAt && (
+                      <span className="text-[11px] font-mono text-[#7A756D]">
+                        Exp: {cp.expiresAt.slice(0, 10)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="flex items-center gap-1 cursor-pointer text-[11px] font-bold">
+                      <input
+                        type="checkbox"
+                        checked={cp.active}
+                        onChange={(e) => {
+                          setCoupons((prev) =>
+                            prev.map((c) => (c.code === cp.code ? { ...c, active: e.target.checked } : c))
+                          );
+                        }}
+                        className="accent-[#FF6B00]"
+                      />
+                      <span>{cp.active ? 'مفعّل' : 'معطّل'}</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setCoupons((prev) => prev.filter((c) => c.code !== cp.code))}
+                      className="p-1.5 rounded-lg text-red-600 hover:bg-red-500/10 cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* SUB-TAB 5: AUDIT LOGS */}
       {subTab === 'logs' && (
         <div className="space-y-2">
@@ -1739,6 +2182,51 @@ export const PaymentManagementTab: React.FC = () => {
                     {new Date(log.timestamp).toLocaleString('ar-TN')}
                   </span>
                 </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {/* SUB-TAB 6: INVENTORY AUDIT LOGS */}
+      {subTab === 'inventory' && (
+        <div className="space-y-2">
+          {!overview?.inventoryLogs?.length ? (
+            <div className="p-8 text-center rounded-3xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] text-xs text-[#7A756D] dark:text-[#8E8980]">
+              سجل حركات المخزون فارغ حالياً.
+            </div>
+          ) : (
+            overview.inventoryLogs.map((inv) => (
+              <div
+                key={inv.id}
+                className="p-3 rounded-2xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+              >
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span
+                      className={`font-mono text-[10px] font-black px-2 py-0.5 rounded-lg ${
+                        inv.delta < 0
+                          ? 'bg-red-500/15 text-red-700 dark:text-red-400'
+                          : 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'
+                      }`}
+                    >
+                      {inv.delta > 0 ? `+${inv.delta}` : inv.delta}
+                    </span>
+                    <strong>{inv.productName || inv.productId}</strong>
+                    {inv.trackingNumber && (
+                      <span className="font-mono text-[11px] text-[#FF6B00]">{inv.trackingNumber}</span>
+                    )}
+                    <span className="text-[10px] px-2 py-0.5 rounded-md bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#32323C]">
+                      {inv.reason}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[#7A756D] dark:text-[#8E8980] font-mono">
+                    Stock: {inv.previousStock} → {inv.newStock} • actor: {inv.actor}
+                  </p>
+                </div>
+                <span className="text-[10px] font-mono text-[#7A756D] dark:text-[#8E8980] shrink-0">
+                  {new Date(inv.timestamp).toLocaleString('ar-TN')}
+                </span>
               </div>
             ))
           )}

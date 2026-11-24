@@ -8,6 +8,7 @@ import {
   saveCloudJson,
   savePersistentJson,
 } from './cloudPersistence';
+import { getEffectiveHmacByteLength } from './hmacKey';
 import type {
   CategoryItem,
   Company,
@@ -734,18 +735,16 @@ export function runSystemIntegrityAudit(deps: {
 
   const effectiveBytes =
     typeof deps.hmacEffectiveBytes === 'number' ? deps.hmacEffectiveBytes : deps.hmacSecretLength;
-  const envConfigured = deps.hmacFromEnv !== false;
-  const hmacOk = effectiveBytes >= 32;
+  const envConfigured = deps.hmacFromEnv === true;
+  const hmacOk = effectiveBytes >= 32 && envConfigured;
   checks.push({
     id: 'hmac_signing_key',
     label: 'مفتاح التوقيع الخادمي (HMAC-SHA256)',
     passed: hmacOk,
-    severity: hmacOk ? 'ok' : 'warning',
-    detail: !hmacOk
-      ? 'مفتاح HMAC أقصر من الحد الأدنى المطلوب (32 بايت على الأقل).'
-      : envConfigured
-        ? `مفتاح التوقيع الخادمي مضبوط عبر متغيرات البيئة بطول آمن (${effectiveBytes} بايت / ${deps.hmacSecretLength} محرفاً).`
-        : `مفتاح التوقيع الخادمي نشط بطول آمن (${effectiveBytes} بايت / ${deps.hmacSecretLength} محرفاً عبر مولّد تشفير آمن؛ لتثبيته عبر إعادة التشغيل أضف ECHOX_SECURITY_HMAC_SECRET في أسرار البيئة).`,
+    severity: hmacOk ? 'ok' : 'critical',
+    detail: hmacOk
+      ? `مفتاح التوقيع الخادمي مضبوط عبر متغيرات البيئة بطول آمن (${effectiveBytes} بايت / ${deps.hmacSecretLength} محرفاً).`
+      : 'خطأ أمني: متغير البيئة ECHOX_SECURITY_HMAC_SECRET غير مضبوط أو أقصر من 32 بايت — يجب ضبطه لتشغيل الوظائف الأمنية الحساسة.',
   });
 
   const bankTampered = Boolean(deps.paymentPublicConfig?.methods?.bank_transfer?.tamperDetected);
@@ -927,6 +926,12 @@ export async function createSignedRecoverySnapshot(params: {
   payload: RecoveryPayloadBundle;
   redactSecrets?: boolean;
 }): Promise<{ ok: boolean; snapshot?: RecoverySnapshotRecord; error?: string }> {
+  if (getEffectiveHmacByteLength(params.hmacSecret) < 32) {
+    return {
+      ok: false,
+      error: 'تعذر توقيع النسخة الاحتياطية: متغير البيئة ECHOX_SECURITY_HMAC_SECRET غير مضبوط أو أقصر من 32 بايت.',
+    };
+  }
   const safePayload: RecoveryPayloadBundle = {
     store: JSON.parse(JSON.stringify(params.payload.store)),
     payments:
@@ -1119,23 +1124,27 @@ export function dryRunRecoveryBundle(params: {
   // Verify HMAC signature if present on snapshot envelope
   let signatureValid = false;
   if (parsed.snapshotRecord?.signatureHmac) {
-    const expected = signRecoveryPayload(params.hmacSecret, incoming).signatureHmac;
-    const provided = String(parsed.snapshotRecord.signatureHmac);
-    signatureValid =
-      provided.length === expected.length &&
-      crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(expected));
-    if (!signatureValid) {
-      schemaErrors.push('فشل التحقق من توقيع HMAC الخاص بالنسخة الاحتياطية (توقيع غير متطابق أو معدل).');
-      quarantineSuspiciousItem({
-        source: 'recovery_signature_check',
-        reason: 'HMAC signature mismatch on recovery bundle',
-        severity: 'critical',
-        actorIp: params.actorIp,
-        mimeDeclared: 'application/json',
-        payloadHash: expected.slice(0, 24),
-        payloadPreview: `snapshotId=${parsed.snapshotRecord.snapshotId || 'unknown'}`,
-      });
-      quarantinedItems++;
+    if (getEffectiveHmacByteLength(params.hmacSecret) < 32) {
+      schemaErrors.push('تعذر التحقق من توقيع النسخة: متغير البيئة ECHOX_SECURITY_HMAC_SECRET غير مضبوط أو أقصر من 32 بايت.');
+    } else {
+      const expected = signRecoveryPayload(params.hmacSecret, incoming).signatureHmac;
+      const provided = String(parsed.snapshotRecord.signatureHmac);
+      signatureValid =
+        provided.length === expected.length &&
+        crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(expected));
+      if (!signatureValid) {
+        schemaErrors.push('فشل التحقق من توقيع HMAC الخاص بالنسخة الاحتياطية (توقيع غير متطابق أو معدل).');
+        quarantineSuspiciousItem({
+          source: 'recovery_signature_check',
+          reason: 'HMAC signature mismatch on recovery bundle',
+          severity: 'critical',
+          actorIp: params.actorIp,
+          mimeDeclared: 'application/json',
+          payloadHash: expected.slice(0, 24),
+          payloadPreview: `snapshotId=${parsed.snapshotRecord.snapshotId || 'unknown'}`,
+        });
+        quarantinedItems++;
+      }
     }
   } else {
     warnings.push('النسخة لا تحمل توقيع HMAC خادمي (استيراد غير موقع — سيتم تطبيق فحص البنية الصارم).');

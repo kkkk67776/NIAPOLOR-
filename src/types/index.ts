@@ -26,6 +26,7 @@ export interface Review {
 
 export interface Product {
   id: string;
+  sku?: string;
   name: MultilingualText;
   description: MultilingualText;
   category: string;
@@ -113,6 +114,7 @@ export interface PosteCcpTransferDetails {
 
 export interface OrderItem {
   productId: string;
+  sku?: string;
   productName: MultilingualText;
   productImage: string;
   companyId?: string;
@@ -120,6 +122,49 @@ export interface OrderItem {
   unitPrice: number;
   quantity: number;
   totalPrice: number;
+  discountApplied?: number;
+}
+
+export interface CouponRule {
+  code: string;
+  discountType: 'percentage' | 'fixed';
+  discountValue: number;
+  active: boolean;
+  expiresAt?: string;
+  minSubtotal?: number;
+  maxDiscount?: number;
+  description?: string;
+}
+
+export interface DelegationShippingOverride {
+  enabled?: boolean;
+  fee?: number | null;
+  estimatedDelivery?: string;
+}
+
+export interface GovernorateShippingRule {
+  governorateId: string;
+  enabled: boolean;
+  fee: number | null;
+  useStandardFee?: boolean;
+  estimatedDelivery: string;
+  freeShippingThreshold?: number | null;
+  delegationOverrides?: Record<string, DelegationShippingOverride>;
+}
+
+export interface InventoryAuditEntry {
+  id: string;
+  productId: string;
+  sku?: string;
+  productName?: string;
+  delta: number;
+  previousStock: number;
+  newStock: number;
+  reason: 'checkout_deduct' | 'order_cancel_restore' | 'order_refund_restore' | 'admin_adjustment' | 'catalog_sync';
+  orderId?: string;
+  trackingNumber?: string;
+  actor: string;
+  timestamp: string;
 }
 
 export interface VendorSubOrder {
@@ -163,6 +208,13 @@ export interface Order {
   subOrders?: VendorSubOrder[];
   transactionId?: string;
   refundReason?: string;
+  cancelReason?: string;
+  couponCode?: string;
+  estimatedDelivery?: string;
+  trackingToken?: string;
+  trackingTokenHash?: string;
+  stockDeducted?: boolean;
+  stockRestored?: boolean;
   carrierName: string;
   createdAt: string;
   updatedAt: string;
@@ -217,8 +269,10 @@ export interface PaymentSystemPublicConfig {
   currency: 'TND' | 'EUR' | 'USD';
   commissionRatePercent: number;
   taxRatePercent: number;
-  standardShippingFee?: number;
-  freeShippingThreshold?: number;
+  standardShippingFee?: number | null;
+  freeShippingThreshold?: number | null;
+  shippingRules?: Record<string, GovernorateShippingRule>;
+  coupons?: CouponRule[];
   methods: {
     cod: { enabled: boolean };
     bank_transfer: BankTransferPublicConfig;

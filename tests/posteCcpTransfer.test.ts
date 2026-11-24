@@ -130,6 +130,8 @@ async function run(): Promise<void> {
     assertEq(checkoutNoProofRes.status, 200, 'poste_ccp checkout without proof succeeds (200)');
     const checkoutNoProofJson = (await checkoutNoProofRes.json()) as any;
     const order1 = checkoutNoProofJson.order;
+    const order1Token: string = checkoutNoProofJson.trackingToken;
+    assertTrue(typeof order1Token === 'string' && order1Token.length >= 16, 'Checkout returns guest trackingToken');
     assertEq(order1.paymentMethod, 'poste_ccp', 'Order paymentMethod is poste_ccp');
     assertEq(order1.paymentStatus, 'Awaiting Bank Transfer', 'Order starts as Awaiting Bank Transfer without receipt');
     assertTrue(/^ECH-CCP-[A-Z0-9]{8}$/.test(String(order1.paymentReference || '')), 'Unique ECH-CCP-XXXXXXXX reference generated');
@@ -166,19 +168,31 @@ async function run(): Promise<void> {
     );
 
     // 4. Proof upload validation via POST /api/payments/poste-ccp/proof
-    // 4a. Wrong phone must be rejected (403)
-    const wrongPhoneProofRes = await fetch(`${baseUrl}/api/payments/poste-ccp/proof`, {
+    // 4a. Missing or invalid trackingToken must be rejected (401/403)
+    const missingTokProofRes = await fetch(`${baseUrl}/api/payments/poste-ccp/proof`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.84' },
       body: JSON.stringify({
         trackingNumber: order1.trackingNumber,
-        customerPhone: '99000000',
+        referenceNumber: 'CCP-REF-110',
+        senderName: 'شخص غير مصرح',
+        receiptImageDataUrl: VALID_PNG_DATA_URL,
+      }),
+    });
+    assertEq(missingTokProofRes.status, 401, 'Poste/CCP proof upload without trackingToken rejected (401)');
+
+    const wrongTokenProofRes = await fetch(`${baseUrl}/api/payments/poste-ccp/proof`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.84' },
+      body: JSON.stringify({
+        trackingNumber: order1.trackingNumber,
+        trackingToken: '00000000000000000000000000000000',
         referenceNumber: 'CCP-REF-111',
         senderName: 'شخص غير مصرح',
         receiptImageDataUrl: VALID_PNG_DATA_URL,
       }),
     });
-    assertEq(wrongPhoneProofRes.status, 403, 'Poste/CCP proof upload with wrong phone rejected (403)');
+    assertEq(wrongTokenProofRes.status, 403, 'Poste/CCP proof upload with invalid trackingToken rejected (403)');
 
     // 4b. Spoofed SVG disguised as PNG must be rejected (400) & quarantined
     const spoofedProofRes = await fetch(`${baseUrl}/api/payments/poste-ccp/proof`, {
@@ -186,7 +200,7 @@ async function run(): Promise<void> {
       headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.85' },
       body: JSON.stringify({
         trackingNumber: order1.trackingNumber,
-        customerPhone: '55443322',
+        trackingToken: order1Token,
         referenceNumber: 'CCP-REF-XSS',
         senderName: 'أحمد الطرابلسي',
         receiptImageDataUrl: SPOOFED_SVG_DATA_URL,
@@ -194,13 +208,13 @@ async function run(): Promise<void> {
     });
     assertEq(spoofedProofRes.status, 400, 'Spoofed SVG receipt image rejected (400)');
 
-    // 4c. Valid PNG proof with matching phone succeeds (200) -> Payment Verification
+    // 4c. Valid PNG proof with valid trackingToken succeeds (200) -> Payment Verification
     const validProofRes = await fetch(`${baseUrl}/api/payments/poste-ccp/proof`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.86' },
       body: JSON.stringify({
         trackingNumber: order1.trackingNumber,
-        customerPhone: '55443322',
+        trackingToken: order1Token,
         referenceNumber: 'CCP-2026-4455',
         senderName: 'أحمد الطرابلسي',
         transferDate: '2026-11-20',
@@ -212,25 +226,35 @@ async function run(): Promise<void> {
     const validProofJson = (await validProofRes.json()) as any;
     assertEq(validProofJson.order.paymentStatus, 'Payment Verification', 'Order1 transitioned to Payment Verification');
 
-    // 5. Public Order Tracking Privacy: Masked without phone, unmasked with phone (shows transferDetails)
-    const maskedTrackRes = await fetch(`${baseUrl}/api/payments/track/${encodeURIComponent(order1.trackingNumber)}`, {
+    // 5. Public Order Tracking Privacy: Rejected without trackingToken or with phone-only; guest token returns masked PII + transferDetails
+    const unauthTrackRes = await fetch(`${baseUrl}/api/payments/track/${encodeURIComponent(order1.trackingNumber)}`, {
       headers: { 'x-forwarded-for': '198.51.100.87' },
     });
-    assertEq(maskedTrackRes.status, 200, 'Masked tracking works (200)');
-    const maskedTrackJson = (await maskedTrackRes.json()) as any;
-    assertEq(maskedTrackJson.order.piiMasked, true, 'Unverified tracking masks PII');
-    assertTrue(!maskedTrackJson.order.transferDetails, 'Unverified masked tracking hides transferDetails/RIB');
+    assertEq(unauthTrackRes.status, 401, 'Unauthenticated tracking without token rejected (401)');
 
-    const verifiedTrackRes = await fetch(
+    const phoneOnlyTrackRes = await fetch(
       `${baseUrl}/api/payments/track/${encodeURIComponent(order1.trackingNumber)}?phone=${encodeURIComponent('55443322')}`,
       { headers: { 'x-forwarded-for': '198.51.100.87' } }
     );
-    assertEq(verifiedTrackRes.status, 200, 'Phone-verified tracking returns 200');
-    const verifiedTrackJson = (await verifiedTrackRes.json()) as any;
-    assertEq(verifiedTrackJson.order.piiMasked, false, 'Phone-verified tracking unmasks order');
+    assertEq(phoneOnlyTrackRes.status, 401, 'Phone-only tracking rejected (401)');
+
+    const tokenTrackRes = await fetch(`${baseUrl}/api/payments/track`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-forwarded-for': '198.51.100.87',
+      },
+      body: JSON.stringify({
+        trackingNumber: order1.trackingNumber,
+        trackingToken: order1Token,
+      }),
+    });
+    assertEq(tokenTrackRes.status, 200, 'Token-authorized tracking returns 200');
+    const tokenTrackJson = (await tokenTrackRes.json()) as any;
+    assertEq(tokenTrackJson.order.piiMasked, true, 'Guest token tracking masks PII');
     assertTrue(
-      String(verifiedTrackJson.order.transferDetails?.ibanOrRib || '').includes('TN59'),
-      'Phone-verified unpaid poste_ccp tracking returns transferDetails'
+      String(tokenTrackJson.order.transferDetails?.ibanOrRib || '').includes('TN59'),
+      'Token-authorized unpaid poste_ccp tracking returns transferDetails'
     );
 
     // 6. Owner Authentication via existing Secret Access Code + Argon2id PIN (unchanged)

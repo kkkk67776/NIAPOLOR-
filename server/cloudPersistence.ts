@@ -27,6 +27,7 @@ export interface PersistResult {
   durable: boolean;
   provider: PersistenceProvider;
   error?: string;
+  conflict?: boolean;
 }
 
 interface ServiceAccountCreds {
@@ -915,7 +916,7 @@ export async function savePersistentJson(
   cloudKey: string,
   localFilePath: string,
   data: unknown,
-  options: { allowEphemeral?: boolean } = {}
+  options: { allowEphemeral?: boolean; expectedUpdateTime?: string } = {}
 ): Promise<PersistResult> {
   const status = getPersistenceStatus();
 
@@ -930,7 +931,9 @@ export async function savePersistentJson(
   }
 
   if (status.cloudEnabled) {
-    const cloudTask = saveCloudJson(cloudKey, data);
+    const cloudTask = saveCloudJson(cloudKey, data, {
+      expectedUpdateTime: options.expectedUpdateTime,
+    });
     inflightSyncs.add(cloudTask);
     try {
       const cloudRes = await cloudTask;
@@ -939,6 +942,7 @@ export async function savePersistentJson(
           ok: false,
           durable: false,
           provider: status.provider,
+          conflict: cloudRes.conflict,
           error: cloudRes.error || 'فشل تأكيد الحفظ في قاعدة البيانات السحابية.',
         };
       }

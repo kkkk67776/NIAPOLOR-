@@ -34,35 +34,44 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
     cartTaxAmount,
     cartTotal,
     couponCode,
-    applyCoupon,
+    applyCouponServer,
+    clearCoupon,
     siteSettings,
     paymentConfig,
     isOnline
   } = useStore();
 
   const [inputCoupon, setInputCoupon] = useState('');
-  const [couponError, setCouponError] = useState(false);
+  const [couponError, setCouponError] = useState<string | null>(null);
   const [couponSuccess, setCouponSuccess] = useState(false);
+  const [couponApplying, setCouponApplying] = useState(false);
 
   if (!isCartOpen) return null;
 
-  const handleApplyCoupon = (e: React.FormEvent) => {
+  const handleApplyCoupon = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputCoupon.trim()) return;
-    const success = applyCoupon(inputCoupon);
-    if (success) {
+    if (!inputCoupon.trim() || couponApplying) return;
+    setCouponApplying(true);
+    const res = await applyCouponServer(inputCoupon);
+    setCouponApplying(false);
+    if (res.ok) {
       setCouponSuccess(true);
-      setCouponError(false);
+      setCouponError(null);
       setInputCoupon('');
     } else {
-      setCouponError(true);
+      setCouponError(res.error || t.cart.invalidCoupon);
       setCouponSuccess(false);
     }
   };
 
-  const freeDeliveryThreshold = siteSettings.freeShippingThreshold;
-  const progressToFreeDelivery = Math.min(100, (cartSubtotal / freeDeliveryThreshold) * 100);
-  const amountLeftForFreeDelivery = Math.max(0, freeDeliveryThreshold - cartSubtotal);
+  const rawThreshold = paymentConfig?.freeShippingThreshold ?? siteSettings.freeShippingThreshold;
+  const freeDeliveryThreshold = typeof rawThreshold === 'number' && rawThreshold > 0 ? rawThreshold : 0;
+  const progressToFreeDelivery = freeDeliveryThreshold > 0
+    ? Math.min(100, (cartSubtotal / freeDeliveryThreshold) * 100)
+    : 0;
+  const amountLeftForFreeDelivery = freeDeliveryThreshold > 0
+    ? Math.max(0, freeDeliveryThreshold - cartSubtotal)
+    : 0;
 
   return (
     <div
@@ -84,7 +93,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
           </div>
           <button
             onClick={() => setIsCartOpen(false)}
-            className="p-2 text-[#7A756D] hover:text-[#111113] dark:text-[#8E8980] dark:hover:text-[#F7F6F3] rounded-full hover:bg-[#EBE7DF] dark:hover:bg-[#1D1D24] transition-colors cursor-pointer"
+            className="min-w-[44px] min-h-[44px] flex items-center justify-center text-[#7A756D] hover:text-[#111113] dark:text-[#8E8980] dark:hover:text-[#F7F6F3] rounded-full hover:bg-[#EBE7DF] dark:hover:bg-[#1D1D24] transition-colors cursor-pointer"
             aria-label="Close cart"
           >
             <X className="w-5 h-5" />
@@ -92,25 +101,27 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
         </div>
 
         {/* Free Delivery Meter */}
-        <div className="p-3.5 bg-white dark:bg-[#0B0B0D] border-b border-[#E6E2D8] dark:border-[#23232C] space-y-1.5">
-          <div className="flex items-center justify-between text-xs font-semibold text-[#5A5854] dark:text-[#B5B0A8]">
-            <span className="flex items-center gap-1">
-              <Truck className="w-4 h-4 text-[#FF6B00]" />
-              {amountLeftForFreeDelivery === 0 ? (
-                <span className="text-emerald-700 dark:text-emerald-400 font-bold">{t.cart.freeShippingEligible}</span>
-              ) : (
-                <span>{t.cart.addForFreeShipping || 'أضف'} <strong className="text-[#FF6B00] tabular-nums">{amountLeftForFreeDelivery.toFixed(3)} {t.cart.currency}</strong> {t.cart.toGetFreeShipping || 'لتحصل على توصيل مجاني!'}</span>
-              )}
-            </span>
-            <span className="text-[11px] text-[#7A756D] dark:text-[#8E8980] tabular-nums">{Math.round(progressToFreeDelivery)}%</span>
+        {freeDeliveryThreshold > 0 && (
+          <div className="p-3.5 bg-white dark:bg-[#0B0B0D] border-b border-[#E6E2D8] dark:border-[#23232C] space-y-1.5">
+            <div className="flex items-center justify-between text-xs font-semibold text-[#5A5854] dark:text-[#B5B0A8]">
+              <span className="flex items-center gap-1">
+                <Truck className="w-4 h-4 text-[#FF6B00]" />
+                {amountLeftForFreeDelivery === 0 ? (
+                  <span className="text-emerald-700 dark:text-emerald-400 font-bold">{t.cart.freeShippingEligible}</span>
+                ) : (
+                  <span>{t.cart.addForFreeShipping || 'أضف'} <strong className="text-[#FF6B00] tabular-nums">{amountLeftForFreeDelivery.toFixed(3)} {t.cart.currency}</strong> {t.cart.toGetFreeShipping || 'لتحصل على توصيل مجاني!'}</span>
+                )}
+              </span>
+              <span className="text-[11px] text-[#7A756D] dark:text-[#8E8980] tabular-nums">{Math.round(progressToFreeDelivery)}%</span>
+            </div>
+            <div className="w-full h-2 bg-[#EBE7DF] dark:bg-[#18181E] rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-[#FF6B00] transition-all duration-500 rounded-full"
+                style={{ width: `${progressToFreeDelivery}%` }}
+              />
+            </div>
           </div>
-          <div className="w-full h-2 bg-[#EBE7DF] dark:bg-[#18181E] rounded-full overflow-hidden">
-            <div 
-              className="h-full bg-[#FF6B00] transition-all duration-500 rounded-full"
-              style={{ width: `${progressToFreeDelivery}%` }}
-            />
-          </div>
-        </div>
+        )}
 
         {/* Cart Items List */}
         <div className="flex-1 overflow-y-auto p-4 divide-y divide-[#E6E2D8] dark:divide-[#23232C]">
@@ -122,7 +133,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
               <p className="text-sm font-bold text-[#5A5854] dark:text-[#B5B0A8]">{t.cart.empty}</p>
               <button
                 onClick={() => setIsCartOpen(false)}
-                className="text-xs font-bold text-[#FF6B00] hover:underline cursor-pointer"
+                className="min-h-[44px] px-4 inline-flex items-center justify-center text-xs font-bold text-[#FF6B00] hover:underline cursor-pointer"
               >
                 {t.cart.startShopping}
               </button>
@@ -150,25 +161,27 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
                   </div>
 
                   <div className="flex items-center justify-between mt-2">
-                    <div className="flex items-center border border-[#D6D0C4] dark:border-[#32323C] rounded-lg overflow-hidden bg-white dark:bg-[#131317]">
+                    <div className="flex items-center border border-[#D6D0C4] dark:border-[#32323C] rounded-xl overflow-hidden bg-white dark:bg-[#131317]">
                       <button
                         onClick={() => updateCartQuantity(item.product.id, item.quantity - 1)}
-                        className="p-1 text-[#5A5854] dark:text-[#B5B0A8] hover:bg-[#F3F1EC] dark:hover:bg-[#1D1D24] cursor-pointer"
+                        aria-label="Decrease quantity"
+                        className="min-w-[42px] min-h-[44px] flex items-center justify-center text-[#5A5854] dark:text-[#B5B0A8] hover:bg-[#F3F1EC] dark:hover:bg-[#1D1D24] cursor-pointer"
                       >
-                        <Minus className="w-3.5 h-3.5" />
+                        <Minus className="w-4 h-4" />
                       </button>
                       <span className="px-2.5 text-xs font-bold tabular-nums text-[#111113] dark:text-[#F7F6F3]">{item.quantity}</span>
                       <button
                         onClick={() => updateCartQuantity(item.product.id, item.quantity + 1)}
-                        className="p-1 text-[#5A5854] dark:text-[#B5B0A8] hover:bg-[#F3F1EC] dark:hover:bg-[#1D1D24] cursor-pointer"
+                        aria-label="Increase quantity"
+                        className="min-w-[42px] min-h-[44px] flex items-center justify-center text-[#5A5854] dark:text-[#B5B0A8] hover:bg-[#F3F1EC] dark:hover:bg-[#1D1D24] cursor-pointer"
                       >
-                        <Plus className="w-3.5 h-3.5" />
+                        <Plus className="w-4 h-4" />
                       </button>
                     </div>
 
                     <button
                       onClick={() => removeFromCart(item.product.id)}
-                      className="text-[#7A756D] hover:text-red-600 p-1 transition-colors cursor-pointer"
+                      className="min-w-[44px] min-h-[44px] flex items-center justify-center text-[#7A756D] hover:text-red-600 rounded-xl transition-colors cursor-pointer"
                       aria-label="Remove item"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -192,26 +205,40 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
                   placeholder={t.cart.couponPlaceholder || 'كود الخصم (جرب NIAPOLOR2026)'}
                   value={inputCoupon}
                   onChange={e => setInputCoupon(e.target.value)}
-                  className="w-full text-xs py-2 px-3 pl-8 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#0B0B0D] text-[#111113] dark:text-[#F7F6F3] focus:outline-hidden focus:border-[#FF6B00]"
+                  className="w-full min-h-[44px] text-xs py-2.5 px-3 pl-8 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#0B0B0D] text-[#111113] dark:text-[#F7F6F3] focus:outline-hidden focus:border-[#FF6B00]"
                 />
-                <Tag className="w-3.5 h-3.5 text-[#7A756D] dark:text-[#8E8980] absolute left-2.5 top-2.5" />
+                <Tag className="w-3.5 h-3.5 text-[#7A756D] dark:text-[#8E8980] absolute left-2.5 top-1/2 -translate-y-1/2" />
               </div>
               <button
                 type="submit"
-                className="px-3 py-2 bg-[#111113] dark:bg-[#23232C] hover:bg-[#FF6B00] dark:hover:bg-[#FF6B00] text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                disabled={couponApplying || !isOnline}
+                className="min-h-[44px] px-4 py-2 bg-[#111113] dark:bg-[#23232C] hover:bg-[#FF6B00] dark:hover:bg-[#FF6B00] disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
               >
                 {t.cart.applyCoupon}
               </button>
             </form>
-            {couponSuccess && (
-              <p className="text-[11px] text-emerald-700 dark:text-emerald-400 font-bold flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                {t.cart.couponApplied}
-              </p>
+            {(couponSuccess || couponCode) && (
+              <div className="text-[11px] text-emerald-700 dark:text-emerald-400 font-bold flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>{t.cart.couponApplied} {couponCode ? `(${couponCode})` : ''}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearCoupon();
+                    setCouponSuccess(false);
+                    setCouponError(null);
+                  }}
+                  className="text-[#7A756D] hover:text-red-600 underline cursor-pointer"
+                >
+                  ×
+                </button>
+              </div>
             )}
             {couponError && (
               <p className="text-[11px] text-red-600 dark:text-red-400 font-bold">
-                {t.cart.invalidCoupon}
+                {couponError}
               </p>
             )}
 
@@ -271,7 +298,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onOpenCheckout }) => {
                 setIsCartOpen(false);
                 onOpenCheckout();
               }}
-              className="w-full py-3.5 px-4 rounded-xl bg-[#FF6B00] hover:bg-[#e05e00] disabled:opacity-45 disabled:cursor-not-allowed text-white font-bold text-sm shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+              className="w-full min-h-[48px] py-3.5 px-4 rounded-xl bg-[#FF6B00] hover:bg-[#e05e00] disabled:opacity-45 disabled:cursor-not-allowed text-white font-bold text-sm shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98"
             >
               <span>{t.cart.proceedToCheckout}</span>
               {language === 'ar' ? <ArrowLeft className="w-4 h-4" /> : <ArrowRight className="w-4 h-4" />}

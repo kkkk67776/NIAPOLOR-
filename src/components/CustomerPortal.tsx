@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useStore } from '../context/StoreContext';
 import {
   User,
@@ -17,7 +17,19 @@ import {
   AlertCircle,
   Loader2,
 } from 'lucide-react';
-import { TUNISIAN_GOVERNORATES, getDelegationsForGovernorate, getGovernorateName } from '../data/governorates';
+import {
+  TUNISIAN_GOVERNORATES,
+  getDelegationsForGovernorate,
+  getGovernorateName,
+  normalizeTunisianPhone,
+} from '../data/governorates';
+import {
+  isValidCustomerEmail,
+  mapPasswordReasonToMsgKey,
+  getCustomerAuthMessage,
+  validateCustomerPasswordStrength,
+  type AuthLang,
+} from '../lib/customerAuthMessages';
 import { getPaymentStatusTone } from '../lib/payments';
 import { handleStoreImageError, handleStoreImageLoad } from '../lib/imageFallback';
 
@@ -30,6 +42,7 @@ export const CustomerPortal: React.FC = () => {
     logoutCustomer,
     addCustomerAddress,
     setDefaultAddress,
+    deleteCustomerAddress,
     orders,
     products,
     wishlist,
@@ -51,6 +64,8 @@ export const CustomerPortal: React.FC = () => {
   const [authPhone, setAuthPhone] = useState('');
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState('');
+  const [authRetryable, setAuthRetryable] = useState(false);
+  const authSubmittingRef = useRef(false);
 
   const [activeTab, setActiveTab] = useState<'orders' | 'addresses' | 'wishlist'>(
     currentView === 'wishlist' ? 'wishlist' : 'orders'
@@ -75,13 +90,18 @@ export const CustomerPortal: React.FC = () => {
 
   const wishlistedProducts = products.filter((p) => wishlist.includes(p.id));
 
-  const handleAuthSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const submitAuthRequest = async () => {
+    if (authSubmittingRef.current) return;
     setAuthError('');
+    setAuthRetryable(false);
 
-    const cleanEmail = authEmail.trim();
+    const cleanEmail = authEmail.trim().toLowerCase();
     if (!cleanEmail || !authPassword) {
       setAuthError(authT.authErrorRequired);
+      return;
+    }
+    if (!isValidCustomerEmail(cleanEmail)) {
+      setAuthError(authT.authErrorEmail || getCustomerAuthMessage(language as AuthLang, 'invalidEmail'));
       return;
     }
 
@@ -90,30 +110,52 @@ export const CustomerPortal: React.FC = () => {
         setAuthError(authT.authErrorRequired);
         return;
       }
-      if (authPassword.length < 8) {
-        setAuthError(authT.authErrorPasswordLen);
+      if (authName.trim().length < 3) {
+        setAuthError(getCustomerAuthMessage(language as AuthLang, 'invalidFullName'));
+        return;
+      }
+      const phoneCheck = normalizeTunisianPhone(authPhone.trim());
+      if (!phoneCheck.valid) {
+        setAuthError(authT.authErrorPhone || getCustomerAuthMessage(language as AuthLang, 'invalidPhone'));
+        return;
+      }
+      const pwdCheck = validateCustomerPasswordStrength(authPassword);
+      if (!pwdCheck.valid) {
+        setAuthError(getCustomerAuthMessage(language as AuthLang, mapPasswordReasonToMsgKey(pwdCheck.reason)));
         return;
       }
     }
 
+    authSubmittingRef.current = true;
     setAuthBusy(true);
-    const res =
-      authMode === 'login'
-        ? await loginCustomer(cleanEmail, authPassword)
-        : await registerCustomer({
-            fullName: authName.trim(),
-            email: cleanEmail,
-            phone: authPhone.trim(),
-            password: authPassword,
-          });
-    setAuthBusy(false);
+    try {
+      const res =
+        authMode === 'login'
+          ? await loginCustomer(cleanEmail, authPassword)
+          : await registerCustomer({
+              fullName: authName.trim(),
+              email: cleanEmail,
+              phone: authPhone.trim(),
+              password: authPassword,
+            });
 
-    if (!res.ok) {
-      setAuthError(res.error || authT.authErrorRequired);
-      return;
+      if (!res.ok) {
+        setAuthError(res.error || authT.authErrorRequired);
+        setAuthRetryable(Boolean(res.retryable));
+        return;
+      }
+
+      setAuthPassword('');
+      setAuthRetryable(false);
+    } finally {
+      authSubmittingRef.current = false;
+      setAuthBusy(false);
     }
+  };
 
-    setAuthPassword('');
+  const handleAuthSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await submitAuthRequest();
   };
 
   const handleAddAddressSubmit = async (e: React.FormEvent) => {
@@ -209,10 +251,22 @@ export const CustomerPortal: React.FC = () => {
           {authError && (
             <div
               role="alert"
-              className="p-3 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 text-red-700 dark:text-red-300 text-xs font-bold flex items-center gap-2"
+              className="p-3 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 text-red-700 dark:text-red-300 text-xs font-bold flex items-center justify-between gap-2"
             >
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{authError}</span>
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{authError}</span>
+              </div>
+              {authRetryable && (
+                <button
+                  type="button"
+                  disabled={authBusy}
+                  onClick={() => void submitAuthRequest()}
+                  className="shrink-0 underline font-black hover:opacity-80 cursor-pointer disabled:opacity-50"
+                >
+                  {authT.retryBtn}
+                </button>
+              )}
             </div>
           )}
 
@@ -642,21 +696,31 @@ export const CustomerPortal: React.FC = () => {
                     addr.isDefault ? 'border-[#FF6B00] shadow-xs' : 'border-[#E6E2D8] dark:border-[#23232A]'
                   }`}
                 >
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2">
                     <span className="font-bold text-xs text-[#111113] dark:text-[#F7F6F3]">{addr.fullName}</span>
-                    {addr.isDefault ? (
-                      <span className="text-[10px] bg-[#FF6B00]/10 text-[#FF6B00] font-black px-2 py-0.5 rounded-full">
-                        {authT.defaultBadge}
-                      </span>
-                    ) : (
+                    <div className="flex items-center gap-2">
+                      {addr.isDefault ? (
+                        <span className="text-[10px] bg-[#FF6B00]/10 text-[#FF6B00] font-black px-2 py-0.5 rounded-full">
+                          {authT.defaultBadge}
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => void setDefaultAddress(addr.id)}
+                          className="text-[11px] text-[#7A756D] dark:text-[#8E8980] hover:text-[#FF6B00] cursor-pointer"
+                        >
+                          {authT.setDefaultBtn}
+                        </button>
+                      )}
                       <button
                         type="button"
-                        onClick={() => void setDefaultAddress(addr.id)}
-                        className="text-[11px] text-[#7A756D] dark:text-[#8E8980] hover:text-[#FF6B00] cursor-pointer"
+                        onClick={() => void deleteCustomerAddress(addr.id)}
+                        aria-label={authT.deleteAddressBtn}
+                        className="p-1 text-[#7A756D] dark:text-[#8E8980] hover:text-red-600 cursor-pointer"
                       >
-                        {authT.setDefaultBtn}
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
-                    )}
+                    </div>
                   </div>
                   <p className="text-xs text-[#5A5854] dark:text-[#B5B0A8]">
                     {getGovernorateName(addr.governorate, language)} · {addr.delegation || addr.city || ''}
@@ -678,7 +742,7 @@ export const CustomerPortal: React.FC = () => {
         <div className="space-y-4">
           {wishlistedProducts.length === 0 ? (
             <div className="p-8 text-center bg-white dark:bg-[#141418] rounded-3xl border border-[#E6E2D8] dark:border-[#23232A] text-[#7A756D] dark:text-[#8E8980] text-xs font-bold">
-              {wishlist.length === 0 && (t as any).product?.noReviewsYet ? '—' : ''}
+              {authT.emptyWishlist}
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

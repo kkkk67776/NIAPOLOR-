@@ -38,7 +38,11 @@ import {
   createAdminManualOrderServer,
   deleteAdminOrderServer,
   submitServerCheckout,
+  applyServerCoupon,
+  recoverCheckoutStatus,
+  saveGuestTrackingToken,
   canOrderShipClient,
+  type ServerQuoteResponse,
 } from '../lib/payments';
 
 export interface ServerPersistenceStatus {
@@ -69,6 +73,7 @@ import {
   notifySessionExpired
 } from '../lib/security';
 import { normalizeProductImageUrl } from '../lib/imageUrl';
+import { getCustomerAuthMessage, type AuthLang } from '../lib/customerAuthMessages';
 
 
 export interface DeleteActionResult {
@@ -107,6 +112,9 @@ interface StoreContextType {
   couponCode: string;
   discountRate: number;
   applyCoupon: (code: string) => boolean;
+  applyCouponServer: (code: string) => Promise<{ ok: boolean; discount?: number; error?: string }>;
+  clearCoupon: () => void;
+  syncCartProductPrices: (updatedPrices: Array<{ productId: string; oldPrice: number; newPrice: number }>) => void;
   cartSubtotal: number;
   cartShippingFee: number;
   cartDiscountAmount: number;
@@ -122,17 +130,31 @@ interface StoreContextType {
   // Customer Auth
   currentUser: CustomerUser | null;
   customerAuthLoading: boolean;
-  loginCustomer: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+  loginCustomer: (
+    email: string,
+    password: string
+  ) => Promise<{ ok: boolean; error?: string; retryable?: boolean }>;
   registerCustomer: (data: {
     fullName: string;
     email: string;
     phone: string;
     password: string;
-  }) => Promise<{ ok: boolean; error?: string }>;
+  }) => Promise<{ ok: boolean; error?: string; retryable?: boolean }>;
   logoutCustomer: () => Promise<void>;
   refreshCustomerOrders: () => Promise<void>;
-  addCustomerAddress: (address: Omit<CustomerAddress, 'id'>) => Promise<{ ok: boolean; error?: string }>;
-  setDefaultAddress: (addressId: string) => Promise<{ ok: boolean; error?: string }>;
+  updateCustomerProfile: (updates: {
+    fullName?: string;
+    phone?: string;
+  }) => Promise<{ ok: boolean; error?: string; retryable?: boolean }>;
+  addCustomerAddress: (
+    address: Omit<CustomerAddress, 'id'>
+  ) => Promise<{ ok: boolean; error?: string; retryable?: boolean }>;
+  setDefaultAddress: (
+    addressId: string
+  ) => Promise<{ ok: boolean; error?: string; retryable?: boolean }>;
+  deleteCustomerAddress: (
+    addressId: string
+  ) => Promise<{ ok: boolean; error?: string; retryable?: boolean }>;
   
   // Owner Auth & Security
   isOwner: boolean;
@@ -201,16 +223,21 @@ interface StoreContextType {
     clientRequestId?: string;
   }) => Promise<{
     ok: boolean;
+    code?: string;
     order?: Order;
+    trackingToken?: string;
     paymentUrl?: string;
     transferDetails?: PosteCcpTransferDetails;
+    updatedPrices?: Array<{ productId: string; oldPrice: number; newPrice: number }>;
+    updatedQuote?: ServerQuoteResponse;
+    recovered?: boolean;
     error?: string;
   }>;
   updateOrderInState: (updatedOrder: Order) => void;
   syncOrdersFromServer: (serverOrders: Order[]) => void;
   refreshAdminOrders: () => Promise<{ ok: boolean; count: number; error?: string }>;
   addManualOrder: (orderData: Partial<Order>) => Promise<{ ok: boolean; order?: Order; error?: string }>;
-  updateOrderStatus: (orderId: string, status: OrderStatus, note?: string) => Promise<{ ok: boolean; order?: Order; error?: string }>;
+  updateOrderStatus: (orderId: string, status: OrderStatus, note?: string, reason?: string) => Promise<{ ok: boolean; order?: Order; error?: string }>;
   deleteOrder: (orderId: string) => Promise<DeleteActionResult>;
   isSupportModalOpen: boolean;
   setIsSupportModalOpen: (open: boolean) => void;
@@ -1134,6 +1161,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const [couponCode, setCouponCode] = useState<string>('');
   const [discountRate, setDiscountRate] = useState<number>(0);
+  const [serverCouponDiscount, setServerCouponDiscount] = useState<number | null>(null);
 
   useEffect(() => {
     localStorage.setItem('echox_cart', JSON.stringify(cart));
@@ -1156,6 +1184,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const removeFromCart = (productId: string) => {
     setCart(prev => prev.filter(item => item.product.id !== productId));
+    setServerCouponDiscount(null);
   };
 
   const updateCartQuantity = (productId: string, quantity: number) => {
@@ -1166,36 +1195,89 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setCart(prev => prev.map(item => 
       item.product.id === productId ? { ...item, quantity } : item
     ));
+    setServerCouponDiscount(null);
+  };
+
+  const clearCoupon = () => {
+    setCouponCode('');
+    setDiscountRate(0);
+    setServerCouponDiscount(null);
   };
 
   const clearCart = () => {
     setCart([]);
     setCouponCode('');
     setDiscountRate(0);
+    setServerCouponDiscount(null);
+  };
+
+  const syncCartProductPrices = (updatedPrices: Array<{ productId: string; oldPrice: number; newPrice: number }>) => {
+    if (!Array.isArray(updatedPrices) || updatedPrices.length === 0) return;
+    const priceMap = new Map(updatedPrices.map(u => [u.productId, u.newPrice]));
+    setCart(prev => prev.map(item => {
+      const nextPrice = priceMap.get(item.product.id);
+      return typeof nextPrice === 'number'
+        ? { ...item, product: { ...item.product, price: nextPrice } }
+        : item;
+    }));
+    setProducts(prev => prev.map(p => {
+      const nextPrice = priceMap.get(p.id);
+      return typeof nextPrice === 'number' ? { ...p, price: nextPrice } : p;
+    }));
   };
 
   const applyCoupon = (code: string): boolean => {
     const clean = code.trim().toUpperCase();
     if (clean === 'NIAPOLOR2026' || clean === 'NIAPOLOR10' || clean === 'ECHOX2026' || clean === 'ECHOX10') {
       setCouponCode(clean);
-      setDiscountRate(0.10); // 10% discount
+      setDiscountRate(0.10);
+      setServerCouponDiscount(null);
       return true;
     }
     return false;
   };
 
   const cartSubtotal = cart.reduce((sum, item) => sum + (item.product.price * item.quantity), 0);
-  const cartDiscountAmount = cartSubtotal * discountRate;
+
+  const applyCouponServer = async (code: string): Promise<{ ok: boolean; discount?: number; error?: string }> => {
+    const clean = code.trim().toUpperCase();
+    if (!clean) return { ok: false, error: t.cart.invalidCoupon };
+    try {
+      const res = await applyServerCoupon({
+        couponCode: clean,
+        items: cart.map(i => ({ productId: i.product.id, quantity: i.quantity })),
+        subtotal: cartSubtotal,
+      });
+      if (!res.ok) {
+        return { ok: false, error: res.error || t.cart.invalidCoupon };
+      }
+      const nextDiscount = typeof res.discount === 'number' ? res.discount : 0;
+      setCouponCode(res.coupon?.code || clean);
+      if (res.coupon?.discountType === 'percentage') {
+        setDiscountRate(res.coupon.discountValue / 100);
+      } else {
+        setDiscountRate(cartSubtotal > 0 ? nextDiscount / cartSubtotal : 0);
+      }
+      setServerCouponDiscount(nextDiscount);
+      return { ok: true, discount: nextDiscount };
+    } catch {
+      return { ok: false, error: t.cart.invalidCoupon };
+    }
+  };
+
+  const cartDiscountAmount = serverCouponDiscount !== null
+    ? Math.min(cartSubtotal, serverCouponDiscount)
+    : cartSubtotal * discountRate;
   const cartNetItems = Math.max(0, cartSubtotal - cartDiscountAmount);
   const cartTaxAmount = Math.round(cartNetItems * ((paymentConfig?.taxRatePercent || 0) / 100) * 1000) / 1000;
   const effectiveFreeThreshold = paymentConfig?.freeShippingThreshold ?? siteSettings.freeShippingThreshold;
-  const effectiveStandardShipping = paymentConfig?.standardShippingFee ?? siteSettings.standardShippingFee;
+  const effectiveStandardShipping = paymentConfig?.standardShippingFee ?? siteSettings.standardShippingFee ?? 7;
   const cartShippingFee = cart.length === 0 
     ? 0 
-    : (cartSubtotal >= effectiveFreeThreshold ? 0 : effectiveStandardShipping);
+    : (effectiveFreeThreshold > 0 && cartSubtotal >= effectiveFreeThreshold ? 0 : effectiveStandardShipping);
   const cartTotal = Math.max(0, Math.round((cartNetItems + cartTaxAmount + cartShippingFee) * 1000) / 1000);
 
-  // 8. Wishlist
+  // 8. Wishlist (persisted locally + synced to customer DB when authenticated)
   const [wishlist, setWishlist] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('echox_wishlist');
@@ -1205,9 +1287,111 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   });
 
+  // 9. Customer Auth (Real Server PBKDF2 + HttpOnly Cookie Session)
+  const [currentUser, setCurrentUser] = useState<CustomerUser | null>(null);
+  const [customerAuthLoading, setCustomerAuthLoading] = useState<boolean>(true);
+  const customerAuthInFlightRef = React.useRef<boolean>(false);
+
+  const fetchCustomerWithTimeout = async (
+    url: string,
+    init: RequestInit,
+    timeoutMs = 25000
+  ): Promise<globalThis.Response> => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, {
+        ...init,
+        credentials: 'include',
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+    } finally {
+      window.clearTimeout(timer);
+    }
+  };
+
+  // Safe automatic wake retry ONLY for idempotent GET requests (never for registration/login POST)
+  const fetchCustomerGetWithWakeRetry = async (
+    url: string,
+    maxRetries = 2
+  ): Promise<globalThis.Response | null> => {
+    const delays = [1500, 3000];
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const res = await fetchCustomerWithTimeout(
+          url,
+          {
+            method: 'GET',
+            headers: { 'Accept-Language': language },
+          },
+          18000
+        );
+        if ((res.status === 502 || res.status === 503 || res.status === 504) && attempt < maxRetries) {
+          await new Promise((r) => setTimeout(r, delays[attempt] || 2000));
+          continue;
+        }
+        return res;
+      } catch {
+        if (attempt < maxRetries) {
+          await new Promise((r) => setTimeout(r, delays[attempt] || 2000));
+          continue;
+        }
+        return null;
+      }
+    }
+    return null;
+  };
+
+  const pushCustomerWishlistToServer = async (nextIds: string[]) => {
+    try {
+      await fetchCustomerWithTimeout(
+        '/api/customer/wishlist',
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'NIAPOLOR-Customer',
+            'Accept-Language': language,
+          },
+          body: JSON.stringify({ wishlist: nextIds, lang: language }),
+        },
+        15000
+      );
+    } catch {
+      // non-fatal background wishlist sync
+    }
+  };
+
+  const applyAuthenticatedCustomer = (serverCustomer: CustomerUser, mergeLocalWishlist = false) => {
+    const serverWl = Array.isArray(serverCustomer.wishlist) ? serverCustomer.wishlist : [];
+    const mergedWl = mergeLocalWishlist
+      ? Array.from(new Set([...serverWl, ...wishlist])).slice(0, 100)
+      : serverWl.length > 0
+      ? serverWl
+      : wishlist;
+
+    setWishlist(mergedWl);
+    try {
+      localStorage.setItem('echox_wishlist', JSON.stringify(mergedWl));
+    } catch {
+      // ignore
+    }
+
+    const hydratedUser: CustomerUser = { ...serverCustomer, wishlist: mergedWl };
+    setCurrentUser(hydratedUser);
+
+    if (
+      mergeLocalWishlist &&
+      mergedWl.length > serverWl.length
+    ) {
+      void pushCustomerWishlistToServer(mergedWl);
+    }
+  };
+
   const toggleWishlist = (productId: string) => {
     setWishlist(prev => {
-      const next = prev.includes(productId) 
+      const next = prev.includes(productId)
         ? prev.filter(id => id !== productId)
         : [...prev, productId];
       try {
@@ -1215,21 +1399,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       } catch (e) {
         console.warn('Storage write error:', e);
       }
+      if (currentUser) {
+        setCurrentUser(u => (u ? { ...u, wishlist: next } : u));
+        void pushCustomerWishlistToServer(next);
+      }
       return next;
     });
   };
 
-  // 9. Customer Auth (Real Server PBKDF2 + HttpOnly Cookie Session)
-  const [currentUser, setCurrentUser] = useState<CustomerUser | null>(null);
-  const [customerAuthLoading, setCustomerAuthLoading] = useState<boolean>(true);
-
   const refreshCustomerOrders = async () => {
     try {
-      const res = await fetch('/api/customer/orders', {
-        credentials: 'include',
-        cache: 'no-store',
-      });
-      if (!res.ok) return;
+      const res = await fetchCustomerGetWithWakeRetry('/api/customer/orders', 1);
+      if (!res || !res.ok) return;
       const data = await res.json().catch(() => null);
       if (data?.success && Array.isArray(data.orders)) {
         syncOrdersFromServer(data.orders);
@@ -1248,17 +1429,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     let active = true;
     void (async () => {
       try {
-        const res = await fetch('/api/customer/me', {
-          credentials: 'include',
-          cache: 'no-store',
-        });
-        if (!res.ok) {
+        const res = await fetchCustomerGetWithWakeRetry('/api/customer/me', 2);
+        if (!res || !res.ok) {
           if (active) setCurrentUser(null);
           return;
         }
         const data = await res.json().catch(() => null);
-        if (active && data?.success && data.customer) {
-          setCurrentUser({ ...data.customer, wishlist });
+        if (active && (data?.success || data?.authenticated) && data.customer) {
+          applyAuthenticatedCustomer(data.customer, false);
           void refreshCustomerOrders();
         } else if (active) {
           setCurrentUser(null);
@@ -1277,26 +1455,53 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const loginCustomer = async (
     email: string,
     password: string
-  ): Promise<{ ok: boolean; error?: string }> => {
+  ): Promise<{ ok: boolean; error?: string; retryable?: boolean }> => {
+    if (customerAuthInFlightRef.current) {
+      return { ok: false, error: getCustomerAuthMessage(language as AuthLang, 'serviceWakingRetry') };
+    }
+    customerAuthInFlightRef.current = true;
     try {
-      const res = await fetch('/api/customer/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Requested-With': 'NIAPOLOR-Customer',
+      const res = await fetchCustomerWithTimeout(
+        '/api/customer/login',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'NIAPOLOR-Customer',
+            'Accept-Language': language,
+          },
+          body: JSON.stringify({ email, password, lang: language }),
         },
-        credentials: 'include',
-        body: JSON.stringify({ email, password }),
-      });
+        25000
+      );
+      if (res.status === 502 || res.status === 503 || res.status === 504) {
+        const errPayload = await res.json().catch(() => null);
+        return {
+          ok: false,
+          retryable: true,
+          error:
+            errPayload?.error ||
+            getCustomerAuthMessage(language as AuthLang, 'serviceWakingRetry'),
+        };
+      }
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.success || !data.customer) {
-        return { ok: false, error: data?.error || 'تعذر تسجيل الدخول. تحقق من البريد وكلمة المرور.' };
+        return {
+          ok: false,
+          error: data?.error || getCustomerAuthMessage(language as AuthLang, 'invalidCredentials'),
+        };
       }
-      setCurrentUser({ ...data.customer, wishlist });
+      applyAuthenticatedCustomer(data.customer, true);
       await refreshCustomerOrders();
       return { ok: true };
     } catch {
-      return { ok: false, error: 'تعذر الاتصال بالخادم.' };
+      return {
+        ok: false,
+        retryable: true,
+        error: getCustomerAuthMessage(language as AuthLang, 'networkTimeoutRetry'),
+      };
+    } finally {
+      customerAuthInFlightRef.current = false;
     }
   };
 
@@ -1305,40 +1510,77 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     email: string;
     phone: string;
     password: string;
-  }): Promise<{ ok: boolean; error?: string }> => {
+  }): Promise<{ ok: boolean; error?: string; retryable?: boolean }> => {
+    if (customerAuthInFlightRef.current) {
+      return { ok: false, error: getCustomerAuthMessage(language as AuthLang, 'serviceWakingRetry') };
+    }
+    customerAuthInFlightRef.current = true;
     try {
-      const res = await fetch('/api/customer/register', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Requested-With': 'NIAPOLOR-Customer',
+      const res = await fetchCustomerWithTimeout(
+        '/api/customer/register',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'NIAPOLOR-Customer',
+            'Accept-Language': language,
+          },
+          body: JSON.stringify({ ...payload, lang: language }),
         },
-        credentials: 'include',
-        body: JSON.stringify(payload),
-      });
+        25000
+      );
+      if (res.status === 502 || res.status === 503 || res.status === 504) {
+        const errPayload = await res.json().catch(() => null);
+        return {
+          ok: false,
+          retryable: true,
+          error:
+            errPayload?.error ||
+            getCustomerAuthMessage(language as AuthLang, 'serviceWakingRetry'),
+        };
+      }
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.success || !data.customer) {
-        return { ok: false, error: data?.error || 'تعذر إنشاء الحساب. يرجى التثبت من المعطيات.' };
+        return {
+          ok: false,
+          error: data?.error || getCustomerAuthMessage(language as AuthLang, 'dbSaveFailed'),
+        };
       }
-      setCurrentUser({ ...data.customer, wishlist });
+      applyAuthenticatedCustomer(data.customer, true);
       await refreshCustomerOrders();
       return { ok: true };
     } catch {
-      return { ok: false, error: 'تعذر الاتصال بالخادم.' };
+      return {
+        ok: false,
+        retryable: true,
+        error: getCustomerAuthMessage(language as AuthLang, 'networkTimeoutRetry'),
+      };
+    } finally {
+      customerAuthInFlightRef.current = false;
     }
   };
 
   const logoutCustomer = async () => {
+    const prevUserId = currentUser?.id;
     try {
-      await fetch('/api/customer/logout', {
-        method: 'POST',
-        headers: { 'X-Requested-With': 'NIAPOLOR-Customer' },
-        credentials: 'include',
-      });
+      await fetchCustomerWithTimeout(
+        '/api/customer/logout',
+        {
+          method: 'POST',
+          headers: {
+            'X-Requested-With': 'NIAPOLOR-Customer',
+            'Accept-Language': language,
+          },
+        },
+        15000
+      );
     } catch {
       // ignore network error on logout
     }
     setCurrentUser(null);
+    if (prevUserId) {
+      setOrders(prev => prev.filter(o => !o.customerId || o.customerId !== prevUserId));
+    }
     try {
       localStorage.removeItem('echox_customer');
     } catch {
@@ -1346,51 +1588,158 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  const addCustomerAddress = async (
-    newAddr: Omit<CustomerAddress, 'id'>
-  ): Promise<{ ok: boolean; error?: string }> => {
-    if (!currentUser) return { ok: false, error: 'يرجى تسجيل الدخول أولاً.' };
+  const updateCustomerProfile = async (updates: {
+    fullName?: string;
+    phone?: string;
+  }): Promise<{ ok: boolean; error?: string; retryable?: boolean }> => {
+    if (!currentUser) {
+      return { ok: false, error: getCustomerAuthMessage(language as AuthLang, 'loginRequiredProfile') };
+    }
     try {
-      const res = await fetch('/api/customer/addresses', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Requested-With': 'NIAPOLOR-Customer',
+      const res = await fetchCustomerWithTimeout(
+        '/api/customer/profile',
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'NIAPOLOR-Customer',
+            'Accept-Language': language,
+          },
+          body: JSON.stringify({ ...updates, lang: language }),
         },
-        credentials: 'include',
-        body: JSON.stringify(newAddr),
-      });
+        20000
+      );
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.success || !data.customer) {
-        return { ok: false, error: data?.error || 'تعذر حفظ العنوان على الخادم.' };
+        return {
+          ok: false,
+          retryable: res.status === 502 || res.status === 503 || res.status === 504,
+          error: data?.error || getCustomerAuthMessage(language as AuthLang, 'dbSaveFailed'),
+        };
       }
-      setCurrentUser({ ...data.customer, wishlist });
+      applyAuthenticatedCustomer(data.customer, false);
       return { ok: true };
     } catch {
-      return { ok: false, error: 'تعذر الاتصال بالخادم.' };
+      return {
+        ok: false,
+        retryable: true,
+        error: getCustomerAuthMessage(language as AuthLang, 'networkTimeoutRetry'),
+      };
     }
   };
 
-  const setDefaultAddress = async (addressId: string): Promise<{ ok: boolean; error?: string }> => {
-    if (!currentUser) return { ok: false, error: 'يرجى تسجيل الدخول أولاً.' };
+  const addCustomerAddress = async (
+    newAddr: Omit<CustomerAddress, 'id'>
+  ): Promise<{ ok: boolean; error?: string; retryable?: boolean }> => {
+    if (!currentUser) {
+      return { ok: false, error: getCustomerAuthMessage(language as AuthLang, 'loginRequiredAddresses') };
+    }
     try {
-      const res = await fetch('/api/customer/addresses/default', {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Requested-With': 'NIAPOLOR-Customer',
+      const res = await fetchCustomerWithTimeout(
+        '/api/customer/addresses',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'NIAPOLOR-Customer',
+            'Accept-Language': language,
+          },
+          body: JSON.stringify({ ...newAddr, lang: language }),
         },
-        credentials: 'include',
-        body: JSON.stringify({ addressId }),
-      });
+        20000
+      );
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.success || !data.customer) {
-        return { ok: false, error: data?.error || 'تعذر تحديث العنوان الافتراضي.' };
+        return {
+          ok: false,
+          retryable: res.status === 502 || res.status === 503 || res.status === 504,
+          error: data?.error || getCustomerAuthMessage(language as AuthLang, 'dbSaveFailed'),
+        };
       }
-      setCurrentUser({ ...data.customer, wishlist });
+      applyAuthenticatedCustomer(data.customer, false);
       return { ok: true };
     } catch {
-      return { ok: false, error: 'تعذر الاتصال بالخادم.' };
+      return {
+        ok: false,
+        retryable: true,
+        error: getCustomerAuthMessage(language as AuthLang, 'networkTimeoutRetry'),
+      };
+    }
+  };
+
+  const setDefaultAddress = async (
+    addressId: string
+  ): Promise<{ ok: boolean; error?: string; retryable?: boolean }> => {
+    if (!currentUser) {
+      return { ok: false, error: getCustomerAuthMessage(language as AuthLang, 'loginRequiredAddresses') };
+    }
+    try {
+      const res = await fetchCustomerWithTimeout(
+        '/api/customer/addresses/default',
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'NIAPOLOR-Customer',
+            'Accept-Language': language,
+          },
+          body: JSON.stringify({ addressId, lang: language }),
+        },
+        20000
+      );
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success || !data.customer) {
+        return {
+          ok: false,
+          retryable: res.status === 502 || res.status === 503 || res.status === 504,
+          error: data?.error || getCustomerAuthMessage(language as AuthLang, 'dbSaveFailed'),
+        };
+      }
+      applyAuthenticatedCustomer(data.customer, false);
+      return { ok: true };
+    } catch {
+      return {
+        ok: false,
+        retryable: true,
+        error: getCustomerAuthMessage(language as AuthLang, 'networkTimeoutRetry'),
+      };
+    }
+  };
+
+  const deleteCustomerAddress = async (
+    addressId: string
+  ): Promise<{ ok: boolean; error?: string; retryable?: boolean }> => {
+    if (!currentUser) {
+      return { ok: false, error: getCustomerAuthMessage(language as AuthLang, 'loginRequiredAddresses') };
+    }
+    try {
+      const res = await fetchCustomerWithTimeout(
+        `/api/customer/addresses/${encodeURIComponent(addressId)}?lang=${encodeURIComponent(language)}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'X-Requested-With': 'NIAPOLOR-Customer',
+            'Accept-Language': language,
+          },
+        },
+        20000
+      );
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success || !data.customer) {
+        return {
+          ok: false,
+          retryable: res.status === 502 || res.status === 503 || res.status === 504,
+          error: data?.error || getCustomerAuthMessage(language as AuthLang, 'dbSaveFailed'),
+        };
+      }
+      applyAuthenticatedCustomer(data.customer, false);
+      return { ok: true };
+    } catch {
+      return {
+        ok: false,
+        retryable: true,
+        error: getCustomerAuthMessage(language as AuthLang, 'networkTimeoutRetry'),
+      };
     }
   };
 
@@ -1602,13 +1951,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     clientRequestId?: string;
   }): Promise<{
     ok: boolean;
+    code?: string;
     order?: Order;
+    trackingToken?: string;
     paymentUrl?: string;
     transferDetails?: PosteCcpTransferDetails;
+    updatedPrices?: Array<{ productId: string; oldPrice: number; newPrice: number }>;
+    updatedQuote?: ServerQuoteResponse;
+    recovered?: boolean;
     error?: string;
   }> => {
+    const reqId = orderData.clientRequestId || `chk_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const payload = {
-      customerId: currentUser?.id,
       customerName: orderData.customerName,
       customerEmail: orderData.customerEmail,
       customerPhone: orderData.customerPhone,
@@ -1628,29 +1982,82 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       carrierName: orderData.carrierName || 'NIAPOLOR Delivery Tunisie',
       notes: orderData.notes,
       transferProof: orderData.transferProof,
-      clientRequestId: orderData.clientRequestId,
+      clientRequestId: reqId,
     };
 
-    const res = await submitServerCheckout(payload);
-    if (!res.ok || !res.order) {
-      return { ok: false, error: res.error || 'تعذر تسجيل الطلب على الخادم.' };
-    }
-
-    setOrders(prev => {
-      const exists = prev.some(o => o.id === res.order!.id || o.trackingNumber === res.order!.trackingNumber);
-      if (exists) return prev.map(o => (o.id === res.order!.id ? res.order! : o));
-      return [res.order!, ...prev];
-    });
-    if (currentUser) {
-      void refreshCustomerOrders();
-    }
-    clearCart();
-    return {
-      ok: true,
-      order: res.order,
-      paymentUrl: res.paymentUrl,
-      transferDetails: res.transferDetails,
+    const finalizeCreatedOrder = (
+      order: Order,
+      trackingToken?: string,
+      paymentUrl?: string,
+      transferDetails?: PosteCcpTransferDetails,
+      recovered = false
+    ) => {
+      if (trackingToken) {
+        saveGuestTrackingToken(order.trackingNumber, trackingToken);
+      }
+      setOrders(prev => {
+        const exists = prev.some(o => o.id === order.id || o.trackingNumber === order.trackingNumber);
+        if (exists) return prev.map(o => (o.id === order.id ? order : o));
+        return [order, ...prev];
+      });
+      if (currentUser) {
+        void refreshCustomerOrders();
+      }
+      void refreshStoreState();
+      clearCart();
+      return {
+        ok: true as const,
+        order,
+        trackingToken,
+        paymentUrl,
+        transferDetails,
+        recovered,
+      };
     };
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 18000);
+    try {
+      const res = await submitServerCheckout(payload, { signal: controller.signal });
+      window.clearTimeout(timer);
+
+      if (res.updatedPrices && res.updatedPrices.length > 0) {
+        syncCartProductPrices(res.updatedPrices);
+      }
+
+      if (!res.ok || !res.order) {
+        return {
+          ok: false,
+          code: res.code,
+          error: res.error || 'تعذر تسجيل الطلب على الخادم.',
+          updatedPrices: res.updatedPrices,
+          updatedQuote: res.updatedQuote,
+        };
+      }
+
+      return finalizeCreatedOrder(res.order, res.trackingToken, res.paymentUrl, res.transferDetails, false);
+    } catch {
+      window.clearTimeout(timer);
+      try {
+        const rec = await recoverCheckoutStatus(reqId);
+        if (rec.ok && rec.found && rec.order) {
+          return finalizeCreatedOrder(
+            rec.order,
+            rec.trackingToken,
+            rec.paymentUrl,
+            rec.transferDetails,
+            true
+          );
+        }
+      } catch {
+        // recovery lookup failed
+      }
+      return {
+        ok: false,
+        code: 'TIMEOUT_OR_NETWORK',
+        error: 'انتهت مهلة الاتصال بالخادم — يرجى التحقق من الطلبات أو المحاولة مجدداً.',
+      };
+    }
   };
 
   const createOrder = (orderData: {
@@ -1722,7 +2129,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const updateOrderStatus = async (
     orderId: string,
     status: OrderStatus,
-    note?: string
+    note?: string,
+    reason?: string
   ): Promise<{ ok: boolean; order?: Order; error?: string }> => {
     const targetOrder = orders.find(o => o.id === orderId);
     const shippingSteps: OrderStatus[] = ['preparing', 'out_for_delivery', 'delivered'];
@@ -1735,7 +2143,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         method: 'PATCH',
         headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
         credentials: 'include',
-        body: JSON.stringify({ status, note }),
+        body: JSON.stringify({ status, note, ...(reason ? { reason } : {}) }),
       });
       const data = await srvRes.json().catch(() => ({}));
       if (srvRes.status === 401 || srvRes.status === 403) {
@@ -1750,6 +2158,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
       if (data.order) {
         updateOrderInState(data.order);
+        if (status === 'cancelled') {
+          void refreshStoreState();
+        }
         return { ok: true, order: data.order };
       }
       return { ok: true };
@@ -2014,6 +2425,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       couponCode,
       discountRate,
       applyCoupon,
+      applyCouponServer,
+      clearCoupon,
+      syncCartProductPrices,
       cartSubtotal,
       cartShippingFee,
       cartDiscountAmount,
@@ -2031,8 +2445,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       registerCustomer,
       logoutCustomer,
       refreshCustomerOrders,
+      updateCustomerProfile,
       addCustomerAddress,
       setDefaultAddress,
+      deleteCustomerAddress,
       
       isOwner,
       loginOwnerWithGoogle,

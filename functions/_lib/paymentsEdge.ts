@@ -1,5 +1,8 @@
 import type {
+  CouponRule,
   FinancialActivityLog,
+  GovernorateShippingRule,
+  InventoryAuditEntry,
   Order,
   OrderItem,
   OrderStatus,
@@ -20,6 +23,7 @@ import {
   isValidDelegationForGovernorate,
   isValidGovernorate,
   normalizeTunisianPhone,
+  TUNISIAN_GOVERNORATES,
 } from '../../src/data/governorates';
 import {
   checkEdgeSlidingWindowLimit,
@@ -54,14 +58,20 @@ interface InternalPaymentConfig extends PaymentSystemPublicConfig {
   secrets: ServerSecretsConfig;
   bankIntegritySeal?: string;
   shipping: {
-    standardShippingFee: number;
-    freeShippingThreshold: number;
+    standardShippingFee: number | null;
+    freeShippingThreshold: number | null;
+    governorateRules?: Record<string, GovernorateShippingRule>;
   };
+  coupons?: CouponRule[];
 }
 
 interface ProductCatalogEntry {
   id: string;
+  sku?: string;
+  name?: Product['name'];
+  image?: string;
   price: number;
+  stock?: number;
   companyId: string;
   companyName: string;
   active: boolean;
@@ -76,28 +86,87 @@ interface PaymentSystemDatabase {
   refundRequests: RefundRequest[];
   supportTransactions: SupportTransaction[];
   activityLogs: FinancialActivityLog[];
+  inventoryLogs?: InventoryAuditEntry[];
   processedWebhookKeys: string[];
-  recentCheckoutRequests?: Array<{ key: string; orderId: string; paymentUrl?: string; createdAt: number }>;
+  recentCheckoutRequests?: Array<{
+    key: string;
+    orderId: string;
+    paymentUrl?: string;
+    encryptedTrackingToken?: string;
+    createdAt: number;
+  }>;
 }
+
+function buildDefaultGovernorateRules(standardFee = 7.0): Record<string, GovernorateShippingRule> {
+  const rules: Record<string, GovernorateShippingRule> = {};
+  for (const gov of TUNISIAN_GOVERNORATES) {
+    const isGreaterTunis = ['tunis', 'ariana', 'ben_arous', 'manouba'].includes(gov.id);
+    rules[gov.id] = {
+      governorateId: gov.id,
+      enabled: true,
+      fee: standardFee,
+      estimatedDelivery: isGreaterTunis ? '24–48 ساعة' : '48–72 ساعة',
+      useStandardFee: true,
+    };
+  }
+  return rules;
+}
+
+const DEFAULT_COUPONS: CouponRule[] = [
+  {
+    code: 'NIAPOLOR2026',
+    discountType: 'percentage',
+    discountValue: 10,
+    active: true,
+    description: 'خصم الإطلاق 10%',
+  },
+  {
+    code: 'NIAPOLOR10',
+    discountType: 'percentage',
+    discountValue: 10,
+    active: true,
+    description: 'خصم ترحيبي 10%',
+  },
+  {
+    code: 'ECHOX2026',
+    discountType: 'percentage',
+    discountValue: 10,
+    active: true,
+    description: 'خصم 10%',
+  },
+  {
+    code: 'ECHOX10',
+    discountType: 'percentage',
+    discountValue: 10,
+    active: true,
+    description: 'خصم 10%',
+  },
+];
 
 const DEFAULT_CATALOG: Record<string, ProductCatalogEntry> = {
   prod_titan_drill: {
     id: 'prod_titan_drill',
+    sku: 'PROD_TITAN_DRILL',
     price: 345.0,
+    stock: 14,
     companyId: 'comp_echox',
     companyName: 'NIAPOLOR Distribution Tunisie',
     active: true,
   },
   prod_aether_headlight: {
     id: 'prod_aether_headlight',
+    sku: 'PROD_AETHER_HEADLIGHT',
     price: 680.0,
+    stock: 6,
     companyId: 'comp_atlas',
     companyName: 'Atlas Mécanique & Pièces Sfax',
     active: true,
   },
   prod_fluke_multimeter: {
     id: 'prod_fluke_multimeter',
+    sku: 'PROD_FLUKE_MULTIMETER',
     price: 520.0,
+    stock: 8,
     companyId: 'comp_med_elec',
     companyName: 'Méditerranée Électronique & Mesure',
     active: true,
@@ -114,7 +183,9 @@ function createInitialDb(env?: EdgeEnv): PaymentSystemDatabase {
       shipping: {
         standardShippingFee: 7.0,
         freeShippingThreshold: 150.0,
+        governorateRules: buildDefaultGovernorateRules(7.0),
       },
+      coupons: DEFAULT_COUPONS.map((c) => ({ ...c })),
       methods: {
         cod: { enabled: true },
         bank_transfer: {
@@ -170,6 +241,7 @@ function createInitialDb(env?: EdgeEnv): PaymentSystemDatabase {
         timestamp: now,
       },
     ],
+    inventoryLogs: [],
     processedWebhookKeys: [],
   };
 }
@@ -186,7 +258,12 @@ function mergePaymentDb(raw: Partial<PaymentSystemDatabase> | null, env?: EdgeEn
       shipping: {
         ...def.config.shipping,
         ...(raw.config?.shipping || {}),
+        governorateRules: {
+          ...(def.config.shipping.governorateRules || {}),
+          ...(raw.config?.shipping?.governorateRules || {}),
+        },
       },
+      coupons: Array.isArray(raw.config?.coupons) ? raw.config!.coupons : def.config.coupons,
       methods: {
         cod: { ...def.config.methods.cod, ...(raw.config?.methods?.cod || {}) },
         bank_transfer: {
@@ -222,6 +299,7 @@ function mergePaymentDb(raw: Partial<PaymentSystemDatabase> | null, env?: EdgeEn
     refundRequests: Array.isArray(raw.refundRequests) ? raw.refundRequests : [],
     supportTransactions: Array.isArray(raw.supportTransactions) ? raw.supportTransactions : [],
     activityLogs: Array.isArray(raw.activityLogs) ? raw.activityLogs : def.activityLogs,
+    inventoryLogs: Array.isArray(raw.inventoryLogs) ? raw.inventoryLogs : [],
     processedWebhookKeys: Array.isArray(raw.processedWebhookKeys) ? raw.processedWebhookKeys : [],
     recentCheckoutRequests: Array.isArray(raw.recentCheckoutRequests) ? raw.recentCheckoutRequests : [],
   };
@@ -388,14 +466,7 @@ async function computeIbanFingerprint(ibanOrRib: string): Promise<string> {
 }
 
 async function resolveOrCreateEdgeHmacSecret(env: EdgeEnv): Promise<string | null> {
-  const existing = await resolveSharedHmacSecret(env);
-  if (existing) return existing;
-  const generated = randomHex(48);
-  const saved = await saveEdgeDoc(env, 'echox:security_hmac_secret', {
-    secret: generated,
-    updatedAt: new Date().toISOString(),
-  });
-  return saved.ok ? generated : null;
+  return resolveSharedHmacSecret(env);
 }
 
 function isEnvLockedBank(env: EdgeEnv): boolean {
@@ -428,30 +499,30 @@ async function getVerifiedBankTransferPublicEdge(
 
   const storedSeal = (cfg.bankIntegritySeal || '').trim();
   const sharedSecret = await resolveSharedHmacSecret(env);
-  if (!docExists && !storedSeal) {
+  if (!sharedSecret) {
     return {
       ...rawBank,
-      integrityVerified: true,
+      enabled: false,
+      ibanOrRib: '⚠️ التحويل البنكي معطّل مؤقتاً لعدم ضبط مفتاح التوقيع الخادمي',
+      integrityVerified: false,
       lockedByEnv: false,
       tamperDetected: false,
-      ibanFingerprint: await computeIbanFingerprint(rawBank.ibanOrRib),
+      ibanFingerprint: 'UNCONFIGURED',
     };
   }
 
-  if (sharedSecret) {
-    const expectedSeal = await computeBankSealWithKey(rawBank, sharedSecret);
-    const sealValid = Boolean(storedSeal && timingSafeEqualHex(storedSeal, expectedSeal));
-    if (!sealValid) {
-      return {
-        ...rawBank,
-        enabled: false,
-        ibanOrRib: '⚠️ تم تعليق التحويل البنكي تلقائياً لاكتشاف تعديل غير مصرّح به',
-        integrityVerified: false,
-        lockedByEnv: false,
-        tamperDetected: true,
-        ibanFingerprint: 'TAMPERED',
-      };
-    }
+  const expectedSeal = await computeBankSealWithKey(rawBank, sharedSecret);
+  const sealValid = Boolean(storedSeal && timingSafeEqualHex(storedSeal, expectedSeal));
+  if (!sealValid) {
+    return {
+      ...rawBank,
+      enabled: false,
+      ibanOrRib: '⚠️ تم تعليق التحويل البنكي تلقائياً لاكتشاف تعديل غير مصرّح به',
+      integrityVerified: false,
+      lockedByEnv: false,
+      tamperDetected: true,
+      ibanFingerprint: 'TAMPERED',
+    };
   }
 
   return {
@@ -551,6 +622,7 @@ async function getPublicPaymentConfigEdge(
     taxRatePercent: cfg.taxRatePercent,
     standardShippingFee: cfg.shipping.standardShippingFee,
     freeShippingThreshold: cfg.shipping.freeShippingThreshold,
+    shippingRules: cfg.shipping.governorateRules,
     methods: {
       cod: { enabled: !!cfg.methods.cod.enabled },
       bank_transfer: getHiddenBankTransferPublicEdge(),
@@ -590,6 +662,8 @@ async function getAdminPaymentConfigEdge(
     taxRatePercent: cfg.taxRatePercent,
     standardShippingFee: cfg.shipping.standardShippingFee,
     freeShippingThreshold: cfg.shipping.freeShippingThreshold,
+    shippingRules: cfg.shipping.governorateRules,
+    coupons: cfg.coupons || [],
     methods: {
       cod: { enabled: !!cfg.methods.cod.enabled },
       bank_transfer: verifiedBank,
@@ -1046,9 +1120,241 @@ function applyGatewayStatusToOrder(
   return order;
 }
 
+function stripOrderSecretsEdge(order: Order): Order {
+  const { trackingTokenHash: _h, trackingToken: _t, ...clean } = order;
+  return clean;
+}
+
+async function hashTrackingTokenEdge(token: string, hmacSecret: string | null): Promise<string> {
+  const clean = (token || '').trim();
+  if (!clean) return '';
+  if (hmacSecret) {
+    return hmacSha256Hex(hmacSecret, `track:${clean}`);
+  }
+  return sha256Hex(`track:${clean}`);
+}
+
+async function verifyTrackingTokenEdge(
+  order: Order,
+  candidateToken: string | undefined,
+  hmacSecret: string | null
+): Promise<boolean> {
+  const clean = (candidateToken || '').trim();
+  if (!clean || clean.length < 16 || !order.trackingTokenHash) return false;
+  const computed = await hashTrackingTokenEdge(clean, hmacSecret);
+  return Boolean(computed && timingSafeEqualHex(computed, order.trackingTokenHash));
+}
+
+function maskPersonNameEdge(raw: string): string {
+  const clean = String(raw || '').trim();
+  if (!clean) return '***';
+  return clean
+    .split(/\s+/)
+    .map((p) => (p.length <= 1 ? '*' : `${p.slice(0, 1)}${'*'.repeat(Math.min(4, p.length - 1))}`))
+    .join(' ');
+}
+
+function maskPhoneNumberEdge(raw: string): string {
+  const digits = String(raw || '').replace(/\D/g, '');
+  if (digits.length < 4) return '****';
+  return `${digits.slice(0, 2)}****${digits.slice(-2)}`;
+}
+
+function calculateShippingForLocationEdge(
+  cfg: InternalPaymentConfig,
+  params: { governorate: string; delegation?: string; subtotal: number }
+): {
+  ok: boolean;
+  statusCode?: number;
+  code?: string;
+  error?: string;
+  shippingFee: number;
+  estimatedDelivery: string;
+  freeShippingApplied: boolean;
+} {
+  const gov = String(params.governorate || '').trim();
+  const delegation = String(params.delegation || '').trim();
+  if (!isValidGovernorate(gov)) {
+    return {
+      ok: false,
+      statusCode: 400,
+      code: 'INVALID_LOCATION',
+      error: 'يرجى اختيار الولاية التونسية من القائمة المعتمدة.',
+      shippingFee: 0,
+      estimatedDelivery: '',
+      freeShippingApplied: false,
+    };
+  }
+  if (delegation && !isValidDelegationForGovernorate(gov, delegation)) {
+    return {
+      ok: false,
+      statusCode: 400,
+      code: 'INVALID_LOCATION',
+      error: 'يرجى اختيار المعتمدية التابعة للولاية المختارة.',
+      shippingFee: 0,
+      estimatedDelivery: '',
+      freeShippingApplied: false,
+    };
+  }
+  const rule = cfg.shipping?.governorateRules?.[gov];
+  if (!rule) {
+    return {
+      ok: false,
+      statusCode: 400,
+      code: 'SHIPPING_UNCONFIGURED',
+      error: 'قواعد الشحن لهذه الولاية غير مهيأة حالياً — يرجى التواصل مع الإدارة.',
+      shippingFee: 0,
+      estimatedDelivery: '',
+      freeShippingApplied: false,
+    };
+  }
+  const delOverride = delegation && rule.delegationOverrides ? rule.delegationOverrides[delegation] : undefined;
+  if (rule.enabled === false || delOverride?.enabled === false) {
+    return {
+      ok: false,
+      statusCode: 400,
+      code: 'SHIPPING_UNAVAILABLE',
+      error: 'التوصيل غير متاح حالياً لهذه المنطقة.',
+      shippingFee: 0,
+      estimatedDelivery: '',
+      freeShippingApplied: false,
+    };
+  }
+  let rawBaseFee: number | null | undefined;
+  if (delOverride && delOverride.fee !== undefined) {
+    rawBaseFee = delOverride.fee;
+  } else if (rule.useStandardFee) {
+    rawBaseFee = cfg.shipping.standardShippingFee;
+  } else {
+    rawBaseFee = rule.fee;
+  }
+  if (typeof rawBaseFee !== 'number' || !Number.isFinite(rawBaseFee) || rawBaseFee < 0) {
+    return {
+      ok: false,
+      statusCode: 400,
+      code: 'SHIPPING_UNCONFIGURED',
+      error: 'تعريفة الشحن لهذه الولاية لم يتم ضبطها بعد.',
+      shippingFee: 0,
+      estimatedDelivery: '',
+      freeShippingApplied: false,
+    };
+  }
+  const baseFee = round3(rawBaseFee);
+  const threshold =
+    rule.freeShippingThreshold !== undefined && rule.freeShippingThreshold !== null
+      ? rule.freeShippingThreshold
+      : cfg.shipping.freeShippingThreshold;
+  const freeShippingApplied =
+    typeof threshold === 'number' && Number.isFinite(threshold) && threshold > 0 && params.subtotal >= threshold;
+  const shippingFee = freeShippingApplied ? 0 : baseFee;
+  const estimatedDelivery =
+    (delOverride?.estimatedDelivery && delOverride.estimatedDelivery.trim()) ||
+    rule.estimatedDelivery ||
+    '48 ساعة';
+  return { ok: true, shippingFee, estimatedDelivery, freeShippingApplied };
+}
+
+function validateCouponEdge(
+  cfg: InternalPaymentConfig,
+  params: { couponCode?: string; subtotal: number }
+): {
+  ok: boolean;
+  statusCode?: number;
+  code?: string;
+  error?: string;
+  discount: number;
+  coupon: CouponRule | null;
+} {
+  const cleanCode = String(params.couponCode || '').trim().toUpperCase();
+  if (!cleanCode) return { ok: true, discount: 0, coupon: null };
+  const found = (cfg.coupons || []).find((c) => c.code.trim().toUpperCase() === cleanCode);
+  if (!found || found.active === false) {
+    return { ok: false, statusCode: 400, code: 'INVALID_COUPON', error: 'كود الخصم غير صالح أو تم إيقافه.', discount: 0, coupon: null };
+  }
+  if (found.expiresAt) {
+    const expMs = new Date(found.expiresAt).getTime();
+    if (Number.isFinite(expMs) && expMs <= Date.now()) {
+      return { ok: false, statusCode: 400, code: 'EXPIRED_COUPON', error: 'انتهت صلاحية كود الخصم هذا.', discount: 0, coupon: null };
+    }
+  }
+  if (typeof found.minSubtotal === 'number' && Number.isFinite(found.minSubtotal) && params.subtotal < found.minSubtotal) {
+    return {
+      ok: false,
+      statusCode: 400,
+      code: 'COUPON_MIN_SUBTOTAL',
+      error: `يتطلب هذا الكوبون حداً أدنى للمشتريات قدره ${found.minSubtotal.toFixed(3)} ${cfg.currency}.`,
+      discount: 0,
+      coupon: null,
+    };
+  }
+  let rawDiscount =
+    found.discountType === 'fixed'
+      ? found.discountValue
+      : params.subtotal * (Math.min(100, Math.max(0, found.discountValue)) / 100);
+  if (typeof found.maxDiscount === 'number' && Number.isFinite(found.maxDiscount) && found.maxDiscount > 0) {
+    rawDiscount = Math.min(rawDiscount, found.maxDiscount);
+  }
+  return {
+    ok: true,
+    discount: round3(Math.min(params.subtotal, Math.max(0, rawDiscount))),
+    coupon: { ...found },
+  };
+}
+
+function restoreOrderStockOnceEdge(
+  db: PaymentSystemDatabase,
+  order: Order,
+  reason: 'order_cancel_restore' | 'order_refund_restore',
+  actor: string
+): InventoryAuditEntry[] {
+  if (!order.stockDeducted || order.stockRestored) return [];
+  const addedLogs: InventoryAuditEntry[] = [];
+  const qtyByProduct = new Map<string, number>();
+  for (const item of order.items || []) {
+    const qty = Math.max(0, Math.floor(Number(item?.quantity) || 0));
+    if (item?.productId && qty > 0) {
+      qtyByProduct.set(item.productId, (qtyByProduct.get(item.productId) || 0) + qty);
+    }
+  }
+  for (const [productId, qty] of qtyByProduct.entries()) {
+    const cat = db.catalog[productId];
+    if (cat) {
+      const prevStock = typeof cat.stock === 'number' ? Math.max(0, Math.floor(cat.stock)) : 0;
+      const nextStock = prevStock + qty;
+      db.catalog[productId] = { ...cat, stock: nextStock };
+      addedLogs.push({
+        id: `inv_${Date.now()}_${randomHex(3)}`,
+        productId,
+        sku: cat.sku,
+        productName: cat.name?.ar || cat.name?.en || productId,
+        delta: qty,
+        previousStock: prevStock,
+        newStock: nextStock,
+        reason,
+        orderId: order.id,
+        trackingNumber: order.trackingNumber,
+        actor,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+  order.stockRestored = true;
+  return addedLogs;
+}
+
 export async function syncEdgeCatalogSnapshot(
   env: EdgeEnv,
-  products: Array<{ id: string; price: number; companyId?: string; companyName?: string; active?: boolean }>,
+  products: Array<{
+    id: string;
+    sku?: string;
+    name?: Product['name'];
+    images?: string[];
+    stock?: number;
+    price: number;
+    companyId?: string;
+    companyName?: string;
+    active?: boolean;
+  }>,
   options?: { replaceAll?: boolean }
 ): Promise<{ ok: boolean; statusCode?: number; error?: string }> {
   if (!Array.isArray(products)) return { ok: true };
@@ -1064,11 +1370,19 @@ export async function syncEdgeCatalogSnapshot(
       for (const p of products) {
         if (!p || !p.id || typeof p.price !== 'number' || !Number.isFinite(p.price) || p.price < 0) continue;
         seenIds.add(p.id);
+        const existing = nextCatalog[p.id];
         nextCatalog[p.id] = {
           id: p.id,
+          sku: p.sku || existing?.sku || p.id.toUpperCase(),
+          name: p.name || existing?.name,
+          image: p.images?.[0] || existing?.image || '',
           price: round3(p.price),
-          companyId: p.companyId || 'comp_echox',
-          companyName: p.companyName || 'NIAPOLOR Distribution Tunisie',
+          stock:
+            typeof p.stock === 'number' && Number.isFinite(p.stock)
+              ? Math.max(0, Math.floor(p.stock))
+              : existing?.stock ?? 0,
+          companyId: p.companyId || existing?.companyId || 'comp_echox',
+          companyName: p.companyName || existing?.companyName || 'NIAPOLOR Distribution Tunisie',
           active: p.active !== false,
         };
       }
@@ -1156,6 +1470,128 @@ export async function handleEdgePaymentsRoute(
     const res = await syncEdgeCatalogSnapshot(env, body?.products, { replaceAll: false });
     if (!res.ok) return jsonResponse({ success: false, error: res.error }, res.statusCode || 503);
     return jsonResponse({ success: true });
+  }
+
+  // 2.1 Server Quote & Coupon Validation
+  if (method === 'POST' && pathname === '/api/payments/quote') {
+    const ip = getEdgeClientIp(request);
+    const rate = checkEdgeSlidingWindowLimit('paymentQuote', ip, 45, 60_000);
+    if (!rate.allowed) {
+      return jsonResponse({ success: false, error: `تم تجاوز الحد المسموح، يرجى الانتظار ${rate.retryAfterSeconds} ثانية.` }, 429);
+    }
+    const body = await parseJsonBody();
+    const loaded = await loadEdgeDocWithMeta<Partial<PaymentSystemDatabase>>(env, CLOUD_PAYMENT_KEY);
+    if (!loaded.ok) return jsonResponse({ success: false, error: loaded.error }, 503);
+    const db = mergePaymentDb(loaded.data, env);
+    if (!body || !Array.isArray(body.items) || body.items.length === 0) {
+      return jsonResponse({ success: false, code: 'EMPTY_CART', error: 'السلة فارغة — لا يمكن حساب الفاتورة.' }, 400);
+    }
+    const qtyByProd = new Map<string, number>();
+    const verifiedItems: OrderItem[] = [];
+    const priceMismatches: Array<{ productId: string; oldPrice: number; newPrice: number }> = [];
+    for (const rawItem of body.items) {
+      const pid = String(rawItem?.productId || '').trim();
+      const qty = Math.floor(Number(rawItem?.quantity));
+      if (!pid || !Number.isFinite(qty) || qty <= 0 || qty > 1000) {
+        return jsonResponse({ success: false, code: 'INVALID_QUANTITY', error: `كمية غير صالحة للمنتج ${pid}.` }, 400);
+      }
+      const cat = db.catalog[pid];
+      if (!cat) {
+        return jsonResponse({ success: false, code: 'UNKNOWN_PRODUCT', error: `المنتج (${pid}) غير موجود في الكاتالوج.` }, 400);
+      }
+      if (!cat.active) {
+        return jsonResponse({ success: false, code: 'PRODUCT_INACTIVE', error: `المنتج ${pid} غير متاح حالياً للشراء.` }, 400);
+      }
+      if (typeof rawItem.unitPrice === 'number' && Math.abs(rawItem.unitPrice - cat.price) > 0.01) {
+        priceMismatches.push({ productId: pid, oldPrice: rawItem.unitPrice, newPrice: cat.price });
+      }
+      qtyByProd.set(pid, (qtyByProd.get(pid) || 0) + qty);
+      verifiedItems.push({
+        productId: pid,
+        sku: cat.sku || pid.toUpperCase(),
+        productName: cat.name || rawItem.productName || { ar: pid, fr: pid, en: pid },
+        productImage: cat.image || rawItem.productImage || '',
+        companyId: cat.companyId,
+        companyName: cat.companyName,
+        unitPrice: cat.price,
+        quantity: qty,
+        totalPrice: round3(cat.price * qty),
+      });
+    }
+    for (const [pid, totQty] of qtyByProd.entries()) {
+      const cat = db.catalog[pid];
+      const avail = typeof cat?.stock === 'number' ? Math.max(0, Math.floor(cat.stock)) : 0;
+      if (avail < totQty) {
+        return jsonResponse({ success: false, code: 'STOCK_UNAVAILABLE', error: `الكمية المطلوبة للمنتج (${pid}) تتجاوز المخزون المتوفر (${avail}).` }, 409);
+      }
+    }
+    const subtotal = round3(verifiedItems.reduce((s, i) => s + i.totalPrice, 0));
+    const couponCheck = validateCouponEdge(db.config, { couponCode: body.couponCode, subtotal });
+    if (!couponCheck.ok) {
+      return jsonResponse({ success: false, code: couponCheck.code, error: couponCheck.error }, couponCheck.statusCode || 400);
+    }
+    const discount = couponCheck.discount;
+    const netTotal = Math.max(0, round3(subtotal - discount));
+    const taxAmount = round3(netTotal * (db.config.taxRatePercent / 100));
+    let shippingFee = 0;
+    let estimatedDelivery = '';
+    let freeShippingApplied = false;
+    if (body.governorate && String(body.governorate).trim()) {
+      const sc = calculateShippingForLocationEdge(db.config, {
+        governorate: String(body.governorate),
+        delegation: body.delegation,
+        subtotal,
+      });
+      if (!sc.ok) {
+        return jsonResponse({ success: false, code: sc.code, error: sc.error }, sc.statusCode || 400);
+      }
+      shippingFee = sc.shippingFee;
+      estimatedDelivery = sc.estimatedDelivery;
+      freeShippingApplied = sc.freeShippingApplied;
+    }
+    const totalAmount = round3(netTotal + taxAmount + shippingFee);
+    return jsonResponse({
+      success: true,
+      priceChanged: priceMismatches.length > 0,
+      ...(priceMismatches.length > 0 ? { code: 'PRICE_CHANGED', updatedPrices: priceMismatches } : {}),
+      verifiedItems,
+      subtotal,
+      discount,
+      coupon: couponCheck.coupon,
+      taxAmount,
+      shippingFee,
+      estimatedDelivery,
+      freeShippingApplied,
+      totalAmount,
+      currency: db.config.currency,
+    });
+  }
+
+  if (method === 'POST' && pathname === '/api/payments/apply-coupon') {
+    const ip = getEdgeClientIp(request);
+    const rate = checkEdgeSlidingWindowLimit('applyCoupon', ip, 30, 60_000);
+    if (!rate.allowed) {
+      return jsonResponse({ success: false, error: `تم تجاوز الحد المسموح، يرجى الانتظار ${rate.retryAfterSeconds} ثانية.` }, 429);
+    }
+    const body = await parseJsonBody();
+    const loaded = await loadEdgeDocWithMeta<Partial<PaymentSystemDatabase>>(env, CLOUD_PAYMENT_KEY);
+    if (!loaded.ok) return jsonResponse({ success: false, error: loaded.error }, 503);
+    const db = mergePaymentDb(loaded.data, env);
+    let subtotal = Number(body?.subtotal || 0);
+    if (Array.isArray(body?.items) && body.items.length > 0) {
+      subtotal = round3(
+        body.items.reduce((s: number, it: any) => {
+          const cat = db.catalog[String(it?.productId || '').trim()];
+          const qty = Math.max(0, Math.floor(Number(it?.quantity) || 0));
+          return s + (cat ? cat.price * qty : 0);
+        }, 0)
+      );
+    }
+    const check = validateCouponEdge(db.config, { couponCode: body?.couponCode, subtotal });
+    if (!check.ok) {
+      return jsonResponse({ success: false, code: check.code, error: check.error }, check.statusCode || 400);
+    }
+    return jsonResponse({ success: true, discount: check.discount, coupon: check.coupon, subtotal });
   }
 
   // 3. Server-Verified Multi-Vendor Checkout
@@ -1308,6 +1744,8 @@ export async function handleEdgePaymentsRoute(
 
         const verifiedItems: OrderItem[] = [];
         const nextCatalog = { ...db.catalog };
+        const qtyByProd = new Map<string, number>();
+        const priceMismatches: Array<{ productId: string; oldPrice: number; newPrice: number }> = [];
 
         for (const rawItem of input.items) {
           const qty = Math.floor(Number(rawItem.quantity));
@@ -1322,37 +1760,20 @@ export async function handleEdgePaymentsRoute(
             if (foundStoreProd && typeof foundStoreProd.price === 'number') {
               catalogItem = {
                 id: foundStoreProd.id,
+                sku: foundStoreProd.sku || foundStoreProd.id.toUpperCase(),
+                name: foundStoreProd.name,
+                image: foundStoreProd.images?.[0] || '',
                 price: round3(foundStoreProd.price),
+                stock: typeof foundStoreProd.stock === 'number' ? Math.max(0, Math.floor(foundStoreProd.stock)) : 0,
                 companyId: foundStoreProd.companyId || 'comp_echox',
-                companyName: 'ECHOX Distribution Tunisie',
+                companyName: foundStoreProd.companyName || 'NIAPOLOR Distribution Tunisie',
                 active: foundStoreProd.active !== false,
               };
               nextCatalog[catalogItem.id] = catalogItem;
             }
           }
 
-          let authoritativeUnitPrice: number;
-          let authoritativeVendorId: string;
-          let authoritativeVendorName: string;
-
-          if (catalogItem) {
-            if (!catalogItem.active) {
-              return { skipWrite: true, result: { errStatus: 400, errMsg: `المنتج ${rawItem.productId} غير متاح حالياً للشراء.` } };
-            }
-            if (typeof rawItem.unitPrice === 'number' && Math.abs(rawItem.unitPrice - catalogItem.price) > 0.01) {
-              return {
-                skipWrite: true,
-                result: {
-                  errStatus: 400,
-                  errMsg: 'تم رفض الطلب: السعر المرسل لا يطابق السعر المعتمد على الخادم.',
-                  securityAlert: `تلاعب بسعر المنتج ${rawItem.productId}`,
-                },
-              };
-            }
-            authoritativeUnitPrice = catalogItem.price;
-            authoritativeVendorId = catalogItem.companyId;
-            authoritativeVendorName = catalogItem.companyName;
-          } else {
+          if (!catalogItem) {
             return {
               skipWrite: true,
               result: {
@@ -1362,34 +1783,84 @@ export async function handleEdgePaymentsRoute(
               },
             };
           }
+          if (!catalogItem.active) {
+            return { skipWrite: true, result: { errStatus: 400, errMsg: `المنتج ${rawItem.productId} غير متاح حالياً للشراء.` } };
+          }
+          if (typeof rawItem.unitPrice === 'number' && Math.abs(rawItem.unitPrice - catalogItem.price) > 0.01) {
+            priceMismatches.push({
+              productId: rawItem.productId,
+              oldPrice: rawItem.unitPrice,
+              newPrice: catalogItem.price,
+            });
+          }
 
+          qtyByProd.set(rawItem.productId, (qtyByProd.get(rawItem.productId) || 0) + qty);
           verifiedItems.push({
             productId: rawItem.productId,
-            productName: rawItem.productName,
-            productImage: rawItem.productImage || '',
-            companyId: authoritativeVendorId,
-            companyName: authoritativeVendorName,
-            unitPrice: authoritativeUnitPrice,
+            sku: catalogItem.sku || rawItem.productId.toUpperCase(),
+            productName: catalogItem.name || rawItem.productName,
+            productImage: catalogItem.image || rawItem.productImage || '',
+            companyId: catalogItem.companyId,
+            companyName: catalogItem.companyName,
+            unitPrice: catalogItem.price,
             quantity: qty,
-            totalPrice: round3(authoritativeUnitPrice * qty),
+            totalPrice: round3(catalogItem.price * qty),
           });
+        }
+
+        for (const [pid, totQty] of qtyByProd.entries()) {
+          const cat = nextCatalog[pid];
+          const avail = typeof cat?.stock === 'number' ? Math.max(0, Math.floor(cat.stock)) : 0;
+          if (avail < totQty) {
+            return {
+              skipWrite: true,
+              result: {
+                errStatus: 409,
+                errMsg:
+                  avail === 0
+                    ? `عذراً، المنتج (${cat.name?.ar || pid}) نفد من المخزون.`
+                    : `الكمية المطلوبة للمنتج (${cat.name?.ar || pid}) تتجاوز المخزون المتوفر (${avail}).`,
+              },
+            };
+          }
         }
 
         const subtotal = round3(verifiedItems.reduce((sum, it) => sum + it.totalPrice, 0));
         const cleanCoupon = String(input.couponCode || '').trim().toUpperCase();
-        const discountRate =
-          cleanCoupon === 'NIAPOLOR2026' ||
-          cleanCoupon === 'NIAPOLOR10' ||
-          cleanCoupon === 'ECHOX2026' ||
-          cleanCoupon === 'ECHOX10'
-            ? 0.1
-            : 0;
-        const discount = round3(subtotal * discountRate);
+        const couponCheck = validateCouponEdge(cfg, { couponCode: cleanCoupon, subtotal });
+        if (!couponCheck.ok) {
+          return { skipWrite: true, result: { errStatus: couponCheck.statusCode || 400, errMsg: couponCheck.error } };
+        }
+        const discount = couponCheck.discount;
+        if (discount > 0 && subtotal > 0) {
+          verifiedItems.forEach((it) => {
+            it.discountApplied = round3(discount * (it.totalPrice / subtotal));
+          });
+        }
         const netItemsTotal = Math.max(0, round3(subtotal - discount));
         const taxAmount = round3(netItemsTotal * (cfg.taxRatePercent / 100));
-        const shippingFee =
-          subtotal >= cfg.shipping.freeShippingThreshold ? 0 : round3(cfg.shipping.standardShippingFee);
+        const shipCheck = calculateShippingForLocationEdge(cfg, {
+          governorate: cleanGov,
+          delegation: cleanDelegation,
+          subtotal,
+        });
+        if (!shipCheck.ok) {
+          return { skipWrite: true, result: { errStatus: shipCheck.statusCode || 400, errMsg: shipCheck.error } };
+        }
+        const shippingFee = shipCheck.shippingFee;
+        const estimatedDelivery = shipCheck.estimatedDelivery;
         const totalAmount = round3(netItemsTotal + taxAmount + shippingFee);
+
+        if (priceMismatches.length > 0) {
+          return {
+            skipWrite: true,
+            result: {
+              errStatus: 400,
+              errMsg: 'تم رفض الطلب: السعر المرسل لا يطابق السعر المعتمد على الخادم (تم تحديث الأسعار).',
+              securityAlert: `تلاعب بسعر المنتج (${priceMismatches.map((p) => p.productId).join(',')})`,
+            },
+          };
+        }
 
         if (
           typeof input.clientExpectedTotal === 'number' &&
@@ -1536,9 +2007,35 @@ export async function handleEdgePaymentsRoute(
           ...(input.shippingAddress?.notes?.trim() ? { notes: String(input.shippingAddress.notes).trim() } : {}),
         };
 
+        const newInvLogs: InventoryAuditEntry[] = [];
+        for (const [pid, totQty] of qtyByProd.entries()) {
+          const cat = nextCatalog[pid];
+          const prevStock = typeof cat?.stock === 'number' ? Math.max(0, Math.floor(cat.stock)) : 0;
+          const nextStock = Math.max(0, prevStock - totQty);
+          nextCatalog[pid] = { ...cat, stock: nextStock };
+          newInvLogs.push({
+            id: `inv_${Date.now()}_${randomHex(3)}`,
+            productId: pid,
+            sku: cat.sku,
+            productName: cat.name?.ar || cat.name?.en || pid,
+            delta: -totQty,
+            previousStock: prevStock,
+            newStock: nextStock,
+            reason: 'checkout_deduct',
+            orderId,
+            trackingNumber,
+            actor: custSess?.customerId || 'guest',
+            timestamp: now,
+          });
+        }
+
+        const rawTrackingToken = randomHex(16);
+        const trackingTokenHash = await hashTrackingTokenEdge(rawTrackingToken, hmacSecret);
+
         const order: Order = {
           id: orderId,
           trackingNumber,
+          trackingTokenHash,
           customerId: custSess?.customerId || undefined,
           customerName: cleanName,
           customerEmail: cleanEmail,
@@ -1547,8 +2044,10 @@ export async function handleEdgePaymentsRoute(
           items: verifiedItems,
           subtotal,
           discount,
+          ...(cleanCoupon && discount > 0 ? { couponCode: cleanCoupon } : {}),
           taxAmount,
           shippingFee,
+          estimatedDelivery,
           totalAmount,
           platformCommissionTotal,
           currency: cfg.currency,
@@ -1559,6 +2058,8 @@ export async function handleEdgePaymentsRoute(
           transferProof: submittedProof,
           subOrders,
           transactionId,
+          stockDeducted: true,
+          stockRestored: false,
           carrierName: input.carrierName || 'NIAPOLOR Delivery Tunisie',
           createdAt: now,
           updatedAt: now,
@@ -1643,6 +2144,7 @@ export async function handleEdgePaymentsRoute(
           orders: [order, ...db.orders],
           transactions: [transaction, ...db.transactions],
           vendorLedgers: [...ledgerEntries, ...db.vendorLedgers],
+          inventoryLogs: [...newInvLogs, ...(db.inventoryLogs || [])].slice(0, 500),
           recentCheckoutRequests: nextRecentReqs,
           activityLogs: prependActivity(
             db,
@@ -1654,12 +2156,21 @@ export async function handleEdgePaymentsRoute(
           ),
         };
 
-        return { nextDoc, result: { order, transaction, paymentUrl, transferDetails: resolvedPosteCcpDetails } };
+        return {
+          nextDoc,
+          result: {
+            order: stripOrderSecretsEdge(order),
+            transaction,
+            paymentUrl,
+            trackingToken: rawTrackingToken,
+            transferDetails: resolvedPosteCcpDetails,
+          },
+        };
       }
     );
 
     if (!mut.ok) return jsonResponse({ success: false, error: mut.error }, mut.statusCode || 503);
-    const out = mut.result!;
+    const out = mut.result! as CheckoutResult & { trackingToken?: string };
     if (out.errMsg) {
       if (out.securityAlert) {
         const alertTask = appendEdgeAdminNotification(env, {
@@ -1696,6 +2207,7 @@ export async function handleEdgePaymentsRoute(
       order: out.order,
       transaction: out.transaction,
       paymentUrl: out.paymentUrl,
+      ...(out.trackingToken ? { trackingToken: out.trackingToken } : {}),
       ...(out.transferDetails ? { transferDetails: out.transferDetails } : {}),
     });
   }
@@ -1713,6 +2225,9 @@ export async function handleEdgePaymentsRoute(
     const body = await parseJsonBody();
     const sess = await verifyEdgeOwnerSession(request, env);
     const isAdmin = Boolean(sess && sess.codeVerified);
+    const custSess = await verifyEdgeCustomerSession(request, env);
+    const trackingToken = String(body?.trackingToken || request.headers.get('x-tracking-token') || '').trim();
+    const hmacSecret = await resolveOrCreateEdgeHmacSecret(env);
 
     const cleanImg = sanitizeReceiptImageDataUrl(body?.receiptImageDataUrl);
     if (!cleanImg.ok) {
@@ -1744,10 +2259,13 @@ export async function handleEdgePaymentsRoute(
       }
       const order = { ...db.orders[orderIdx] };
       if (!isAdmin) {
-        const orderPhone = normalizePhone(order.customerPhone);
-        const reqPhone = normalizePhone(body?.customerPhone || '');
-        if (orderPhone && reqPhone !== orderPhone) {
-          return { skipWrite: true, result: { errStatus: 403, errMsg: 'رقم الهاتف لا يطابق رقم الطلب المسجل.' } };
+        const ownsByCustomer = Boolean(custSess?.customerId && order.customerId && order.customerId === custSess.customerId);
+        const validToken = await verifyTrackingTokenEdge(order, trackingToken, hmacSecret);
+        if (!ownsByCustomer && !validToken) {
+          return {
+            skipWrite: true,
+            result: { errStatus: trackingToken ? 403 : 401, errMsg: 'رمز التتبع السري غير صالح أو مفقود لإرفاق إثبات التحويل لهذا الطلب.' },
+          };
         }
       }
       if (order.paymentMethod !== 'bank_transfer' && order.paymentMethod !== 'poste_ccp') {
@@ -1834,6 +2352,9 @@ export async function handleEdgePaymentsRoute(
     }
     const body = await parseJsonBody();
     const cleanTrack = String(body?.trackingNumber || '').trim().toUpperCase();
+    const custSess = await verifyEdgeCustomerSession(request, env);
+    const trackingToken = String(body?.trackingToken || request.headers.get('x-tracking-token') || '').trim();
+    const hmacSecret = await resolveOrCreateEdgeHmacSecret(env);
 
     const mut = await mutateEdgeDocWithRetry<
       PaymentSystemDatabase,
@@ -1842,10 +2363,13 @@ export async function handleEdgePaymentsRoute(
       const db = mergePaymentDb(raw, env);
       const order = db.orders.find((o) => o.trackingNumber.toUpperCase() === cleanTrack);
       if (!order) return { skipWrite: true, result: { errStatus: 404, errMsg: 'الطلب غير موجود.' } };
-      const orderPhone = normalizePhone(order.customerPhone);
-      const reqPhone = normalizePhone(body?.customerPhone || '');
-      if (orderPhone && reqPhone !== orderPhone) {
-        return { skipWrite: true, result: { errStatus: 403, errMsg: 'رقم الهاتف غير مطابق للطلب.' } };
+      const ownsByCustomer = Boolean(custSess?.customerId && order.customerId && order.customerId === custSess.customerId);
+      const validToken = await verifyTrackingTokenEdge(order, trackingToken, hmacSecret);
+      if (!ownsByCustomer && !validToken) {
+        return {
+          skipWrite: true,
+          result: { errStatus: trackingToken ? 403 : 401, errMsg: 'رمز التتبع السري غير صالح أو مفقود لتقديم طلب الإلغاء/الاسترجاع.' },
+        };
       }
 
       const now = new Date().toISOString();
@@ -2556,9 +3080,9 @@ export async function handleEdgePaymentsRoute(
     });
   }
 
-  // 8.1 Public Track Order
+  // 8.1 Public Track Order (GET & POST — requires trackingToken or authenticated customerId or Admin)
   const trackMatch = pathname.match(/^\/api\/payments\/track\/([^/]+)$/);
-  if (method === 'GET' && trackMatch) {
+  if ((method === 'GET' && trackMatch) || (method === 'POST' && pathname === '/api/payments/track')) {
     const ip = getEdgeClientIp(request);
     const rate = checkEdgeSlidingWindowLimit('trackOrder', ip, 15, 60_000);
     if (!rate.allowed) {
@@ -2567,9 +3091,20 @@ export async function handleEdgePaymentsRoute(
         429
       );
     }
-    const clean = decodeURIComponent(trackMatch[1] || '').trim().toUpperCase();
+    const postBody = method === 'POST' ? await parseJsonBody() : {};
+    const urlObj = new URL(request.url);
+    const clean = String(
+      trackMatch ? decodeURIComponent(trackMatch[1] || '') : postBody?.trackingNumber || postBody?.code || ''
+    )
+      .trim()
+      .toUpperCase();
     if (!clean || clean.length < 6) {
       return jsonResponse({ success: false, error: 'يرجى إدخال رقم تتبع صالح (6 خانات على الأقل).' }, 400);
+    }
+    const adminSess = await verifyEdgeOwnerSession(request, env);
+    const isAdmin = Boolean(adminSess && adminSess.codeVerified);
+    if (!isAdmin && /^ORD_/i.test(clean)) {
+      return jsonResponse({ success: false, error: 'رقم الطلب الداخلي غير مصرح به للتتبع العام.' }, 403);
     }
     const loaded = await loadEdgeDocWithMeta<Partial<PaymentSystemDatabase>>(env, CLOUD_PAYMENT_KEY);
     if (!loaded.ok) return jsonResponse({ success: false, error: loaded.error }, 503);
@@ -2582,67 +3117,63 @@ export async function handleEdgePaymentsRoute(
     if (!found) {
       return jsonResponse({ success: false, error: 'لم يتم العثور على طلب بهذا الرمز.' }, 404);
     }
-    const adminSess = await verifyEdgeOwnerSession(request, env);
-    const isAdmin = Boolean(adminSess && adminSess.codeVerified);
+    const cleanFound = stripOrderSecretsEdge(found);
     if (isAdmin) {
-      return jsonResponse({ success: true, order: found });
+      return jsonResponse({ success: true, order: cleanFound });
     }
-    const urlObj = new URL(request.url);
-    const phoneProof = String(urlObj.searchParams.get('phone') || request.headers.get('x-tracking-phone') || '').trim();
-    const oNorm = normalizeTunisianPhone(found.customerPhone || '');
-    const sNorm = normalizeTunisianPhone(phoneProof);
-    const phoneMatched =
-      (oNorm.valid && sNorm.valid && oNorm.normalized === sNorm.normalized) ||
-      (() => {
-        const od = String(found.customerPhone || '').replace(/\D/g, '').slice(-8);
-        const sd = phoneProof.replace(/\D/g, '').slice(-8);
-        return od.length >= 6 && sd.length >= 6 && od === sd;
-      })();
+    const custSess = await verifyEdgeCustomerSession(request, env);
+    const ownsByCustomer = Boolean(custSess?.customerId && found.customerId && found.customerId === custSess.customerId);
+    const trackingToken = String(
+      request.headers.get('x-tracking-token') || postBody?.trackingToken || urlObj.searchParams.get('token') || ''
+    ).trim();
+    const hmacSecret = await resolveOrCreateEdgeHmacSecret(env);
+    const validToken = await verifyTrackingTokenEdge(found, trackingToken, hmacSecret);
+    if (!ownsByCustomer && !validToken) {
+      return jsonResponse(
+        {
+          success: false,
+          error: 'يتطلب تتبع الطلب رمز التتبع السري المرفق بالطلب أو تسجيل الدخول بحساب صاحب الطلب.',
+        },
+        trackingToken ? 403 : 401
+      );
+    }
 
-    if (phoneMatched) {
-      const ccpDetails =
-        found.paymentMethod === 'poste_ccp' &&
-        found.paymentStatus !== 'Paid' &&
-        found.paymentStatus !== 'Refunded' &&
-        found.paymentStatus !== 'Cancelled'
-          ? await getPosteCcpTransferDetailsEdge(env, db.config, loaded.exists)
-          : undefined;
+    const ccpDetails =
+      found.paymentMethod === 'poste_ccp' &&
+      found.paymentStatus !== 'Paid' &&
+      found.paymentStatus !== 'Refunded' &&
+      found.paymentStatus !== 'Cancelled'
+        ? await getPosteCcpTransferDetailsEdge(env, db.config, loaded.exists)
+        : undefined;
+
+    if (ownsByCustomer) {
       return jsonResponse({
         success: true,
         order: {
-          ...found,
-          customerEmail: '',
-          notes: '',
+          ...cleanFound,
           ...(ccpDetails?.ok && ccpDetails.details ? { transferDetails: ccpDetails.details } : {}),
           piiMasked: false,
         },
       });
     }
 
-    const maskName = (raw: string) =>
-      String(raw || '').trim()
-        ? String(raw || '').trim().split(/\s+/).map((p) => (p.length <= 1 ? '*' : `${p.slice(0, 1)}${'*'.repeat(Math.min(4, p.length - 1))}`)).join(' ')
-        : '***';
-    const maskPhone = (raw: string) => {
-      const digits = String(raw || '').replace(/\D/g, '');
-      return digits.length < 4 ? '****' : `${digits.slice(0, 2)}****${digits.slice(-2)}`;
-    };
-
     const maskedOrder: Order = {
-      ...found,
-      customerName: maskName(found.customerName),
-      customerPhone: maskPhone(found.customerPhone),
+      ...cleanFound,
+      customerName: maskPersonNameEdge(found.customerName),
+      customerPhone: maskPhoneNumberEdge(found.customerPhone),
       customerEmail: '',
       notes: '',
       shippingAddress: {
         ...found.shippingAddress,
-        fullName: maskName(found.shippingAddress?.fullName || found.customerName),
-        phone: maskPhone(found.shippingAddress?.phone || found.customerPhone),
+        fullName: maskPersonNameEdge(found.shippingAddress?.fullName || found.customerName),
+        phone: maskPhoneNumberEdge(found.shippingAddress?.phone || found.customerPhone),
         street: '***',
         notes: undefined,
       },
+      subOrders: undefined,
+      platformCommissionTotal: undefined,
       transferProof: undefined,
-      transferDetails: undefined,
+      ...(ccpDetails?.ok && ccpDetails.details ? { transferDetails: ccpDetails.details } : {}),
       piiMasked: true,
     };
     return jsonResponse({ success: true, order: maskedOrder });
@@ -2743,11 +3274,55 @@ export async function handleEdgePaymentsRoute(
           }
           cfg.taxRatePercent = round3(body.taxRatePercent);
         }
-        if (typeof body?.standardShippingFee === 'number' && body.standardShippingFee >= 0) {
+        if (body?.standardShippingFee === null) {
+          cfg.shipping.standardShippingFee = null;
+        } else if (typeof body?.standardShippingFee === 'number' && body.standardShippingFee >= 0) {
           cfg.shipping.standardShippingFee = round3(body.standardShippingFee);
         }
-        if (typeof body?.freeShippingThreshold === 'number' && body.freeShippingThreshold >= 0) {
+        if (body?.freeShippingThreshold === null) {
+          cfg.shipping.freeShippingThreshold = null;
+        } else if (typeof body?.freeShippingThreshold === 'number' && body.freeShippingThreshold >= 0) {
           cfg.shipping.freeShippingThreshold = round3(body.freeShippingThreshold);
+        }
+        if (body?.shippingRules && typeof body.shippingRules === 'object') {
+          const nextRules: Record<string, GovernorateShippingRule> = { ...(cfg.shipping.governorateRules || {}) };
+          for (const [govCode, rawRule] of Object.entries(body.shippingRules as Record<string, any>)) {
+            if (!isValidGovernorate(govCode) || !rawRule || typeof rawRule !== 'object') continue;
+            nextRules[govCode] = {
+              governorateId: govCode,
+              enabled: rawRule.enabled !== false,
+              fee:
+                rawRule.fee === null
+                  ? null
+                  : typeof rawRule.fee === 'number' && Number.isFinite(rawRule.fee) && rawRule.fee >= 0
+                  ? round3(rawRule.fee)
+                  : nextRules[govCode]?.fee ?? null,
+              estimatedDelivery:
+                typeof rawRule.estimatedDelivery === 'string' && rawRule.estimatedDelivery.trim()
+                  ? rawRule.estimatedDelivery.trim()
+                  : nextRules[govCode]?.estimatedDelivery || '48–72 ساعة',
+              useStandardFee: Boolean(rawRule.useStandardFee),
+              ...(rawRule.freeShippingThreshold !== undefined ? { freeShippingThreshold: rawRule.freeShippingThreshold } : {}),
+              ...(rawRule.delegationOverrides && typeof rawRule.delegationOverrides === 'object'
+                ? { delegationOverrides: rawRule.delegationOverrides }
+                : {}),
+            };
+          }
+          cfg.shipping.governorateRules = nextRules;
+        }
+        if (Array.isArray(body?.coupons)) {
+          cfg.coupons = body.coupons
+            .filter((c: any) => c && typeof c.code === 'string' && c.code.trim())
+            .map((c: any) => ({
+              code: String(c.code).trim().toUpperCase(),
+              discountType: c.discountType === 'fixed' ? ('fixed' as const) : ('percent' as const),
+              discountValue: round3(Math.max(0, Number(c.discountValue) || 0)),
+              active: c.active !== false,
+              ...(typeof c.minSubtotal === 'number' ? { minSubtotal: round3(Math.max(0, c.minSubtotal)) } : {}),
+              ...(typeof c.maxDiscount === 'number' ? { maxDiscount: round3(Math.max(0, c.maxDiscount)) } : {}),
+              ...(c.expiresAt ? { expiresAt: String(c.expiresAt) } : {}),
+              ...(c.label ? { label: String(c.label) } : {}),
+            }));
         }
         if (typeof body?.codEnabled === 'boolean') {
           cfg.methods.cod.enabled = body.codEnabled;
@@ -2958,7 +3533,7 @@ export async function handleEdgePaymentsRoute(
       );
       return jsonResponse({
         config: await getAdminPaymentConfigEdge(env, db, loaded.exists),
-        orders: db.orders,
+        orders: db.orders.map(stripOrderSecretsEdge),
         transactions: db.transactions,
         vendorLedgers: db.vendorLedgers,
         vendorSummaries,
@@ -2966,6 +3541,7 @@ export async function handleEdgePaymentsRoute(
         supportTransactions: db.supportTransactions,
         supportTotalPaid,
         activityLogs: db.activityLogs,
+        inventoryLogs: db.inventoryLogs || [],
       });
     }
 
@@ -3158,8 +3734,15 @@ export async function handleEdgePaymentsRoute(
         order.paymentStatus = nextPayStatus;
         order.status = 'cancelled';
         order.refundReason = reason;
+        order.cancelReason = reason;
         order.updatedAt = now;
         order.statusHistory = [...order.statusHistory, { status: 'cancelled', timestamp: now, note: reason }];
+        const restoredInvLogs = restoreOrderStockOnceEdge(
+          db,
+          order,
+          isRefund ? 'order_refund_restore' : 'order_cancel_restore',
+          'admin'
+        );
         if (order.subOrders) {
           order.subOrders = order.subOrders.map((s) => ({ ...s, payoutStatus: 'reversed', updatedAt: now }));
         }
@@ -3205,10 +3788,12 @@ export async function handleEdgePaymentsRoute(
         return {
           nextDoc: {
             ...db,
+            catalog: db.catalog,
             orders: nextOrders,
             transactions: nextTxns,
             vendorLedgers: nextLedgers,
             refundRequests: nextReqs,
+            inventoryLogs: [...restoredInvLogs, ...(db.inventoryLogs || [])].slice(0, 500),
             activityLogs: prependActivity(
               db,
               isRefund ? 'PAYMENT_REFUNDED' : 'PAYMENT_CANCELLED',
@@ -3218,7 +3803,7 @@ export async function handleEdgePaymentsRoute(
               order.totalAmount
             ),
           },
-          result: { order },
+          result: { order: stripOrderSecretsEdge(order) },
         };
       });
 
@@ -3341,7 +3926,22 @@ export async function handleEdgePaymentsRoute(
       const loaded = await loadEdgeDocWithMeta<Partial<PaymentSystemDatabase>>(env, CLOUD_PAYMENT_KEY);
       if (!loaded.ok) return jsonResponse({ success: false, error: loaded.error }, 503);
       const db = mergePaymentDb(loaded.data, env);
-      return jsonResponse({ success: true, orders: db.orders || [] });
+      const u = new URL(request.url);
+      const q = (u.searchParams.get('q') || '').trim().toLowerCase();
+      const statusF = (u.searchParams.get('status') || '').trim().toLowerCase();
+      const payF = (u.searchParams.get('paymentStatus') || '').trim().toLowerCase();
+      const orders = (db.orders || [])
+        .map(stripOrderSecretsEdge)
+        .filter((o) => {
+          if (statusF && statusF !== 'all' && o.status.toLowerCase() !== statusF) return false;
+          if (payF && payF !== 'all' && o.paymentStatus.toLowerCase() !== payF) return false;
+          if (q) {
+            const hay = `${o.id} ${o.trackingNumber} ${o.paymentReference || ''} ${o.customerName} ${o.customerPhone} ${o.customerEmail || ''}`.toLowerCase();
+            if (!hay.includes(q)) return false;
+          }
+          return true;
+        });
+      return jsonResponse({ success: true, orders });
     }
 
     if (method === 'POST' && pathname === '/api/admin/orders') {
@@ -3455,7 +4055,7 @@ export async function handleEdgePaymentsRoute(
     const orderStatusMatch = pathname.match(/^\/api\/admin\/orders\/([^/]+)\/status$/);
     if (method === 'PATCH' && orderStatusMatch) {
       const orderId = decodeURIComponent(orderStatusMatch[1] || '');
-      const { status, note } = (await parseJsonBody()) as { status: OrderStatus; note?: string };
+      const { status, note, reason } = (await parseJsonBody()) as { status: OrderStatus; note?: string; reason?: string };
 
       const mut = await mutateEdgeDocWithRetry<
         PaymentSystemDatabase,
@@ -3484,12 +4084,32 @@ export async function handleEdgePaymentsRoute(
         order.updatedAt = now;
         order.statusHistory = [
           ...order.statusHistory,
-          { status, timestamp: now, note: note || `Updated shipping status to ${status}` },
+          { status, timestamp: now, note: note || reason || `Updated shipping status to ${status}` },
         ];
 
         let nextTxns = db.transactions;
         let nextLedgers = db.vendorLedgers;
         let logs = db.activityLogs;
+        let invLogs = db.inventoryLogs || [];
+
+        if (status === 'cancelled') {
+          const cancelNote = (reason || note || 'تم إلغاء الطلب من لوحة الإدارة').trim();
+          order.cancelReason = cancelNote;
+          if (order.paymentStatus !== 'Refunded') {
+            order.paymentStatus = 'Cancelled';
+            nextTxns = db.transactions.map((t) =>
+              t.orderId === order.id ? { ...t, status: 'Cancelled' as PaymentStatus, refundReason: cancelNote, updatedAt: now } : t
+            );
+            nextLedgers = db.vendorLedgers.map((entry) =>
+              entry.orderId === order.id ? { ...entry, paymentStatus: 'Cancelled' as PaymentStatus, payoutStatus: 'reversed' as const, updatedAt: now } : entry
+            );
+            if (order.subOrders) {
+              order.subOrders = order.subOrders.map((sub) => ({ ...sub, payoutStatus: 'reversed', updatedAt: now }));
+            }
+          }
+          const restored = restoreOrderStockOnceEdge(db, order, 'order_cancel_restore', 'admin');
+          if (restored.length > 0) invLogs = [...restored, ...invLogs].slice(0, 500);
+        }
 
         if (
           status === 'delivered' &&
@@ -3546,9 +4166,11 @@ export async function handleEdgePaymentsRoute(
         return {
           nextDoc: {
             ...db,
+            catalog: db.catalog,
             orders: nextOrders,
             transactions: nextTxns,
             vendorLedgers: nextLedgers,
+            inventoryLogs: invLogs,
             activityLogs: [
               makeActivity(
                 'ORDER_STATUS_UPDATED',
@@ -3559,7 +4181,7 @@ export async function handleEdgePaymentsRoute(
               ...logs,
             ].slice(0, 300),
           },
-          result: { order },
+          result: { order: stripOrderSecretsEdge(order) },
         };
       });
 
@@ -3673,7 +4295,9 @@ export async function hasVerifiedCustomerPurchaseEdge(
 
     const orderPhoneDigits = normPhone(o.customerPhone || '');
     const matchesCustomerId = Boolean(params.customerId && o.customerId && o.customerId === params.customerId);
-    const matchesSessionPhone = Boolean(sessionPhoneDigits.length === 8 && orderPhoneDigits === sessionPhoneDigits);
+    const matchesSessionPhone = Boolean(
+      !o.customerId && sessionPhoneDigits.length === 8 && orderPhoneDigits === sessionPhoneDigits
+    );
     const matchesTrackingProof = Boolean(
       trackingCode &&
         trackingPhoneDigits.length === 8 &&

@@ -318,8 +318,9 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
                 setLocalSearchInput('');
                 setSearchResults([]);
               }}
-              className="p-2.5 rounded-xl hover:bg-[#F3F1EC] dark:hover:bg-[#1D1D24] text-[#111113] dark:text-[#F7F6F3] transition-colors cursor-pointer shrink-0"
+              className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl hover:bg-[#F3F1EC] dark:hover:bg-[#1D1D24] text-[#111113] dark:text-[#F7F6F3] transition-colors cursor-pointer shrink-0"
               title="رجوع"
+              aria-label="رجوع"
             >
               <ArrowRight className={`w-5 h-5 ${language !== 'ar' ? 'rotate-180' : ''}`} />
             </button>
@@ -331,9 +332,9 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
                 if (accessCheckTimerRef.current) clearTimeout(accessCheckTimerRef.current);
                 void runAccessCodeVerification(localSearchInput, true);
               }}
-              className="flex-1 relative flex items-center bg-[#FAF9F7] dark:bg-[#18181E] border border-[#E6E2D8] dark:border-[#2C2C35] focus-within:border-[#FF6B00] dark:focus-within:border-[#FF6B00] focus-within:bg-white dark:focus-within:bg-[#131317] rounded-xl py-2.5 px-4 transition-all"
+              className="flex-1 relative flex items-center min-h-[44px] bg-[#FAF9F7] dark:bg-[#18181E] border border-[#E6E2D8] dark:border-[#2C2C35] focus-within:border-[#FF6B00] dark:focus-within:border-[#FF6B00] focus-within:bg-white dark:focus-within:bg-[#131317] rounded-xl px-3 transition-all"
             >
-              <Search className="w-4 h-4 text-[#FF6B00] mx-2 shrink-0" />
+              <Search className="w-4 h-4 text-[#FF6B00] mx-1.5 shrink-0" />
               <input
                 type="search"
                 enterKeyHint="search"
@@ -341,7 +342,7 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
                 onChange={handleSearchChange}
                 autoFocus
                 placeholder={t.bottomNav?.searchPlaceholder}
-                className="w-full bg-transparent text-xs sm:text-sm text-[#111113] dark:text-[#F7F6F3] placeholder-[#8A857C] dark:placeholder-[#6E6A63] outline-none"
+                className="w-full py-2.5 bg-transparent text-xs sm:text-sm text-[#111113] dark:text-[#F7F6F3] placeholder-[#8A857C] dark:placeholder-[#6E6A63] outline-none"
               />
               {localSearchInput && (
                 <button
@@ -351,7 +352,8 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
                     setSearchQuery('');
                     setSearchResults([]);
                   }}
-                  className="p-1 text-[#7A756D] hover:text-[#111113] dark:hover:text-white rounded-lg cursor-pointer"
+                  aria-label="Clear search"
+                  className="min-w-[40px] min-h-[40px] flex items-center justify-center text-[#7A756D] hover:text-[#111113] dark:hover:text-white rounded-lg cursor-pointer shrink-0"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -376,7 +378,7 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
                         key={tag}
                         type="button"
                         onClick={() => handleQuickTagClick(tag)}
-                        className="px-3.5 py-2 rounded-xl bg-white dark:bg-[#131317] border border-[#E6E2D8] dark:border-[#23232C] hover:border-[#FF6B00] text-xs font-bold text-[#3D3A35] dark:text-[#D5D1C8] hover:text-[#FF6B00] transition-colors cursor-pointer"
+                        className="min-h-[44px] px-3.5 py-2 rounded-xl bg-white dark:bg-[#131317] border border-[#E6E2D8] dark:border-[#23232C] hover:border-[#FF6B00] text-xs font-bold text-[#3D3A35] dark:text-[#D5D1C8] hover:text-[#FF6B00] transition-colors cursor-pointer inline-flex items-center"
                       >
                         {tag}
                       </button>
@@ -398,7 +400,7 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
                           handleSelectCategory(cat.id);
                           setIsSearchModalOpen(false);
                         }}
-                        className="p-3 rounded-xl bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#27272E] hover:border-[#FF6B00] flex items-center gap-3 text-start cursor-pointer transition-colors"
+                        className="min-h-[48px] p-3 rounded-xl bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#27272E] hover:border-[#FF6B00] flex items-center gap-3 text-start cursor-pointer transition-colors"
                       >
                         <span className="text-lg w-8 h-8 rounded-lg bg-[#FAF9F7] dark:bg-[#1C1C22] flex items-center justify-center">{cat.icon}</span>
                         <span className="text-xs font-bold text-[#111113] dark:text-[#F7F6F3] truncate">
@@ -493,7 +495,8 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
               <button 
                 type="button"
                 onClick={() => setIsCategoriesSheetOpen(false)}
-                className="p-2 rounded-xl bg-[#FAF9F7] dark:bg-[#1C1C22] text-[#6B665F] dark:text-[#A19E97] hover:text-[#111113] dark:hover:text-white transition-colors cursor-pointer"
+                aria-label="Close categories"
+                className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl bg-[#FAF9F7] dark:bg-[#1C1C22] text-[#6B665F] dark:text-[#A19E97] hover:text-[#111113] dark:hover:text-white transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -512,7 +515,7 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
                     key={cat.id}
                     type="button"
                     onClick={() => handleSelectCategory(cat.id)}
-                    className={`w-full p-3 rounded-xl border transition-all flex items-center justify-between text-start cursor-pointer active:scale-98 ${
+                    className={`w-full min-h-[52px] p-3 rounded-xl border transition-all flex items-center justify-between text-start cursor-pointer active:scale-98 ${
                       isSelected
                         ? 'bg-[#FF6B00]/10 border-[#FF6B00] text-[#111113] dark:text-white'
                         : 'bg-[#FAF9F7] dark:bg-[#18181D] border-[#E6E2D8] dark:border-[#27272E] hover:border-[#FF6B00]/50 text-[#111113] dark:text-[#F7F6F3]'

@@ -35,8 +35,10 @@ import { Order, PaymentMethodType, PosteCcpTransferDetails } from '../types';
 import {
   fetchPosteCcpTransferDetails,
   getPaymentStatusTone,
+  quoteServerOrder,
   readReceiptFileAsDataUrl,
   submitPosteCcpProofClient,
+  type ServerQuoteResponse,
 } from '../lib/payments';
 
 interface CheckoutModalProps {
@@ -58,11 +60,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
     cartDiscountAmount,
     cartTaxAmount,
     cartTotal,
+    couponCode,
     paymentConfig,
     refreshPaymentConfig,
     createServerOrder,
     updateOrderInState,
     currentUser,
+    addCustomerAddress,
     setCurrentView,
     isOnline,
     isReconnecting,
@@ -99,9 +103,19 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [completedOrder, setCompletedOrder] = useState<Order | null>(null);
+  const [completedTrackingToken, setCompletedTrackingToken] = useState<string | undefined>(undefined);
   const [completedCcpDetails, setCompletedCcpDetails] = useState<PosteCcpTransferDetails | null>(null);
   const [gatewayPayUrl, setGatewayPayUrl] = useState<string | undefined>(undefined);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  // Live server quote, address selection, and price/shipping guardrails
+  const [serverQuote, setServerQuote] = useState<ServerQuoteResponse | null>(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [quoteError, setQuoteError] = useState('');
+  const [quoteUnavailable, setQuoteUnavailable] = useState(false);
+  const [priceChangedBanner, setPriceChangedBanner] = useState('');
+  const [selectedSavedAddressId, setSelectedSavedAddressId] = useState<string>('');
+  const [saveAddressToAccount, setSaveAddressToAccount] = useState<boolean>(false);
 
   // On-demand Poste / CCP transfer details (fetched ONLY when customer selects poste_ccp)
   const [ccpDetails, setCcpDetails] = useState<PosteCcpTransferDetails | null>(null);
@@ -124,6 +138,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
       refreshPaymentConfig();
       setErrorMsg('');
       setFieldErrors({});
+      setPriceChangedBanner('');
       if (!completedOrder) {
         setClientRequestId(`chk_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
       }
@@ -131,6 +146,20 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
         if (!fullName && currentUser.fullName) setFullName(currentUser.fullName);
         if (!phone && currentUser.phone) setPhone(currentUser.phone);
         if (!email && currentUser.email) setEmail(currentUser.email);
+        const addrs = currentUser.addresses || [];
+        if (!governorate && addrs.length > 0) {
+          const def = addrs.find((a) => a.isDefault) || addrs[0];
+          if (def && isValidGovernorate(def.governorate)) {
+            setSelectedSavedAddressId(def.id);
+            setFullName(def.fullName || currentUser.fullName || '');
+            setPhone(def.phone || currentUser.phone || '');
+            setGovernorate(def.governorate);
+            const savedDel = (def.delegation || def.city || '').trim();
+            setDelegation(isValidDelegationForGovernorate(def.governorate, savedDel) ? savedDel : '');
+            setStreet(def.street || '');
+            if (def.notes) setNotes(def.notes);
+          }
+        }
       }
     }
   }, [isOpen]);
@@ -140,6 +169,57 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
       setClientRequestId(`chk_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
     }
   }, [cart.length, paymentMethod]);
+
+  useEffect(() => {
+    if (!isOpen || completedOrder || cart.length === 0 || !isOnline) {
+      return;
+    }
+    let cancelled = false;
+    setQuoteLoading(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const q = await quoteServerOrder({
+          items: cart.map((item) => ({
+            productId: item.product.id,
+            unitPrice: item.product.price,
+            quantity: item.quantity,
+          })),
+          governorate: governorate || undefined,
+          delegation: delegation || undefined,
+          couponCode: couponCode || undefined,
+        });
+        if (cancelled) return;
+        setQuoteLoading(false);
+        if (!q.ok) {
+          setServerQuote(null);
+          const blockingCodes = new Set([
+            'SHIPPING_UNAVAILABLE',
+            'SHIPPING_UNCONFIGURED',
+            'STOCK_UNAVAILABLE',
+            'PRODUCT_UNAVAILABLE',
+          ]);
+          setQuoteUnavailable(Boolean(q.code && blockingCodes.has(q.code)));
+          setQuoteError(q.error || t.checkout.shippingUnavailableMsg);
+          return;
+        }
+        setQuoteUnavailable(false);
+        setQuoteError('');
+        setServerQuote(q);
+        if (q.priceChanged) {
+          setPriceChangedBanner(t.checkout.priceChangedNotice);
+        }
+      } catch {
+        if (!cancelled) {
+          setQuoteLoading(false);
+        }
+      }
+    }, 150);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [isOpen, completedOrder, cart, governorate, delegation, couponCode, isOnline]);
 
   useEffect(() => {
     if (paymentMethod === 'cod' && !codEnabled) setPaymentMethod(getFirstAvailableMethod());
@@ -207,8 +287,19 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
   };
 
   const applySavedAddress = (addrId: string) => {
+    if (!addrId) {
+      setSelectedSavedAddressId('');
+      setGovernorate('');
+      setDelegation('');
+      setStreet('');
+      setNotes('');
+      setSaveAddressToAccount(Boolean(currentUser));
+      return;
+    }
     const addr = (currentUser?.addresses || []).find((a) => a.id === addrId);
     if (!addr) return;
+    setSelectedSavedAddressId(addr.id);
+    setSaveAddressToAccount(false);
     setFullName(addr.fullName || fullName);
     setPhone(addr.phone || phone);
     if (isValidGovernorate(addr.governorate)) {
@@ -273,6 +364,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
       return;
     }
 
+    if (quoteUnavailable && quoteError) {
+      setErrorMsg(quoteError);
+      return;
+    }
+
     const { valid, normalizedPhone } = validateFields();
     if (!valid) {
       setErrorMsg(t.checkout.requiredFieldsAlert);
@@ -291,7 +387,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
       customerEmail: cleanEmail || undefined,
       customerPhone: normalizedPhone,
       shippingAddress: {
-        id: `addr_${Date.now()}`,
+        id: selectedSavedAddressId || `addr_${Date.now()}`,
         isDefault: true,
         fullName: cleanName,
         phone: normalizedPhone,
@@ -320,11 +416,31 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
     setIsSubmitting(false);
 
     if (!result.ok || !result.order) {
+      if (result.code === 'PRICE_CHANGED') {
+        setPriceChangedBanner(t.checkout.priceChangedNotice);
+        if (result.updatedQuote) {
+          setServerQuote(result.updatedQuote);
+        }
+      }
       setErrorMsg(result.error || 'تعذر تسجيل الطلب على الخادم.');
       return;
     }
 
+    if (currentUser && saveAddressToAccount && !selectedSavedAddressId) {
+      void addCustomerAddress({
+        isDefault: (currentUser.addresses || []).length === 0,
+        fullName: cleanName,
+        phone: normalizedPhone,
+        governorate,
+        delegation: cleanDelegation,
+        city: cleanDelegation,
+        street: cleanStreet,
+        notes: cleanNotes || undefined,
+      });
+    }
+
     setCompletedOrder(result.order);
+    setCompletedTrackingToken(result.trackingToken);
     setCompletedCcpDetails(result.transferDetails || ccpDetails || null);
     setGatewayPayUrl(result.paymentUrl);
 
@@ -367,7 +483,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
     setPostProofSubmitting(true);
     const res = await submitPosteCcpProofClient({
       trackingNumber: completedOrder.trackingNumber,
-      customerPhone: completedOrder.customerPhone,
+      trackingToken: completedTrackingToken,
       referenceNumber: proofRefNumber.trim(),
       senderName: (proofSenderName.trim() || completedOrder.customerName).trim(),
       transferDate: proofDate,
@@ -387,6 +503,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
 
   const handleTrackOrderNow = () => {
     setCompletedOrder(null);
+    setCompletedTrackingToken(undefined);
     setCompletedCcpDetails(null);
     onClose();
     setCurrentView('my_orders');
@@ -394,6 +511,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
 
   const handleCloseModal = () => {
     setCompletedOrder(null);
+    setCompletedTrackingToken(undefined);
     setCompletedCcpDetails(null);
     setShowCheckoutProof(false);
     setProofRefNumber('');
@@ -404,6 +522,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
     setPostProofSuccess('');
     setErrorMsg('');
     setFieldErrors({});
+    setPriceChangedBanner('');
     onClose();
   };
 
@@ -513,6 +632,40 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
                     </span>
                   </div>
                 </div>
+
+                {completedTrackingToken && (
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-1.5 text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold text-amber-800 dark:text-amber-300">
+                        {t.checkout.trackingTokenLabel}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy('token', completedTrackingToken)}
+                        className="px-2.5 py-1 rounded-lg bg-white dark:bg-[#141418] border border-amber-400/40 text-[11px] font-bold hover:border-[#FF6B00] flex items-center gap-1 cursor-pointer"
+                      >
+                        {copiedKey === 'token' ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                        <span>{copiedKey === 'token' ? t.payments.copied : t.checkout.copyTrackingToken}</span>
+                      </button>
+                    </div>
+                    <p className="font-mono font-black text-xs text-[#111113] dark:text-[#F7F6F3] break-all" dir="ltr">
+                      {completedTrackingToken}
+                    </p>
+                    <p className="text-[11px] text-amber-800/90 dark:text-amber-300/90">
+                      {t.checkout.trackingTokenNotice}
+                    </p>
+                  </div>
+                )}
+
+                {completedOrder.estimatedDelivery && (
+                  <div className="flex items-center justify-between gap-2 text-xs text-emerald-700 dark:text-emerald-400 font-bold">
+                    <span className="flex items-center gap-1.5">
+                      <Truck className="w-3.5 h-3.5" />
+                      <span>{t.checkout.estimatedDeliveryLabel}:</span>
+                    </span>
+                    <span>{completedOrder.estimatedDelivery}</span>
+                  </div>
+                )}
 
                 {/* Confirmed Shipping Address Summary */}
                 <div className="pt-3 border-t border-[#E6E2D8] dark:border-[#32323C] text-xs space-y-1 text-[#5A5854] dark:text-[#B5B0A8]">
@@ -730,28 +883,50 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
             <form onSubmit={handleSubmit} noValidate className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
               {/* Left / Main Column: Shipping Fields & Payment Method */}
               <div className="lg:col-span-7 space-y-5">
-                {/* Saved Addresses Quick Picker for Logged-In Buyers */}
-                {currentUser && (currentUser.addresses || []).length > 0 && (
+                {/* Saved Addresses Quick Picker + Add New Address for Logged-In Buyers */}
+                {currentUser && (
                   <div className="p-3 rounded-2xl bg-[#F3F1EC] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#32323C] space-y-2">
-                    <span className="text-[11px] font-bold text-[#5A5854] dark:text-[#B5B0A8] block">
-                      {language === 'ar'
-                        ? 'اختر من عناوينك المحفوظة (اختياري):'
-                        : language === 'fr'
-                        ? 'Utiliser une adresse enregistrée (optionnel) :'
-                        : 'Use a saved address (optional):'}
-                    </span>
-                    <div className="flex flex-wrap gap-2">
-                      {currentUser.addresses.map((addr) => (
-                        <button
-                          key={addr.id}
-                          type="button"
-                          onClick={() => applySavedAddress(addr.id)}
-                          className="px-3 py-1.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418] hover:border-[#FF6B00] text-[11px] font-bold text-[#111113] dark:text-[#F7F6F3] transition-colors cursor-pointer"
-                        >
-                          {getGovernorateName(addr.governorate, language)} · {addr.delegation || addr.city}
-                        </button>
-                      ))}
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold text-[#5A5854] dark:text-[#B5B0A8]">
+                        {t.checkout.savedAddressesLabel}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => applySavedAddress('')}
+                        className="text-[11px] font-bold text-[#FF6B00] hover:underline cursor-pointer"
+                      >
+                        {t.checkout.addNewAddress}
+                      </button>
                     </div>
+                    {(currentUser.addresses || []).length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {currentUser.addresses.map((addr) => (
+                          <button
+                            key={addr.id}
+                            type="button"
+                            onClick={() => applySavedAddress(addr.id)}
+                            className={`min-h-[44px] px-3.5 py-2 rounded-xl border text-[11px] font-bold transition-colors cursor-pointer ${
+                              selectedSavedAddressId === addr.id
+                                ? 'border-[#FF6B00] bg-[#FF6B00]/10 text-[#111113] dark:text-[#F7F6F3]'
+                                : 'border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418] hover:border-[#FF6B00] text-[#111113] dark:text-[#F7F6F3]'
+                            }`}
+                          >
+                            {getGovernorateName(addr.governorate, language)} · {addr.delegation || addr.city}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {!selectedSavedAddressId && (
+                      <label className="flex items-center gap-2 text-[11px] font-semibold text-[#5A5854] dark:text-[#B5B0A8] pt-1 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={saveAddressToAccount}
+                          onChange={(e) => setSaveAddressToAccount(e.target.checked)}
+                          className="accent-[#FF6B00] w-3.5 h-3.5"
+                        />
+                        <span>{t.checkout.saveAddressToAccount}</span>
+                      </label>
+                    )}
                   </div>
                 )}
 
@@ -762,10 +937,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
                       <MapPin className="w-4 h-4 text-[#FF6B00]" />
                       <span>{t.checkout.step1}</span>
                     </h3>
-                    {selectedGovObj && (
+                    {(serverQuote?.estimatedDelivery || selectedGovObj?.deliveryEstimateDays) && (
                       <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
                         <Truck className="w-3.5 h-3.5" />
-                        <span>{selectedGovObj.deliveryEstimateDays}</span>
+                        <span>{serverQuote?.estimatedDelivery || selectedGovObj?.deliveryEstimateDays}</span>
                       </span>
                     )}
                   </div>
@@ -1083,9 +1258,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
                               <button
                                 type="button"
                                 onClick={() => handleCopy('chk_rib', ccpDetails.ibanOrRib)}
-                                className="px-2.5 py-1.5 rounded-lg border border-[#D6D0C4] dark:border-[#32323C] hover:border-[#FF6B00] text-[11px] font-bold shrink-0 flex items-center gap-1 cursor-pointer"
+                                className="min-h-[44px] px-3 py-2 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] hover:border-[#FF6B00] text-[11px] font-bold shrink-0 flex items-center gap-1.5 cursor-pointer"
                               >
-                                {copiedKey === 'chk_rib' ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                                {copiedKey === 'chk_rib' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
                                 <span>{copiedKey === 'chk_rib' ? t.payments.copied : t.payments.copy}</span>
                               </button>
                             </div>
@@ -1110,7 +1285,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
                             <button
                               type="button"
                               onClick={() => setShowCheckoutProof((v) => !v)}
-                              className="text-[11px] font-black text-[#FF6B00] hover:underline flex items-center gap-1 cursor-pointer"
+                              className="min-h-[44px] text-[11px] font-black text-[#FF6B00] hover:underline flex items-center gap-1.5 cursor-pointer"
                             >
                               <Upload className="w-3.5 h-3.5" />
                               <span>
@@ -1216,87 +1391,122 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
                   </div>
 
                   {/* Financial Breakdown */}
-                  <div className="space-y-2 text-xs border-t border-b border-[#E6E2D8] dark:border-[#32323C] py-3">
-                    <div className="flex justify-between text-[#5A5854] dark:text-[#B5B0A8]">
-                      <span>{t.payments.subtotal}</span>
-                      <span className="font-mono tabular-nums font-bold">
-                        {cartSubtotal.toFixed(3)} {currencyLabel}
-                      </span>
-                    </div>
-                    {cartDiscountAmount > 0 && (
-                      <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
-                        <span>{t.payments.discount}</span>
-                        <span className="font-mono tabular-nums font-bold">
-                          -{cartDiscountAmount.toFixed(3)} {currencyLabel}
-                        </span>
-                      </div>
-                    )}
-                    {cartTaxAmount > 0 && (
-                      <div className="flex justify-between text-[#5A5854] dark:text-[#B5B0A8]">
-                        <span>
-                          {t.payments.tax} ({paymentConfig.taxRatePercent}%)
-                        </span>
-                        <span className="font-mono tabular-nums font-bold">
-                          {cartTaxAmount.toFixed(3)} {currencyLabel}
-                        </span>
-                      </div>
-                    )}
-                    <div className="flex justify-between text-[#5A5854] dark:text-[#B5B0A8]">
-                      <span>{t.payments.shipping}</span>
-                      <span
-                        className={`font-mono tabular-nums font-bold ${
-                          cartShippingFee === 0 ? 'text-emerald-600 dark:text-emerald-400' : ''
-                        }`}
-                      >
-                        {cartShippingFee === 0
-                          ? t.cart.freeShipping
-                          : `${cartShippingFee.toFixed(3)} ${currencyLabel}`}
-                      </span>
-                    </div>
-                  </div>
+                  {(() => {
+                    const effSubtotal = serverQuote?.subtotal ?? cartSubtotal;
+                    const effDiscount = serverQuote?.discount ?? cartDiscountAmount;
+                    const effTax = serverQuote?.taxAmount ?? cartTaxAmount;
+                    const effShipping = serverQuote?.shippingFee ?? cartShippingFee;
+                    const effTotal = serverQuote?.totalAmount ?? cartTotal;
+                    return (
+                      <>
+                        {priceChangedBanner && (
+                          <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-[11px] font-bold text-amber-800 dark:text-amber-300">
+                            {priceChangedBanner}
+                          </div>
+                        )}
 
-                  {/* Final Total + Confirm Button */}
-                  <div className="space-y-3">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className="text-xs font-bold text-[#5A5854] dark:text-[#B5B0A8]">
-                        {t.payments.totalAmount}
-                      </span>
-                      <span className="text-2xl font-black text-[#FF6B00] tabular-nums font-mono">
-                        {cartTotal.toFixed(3)} {currencyLabel}
-                      </span>
-                    </div>
+                        {quoteError && (
+                          <div className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-[11px] font-bold text-red-700 dark:text-red-400">
+                            {quoteError}
+                          </div>
+                        )}
 
-                    {!isOnline && (
-                      <div className="p-3 rounded-xl bg-[#FF6B00]/10 border border-[#FF6B00]/25 text-xs space-y-2">
-                        <p className="font-black text-[#FF6B00] flex items-center gap-1.5">
-                          <WifiOff className="w-3.5 h-3.5 shrink-0" />
-                          <span>{t.offline.checkoutBlockedTitle}</span>
-                        </p>
-                        <p className="text-[11px] text-[#5A5854] dark:text-[#B5B0A8] leading-relaxed">
-                          {t.offline.checkoutBlockedDesc}
-                        </p>
-                        <button
-                          type="button"
-                          disabled={isReconnecting}
-                          onClick={() => {
-                            void retryConnection();
-                          }}
-                          className="px-3 py-1.5 rounded-lg bg-[#FF6B00] hover:bg-[#E05E00] text-white text-[11px] font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
-                        >
-                          <RefreshCw className={`w-3 h-3 ${isReconnecting ? 'animate-spin' : ''}`} />
-                          <span>{isReconnecting ? t.offline.retryingBtn : t.offline.retryBtn}</span>
-                        </button>
-                      </div>
-                    )}
+                        <div className="space-y-2 text-xs border-t border-b border-[#E6E2D8] dark:border-[#32323C] py-3">
+                          <div className="flex justify-between text-[#5A5854] dark:text-[#B5B0A8]">
+                            <span>{t.payments.subtotal}</span>
+                            <span className="font-mono tabular-nums font-bold">
+                              {effSubtotal.toFixed(3)} {currencyLabel}
+                            </span>
+                          </div>
+                          {effDiscount > 0 && (
+                            <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
+                              <span>{t.payments.discount}</span>
+                              <span className="font-mono tabular-nums font-bold">
+                                -{effDiscount.toFixed(3)} {currencyLabel}
+                              </span>
+                            </div>
+                          )}
+                          {effTax > 0 && (
+                            <div className="flex justify-between text-[#5A5854] dark:text-[#B5B0A8]">
+                              <span>
+                                {t.payments.tax} ({paymentConfig.taxRatePercent}%)
+                              </span>
+                              <span className="font-mono tabular-nums font-bold">
+                                {effTax.toFixed(3)} {currencyLabel}
+                              </span>
+                            </div>
+                          )}
+                          <div className="flex justify-between text-[#5A5854] dark:text-[#B5B0A8]">
+                            <span>{t.payments.shipping}</span>
+                            <span
+                              className={`font-mono tabular-nums font-bold ${
+                                effShipping === 0 && !quoteUnavailable ? 'text-emerald-600 dark:text-emerald-400' : ''
+                              }`}
+                            >
+                              {quoteLoading
+                                ? '...'
+                                : quoteUnavailable
+                                ? '—'
+                                : effShipping === 0
+                                ? t.cart.freeShipping
+                                : `${effShipping.toFixed(3)} ${currencyLabel}`}
+                            </span>
+                          </div>
+                          {serverQuote?.estimatedDelivery && (
+                            <div className="flex justify-between text-[11px] text-[#7A756D] dark:text-[#8E8980]">
+                              <span>{t.checkout.estimatedDeliveryLabel}</span>
+                              <span className="font-bold text-[#111113] dark:text-[#F7F6F3]">
+                                {serverQuote.estimatedDelivery}
+                              </span>
+                            </div>
+                          )}
+                        </div>
 
-                    <button
-                      type="submit"
-                      disabled={isSubmitting || cart.length === 0 || !hasAnyMethod || !isOnline}
-                      className="w-full min-h-[46px] py-3 px-6 rounded-xl bg-[#FF6B00] hover:bg-[#e05e00] text-white font-black text-sm shadow-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer active:scale-[0.99]"
-                    >
-                      <span>{isSubmitting ? t.checkout.submitting : t.checkout.confirmOrder}</span>
-                    </button>
-                  </div>
+                        {/* Final Total + Confirm Button */}
+                        <div className="space-y-3">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className="text-xs font-bold text-[#5A5854] dark:text-[#B5B0A8]">
+                              {t.payments.totalAmount}
+                            </span>
+                            <span className="text-2xl font-black text-[#FF6B00] tabular-nums font-mono">
+                              {effTotal.toFixed(3)} {currencyLabel}
+                            </span>
+                          </div>
+
+                          {!isOnline && (
+                            <div className="p-3 rounded-xl bg-[#FF6B00]/10 border border-[#FF6B00]/25 text-xs space-y-2">
+                              <p className="font-black text-[#FF6B00] flex items-center gap-1.5">
+                                <WifiOff className="w-3.5 h-3.5 shrink-0" />
+                                <span>{t.offline.checkoutBlockedTitle}</span>
+                              </p>
+                              <p className="text-[11px] text-[#5A5854] dark:text-[#B5B0A8] leading-relaxed">
+                                {t.offline.checkoutBlockedDesc}
+                              </p>
+                              <button
+                                type="button"
+                                disabled={isReconnecting}
+                                onClick={() => {
+                                  void retryConnection();
+                                }}
+                                className="px-3 py-1.5 rounded-lg bg-[#FF6B00] hover:bg-[#E05E00] text-white text-[11px] font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                              >
+                                <RefreshCw className={`w-3 h-3 ${isReconnecting ? 'animate-spin' : ''}`} />
+                                <span>{isReconnecting ? t.offline.retryingBtn : t.offline.retryBtn}</span>
+                              </button>
+                            </div>
+                          )}
+
+                          <button
+                            type="submit"
+                            disabled={isSubmitting || cart.length === 0 || !hasAnyMethod || !isOnline || quoteUnavailable}
+                            className="w-full min-h-[46px] py-3 px-6 rounded-xl bg-[#FF6B00] hover:bg-[#e05e00] text-white font-black text-sm shadow-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer active:scale-[0.99]"
+                          >
+                            <span>{isSubmitting ? t.checkout.submitting : t.checkout.confirmOrder}</span>
+                          </button>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             </form>

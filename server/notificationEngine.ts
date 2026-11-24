@@ -10,6 +10,7 @@ import {
   saveCloudJson,
   savePersistentJson,
 } from './cloudPersistence';
+import { getValidatedHmacSecret } from './hmacKey';
 
 export type NotificationCategory = 'order' | 'payment' | 'security' | 'activity' | 'support';
 export type NotificationSeverity = 'critical' | 'warning' | 'info' | 'success';
@@ -342,12 +343,7 @@ export async function unsubscribeAdminPush(endpoint: string): Promise<{ ok: bool
 }
 
 function resolveNotificationHmacSecret(hmacSecret?: string): string {
-  return (
-    hmacSecret ||
-    process.env.ECHOX_SECURITY_HMAC_SECRET ||
-    process.env.ECHOX_RUNTIME_HMAC_SECRET ||
-    ''
-  ).trim();
+  return (hmacSecret || getValidatedHmacSecret() || '').trim();
 }
 
 export function computePublicUnsubscribeToken(endpoint: string, hmacSecret: string): string {

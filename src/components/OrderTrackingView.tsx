@@ -22,6 +22,7 @@ import { getGovernorateName } from '../data/governorates';
 import { Order, OrderStatus, PosteCcpTransferDetails } from '../types';
 import {
   fetchPosteCcpTransferDetails,
+  getGuestTrackingToken,
   getPaymentStatusTone,
   readReceiptFileAsDataUrl,
   submitBankTransferProofClient,
@@ -32,9 +33,11 @@ import {
 import { handleStoreImageError } from '../lib/imageFallback';
 
 export const OrderTrackingView: React.FC = () => {
-  const { orders, language, t, siteSettings, paymentConfig, updateOrderInState, isOnline } = useStore();
+  const { orders, currentUser, language, t, siteSettings, paymentConfig, updateOrderInState, isOnline } = useStore();
 
   const [inputCode, setInputCode] = useState('');
+  const [trackingTokenInput, setTrackingTokenInput] = useState('');
+  const [searchError, setSearchError] = useState('');
   const [searchedOrder, setSearchedOrder] = useState<Order | null>(() => {
     return orders[0] || null;
   });
@@ -47,11 +50,6 @@ export const OrderTrackingView: React.FC = () => {
   const [showRefundBox, setShowRefundBox] = useState(false);
   const [refundReason, setRefundReason] = useState('');
   const [refundSubmitting, setRefundSubmitting] = useState(false);
-
-  // Phone verification when tracking from a new browser where PII is masked
-  const [verifyPhoneInput, setVerifyPhoneInput] = useState('');
-  const [verifyPhoneLoading, setVerifyPhoneLoading] = useState(false);
-  const [verifyPhoneError, setVerifyPhoneError] = useState('');
 
   // Poste Tunisienne / CCP transfer details + proof upload state
   const [ccpFallbackDetails, setCcpFallbackDetails] = useState<PosteCcpTransferDetails | null>(null);
@@ -66,18 +64,21 @@ export const OrderTrackingView: React.FC = () => {
     ? orders.find((o) => o.id === searchedOrder.id || o.trackingNumber === searchedOrder.trackingNumber) || searchedOrder
     : null;
 
+  const resolveTokenForOrder = (trackingNumber: string): string | undefined => {
+    return trackingTokenInput.trim() || getGuestTrackingToken(trackingNumber);
+  };
+
   React.useEffect(() => {
     if (
       !activeOrder ||
       activeOrder.paymentMethod !== 'poste_ccp' ||
-      activeOrder.piiMasked ||
       activeOrder.transferDetails ||
       activeOrder.paymentStatus === 'Paid' ||
       activeOrder.paymentStatus === 'Cancelled' ||
       activeOrder.paymentStatus === 'Refunded' ||
       !isOnline
     ) {
-      if (!activeOrder || activeOrder.paymentMethod !== 'poste_ccp' || activeOrder.piiMasked) {
+      if (!activeOrder || activeOrder.paymentMethod !== 'poste_ccp') {
         setCcpFallbackDetails(null);
       }
       return;
@@ -91,7 +92,7 @@ export const OrderTrackingView: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [activeOrder?.id, activeOrder?.paymentMethod, activeOrder?.piiMasked, activeOrder?.paymentStatus, activeOrder?.transferDetails, isOnline]);
+  }, [activeOrder?.id, activeOrder?.paymentMethod, activeOrder?.paymentStatus, activeOrder?.transferDetails, isOnline]);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -102,41 +103,25 @@ export const OrderTrackingView: React.FC = () => {
         o.trackingNumber.toUpperCase() === clean ||
         (o.paymentReference && o.paymentReference.toUpperCase() === clean)
     );
-    setSearchedOrder(localFound || null);
     setHasSearched(true);
+    setSearchError('');
     setActionSuccess('');
     setActionError('');
-    setVerifyPhoneError('');
 
     if (!isOnline) {
+      setSearchedOrder(localFound || null);
       return;
     }
 
-    const srv = await trackOrderServer(clean, localFound?.customerPhone);
+    const effectiveToken = resolveTokenForOrder(clean);
+    const srv = await trackOrderServer(clean, { trackingToken: effectiveToken });
     if (srv.ok && srv.order) {
       setSearchedOrder(srv.order);
       updateOrderInState(srv.order);
+    } else {
+      setSearchedOrder(null);
+      setSearchError(srv.error || t.tracking.orderNotFound);
     }
-  };
-
-  const handleVerifyTrackingPhone = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!activeOrder || !verifyPhoneInput.trim() || verifyPhoneLoading) return;
-    setVerifyPhoneLoading(true);
-    setVerifyPhoneError('');
-    const srv = await trackOrderServer(activeOrder.trackingNumber, verifyPhoneInput.trim());
-    setVerifyPhoneLoading(false);
-    if (!srv.ok || !srv.order) {
-      setVerifyPhoneError(srv.error || (language === 'ar' ? 'تعذر التحقق من رقم الهاتف.' : 'Verification failed.'));
-      return;
-    }
-    if (srv.order.piiMasked) {
-      setVerifyPhoneError(language === 'ar' ? 'رقم الهاتف غير مطابق للطلب.' : 'Phone number does not match this order.');
-      return;
-    }
-    setSearchedOrder(srv.order);
-    updateOrderInState(srv.order);
-    setVerifyPhoneInput('');
   };
 
   const handleCopy = (key: string, val: string) => {
@@ -157,7 +142,7 @@ export const OrderTrackingView: React.FC = () => {
     setRefundSubmitting(true);
     const res = await submitRefundOrCancelRequest({
       trackingNumber: activeOrder.trackingNumber,
-      customerPhone: activeOrder.customerPhone,
+      trackingToken: resolveTokenForOrder(activeOrder.trackingNumber),
       reason: refundReason.trim(),
     });
     setRefundSubmitting(false);
@@ -203,7 +188,7 @@ export const OrderTrackingView: React.FC = () => {
 
     const payload = {
       trackingNumber: activeOrder.trackingNumber,
-      customerPhone: verifyPhoneInput.trim() || activeOrder.customerPhone,
+      trackingToken: resolveTokenForOrder(activeOrder.trackingNumber),
       referenceNumber: proofRefNumber.trim(),
       senderName: proofSenderName.trim(),
       transferDate: proofDate,
@@ -265,24 +250,50 @@ export const OrderTrackingView: React.FC = () => {
           {t.tracking.subtitle}
         </p>
 
-        <form onSubmit={handleSearch} className="max-w-md mx-auto flex gap-2 pt-2">
-          <div className="relative flex-1">
-            <input
-              type="text"
-              placeholder="ECH-TN-981240 / ECH-REF-..."
-              value={inputCode}
-              onChange={(e) => setInputCode(e.target.value)}
-              className="w-full text-sm py-3 px-4 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#18181D] text-[#111113] dark:text-[#F7F6F3] placeholder:text-[#7A756D] dark:placeholder:text-[#8E8980] focus:outline-hidden focus:border-[#FF6B00] shadow-xs text-center font-mono font-bold uppercase"
-              dir="ltr"
-            />
+        <form onSubmit={handleSearch} className="max-w-xl mx-auto space-y-2 pt-2">
+          <div className="flex flex-col sm:flex-row gap-2">
+            <div className="relative flex-1">
+              <input
+                type="text"
+                placeholder="ECH-TN-981240 / ECH-REF-..."
+                value={inputCode}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setInputCode(val);
+                  const savedTok = getGuestTrackingToken(val);
+                  if (savedTok && !trackingTokenInput) {
+                    setTrackingTokenInput(savedTok);
+                  }
+                }}
+                className="w-full min-h-[46px] text-sm py-3 px-4 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#18181D] text-[#111113] dark:text-[#F7F6F3] placeholder:text-[#7A756D] dark:placeholder:text-[#8E8980] focus:outline-hidden focus:border-[#FF6B00] shadow-xs text-center font-mono font-bold uppercase"
+                dir="ltr"
+              />
+            </div>
+            {!currentUser && (
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  placeholder={t.tracking.trackingTokenPlaceholder}
+                  value={trackingTokenInput}
+                  onChange={(e) => setTrackingTokenInput(e.target.value)}
+                  className="w-full min-h-[46px] text-sm py-3 px-4 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#18181D] text-[#111113] dark:text-[#F7F6F3] placeholder:text-[#7A756D] dark:placeholder:text-[#8E8980] focus:outline-hidden focus:border-[#FF6B00] shadow-xs text-center font-mono"
+                  dir="ltr"
+                />
+              </div>
+            )}
+            <button
+              type="submit"
+              className="min-h-[46px] px-6 py-3 bg-[#111113] dark:bg-[#FF6B00] hover:bg-[#FF6B00] dark:hover:bg-[#E05E00] text-white font-bold text-sm rounded-xl transition-colors shadow-xs flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+            >
+              <Search className="w-4 h-4" />
+              <span>{t.tracking.searchBtn}</span>
+            </button>
           </div>
-          <button
-            type="submit"
-            className="px-6 py-3 bg-[#111113] dark:bg-[#FF6B00] hover:bg-[#FF6B00] dark:hover:bg-[#E05E00] text-white font-bold text-sm rounded-xl transition-colors shadow-xs flex items-center gap-1.5 cursor-pointer"
-          >
-            <Search className="w-4 h-4" />
-            <span>{t.tracking.searchBtn}</span>
-          </button>
+          {currentUser && (
+            <p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+              {t.tracking.signedInAccessNotice}
+            </p>
+          )}
         </form>
 
         {/* Quick order samples */}
@@ -294,8 +305,11 @@ export const OrderTrackingView: React.FC = () => {
               type="button"
               onClick={() => {
                 setInputCode(o.trackingNumber);
+                const savedTok = getGuestTrackingToken(o.trackingNumber);
+                if (savedTok) setTrackingTokenInput(savedTok);
                 setSearchedOrder(o);
                 setHasSearched(true);
+                setSearchError('');
                 setActionSuccess('');
                 setActionError('');
               }}
@@ -336,6 +350,7 @@ export const OrderTrackingView: React.FC = () => {
               <p className="text-xs text-[#7A756D] dark:text-[#8E8980] mt-1">
                 {new Date(activeOrder.createdAt).toLocaleDateString(language === 'ar' ? 'ar-TN' : 'en-GB')} ·{' '}
                 {activeOrder.carrierName}
+                {activeOrder.estimatedDelivery ? ` · ${t.tracking.estimatedDelivery}: ${activeOrder.estimatedDelivery}` : ''}
                 {activeOrder.paymentReference ? ` · Ref: ${activeOrder.paymentReference}` : ''}
               </p>
             </div>
@@ -343,7 +358,7 @@ export const OrderTrackingView: React.FC = () => {
             <div className="flex flex-wrap items-center gap-2">
               <a
                 href={`tel:${siteSettings.supportPhone}`}
-                className="px-3.5 py-2 rounded-xl bg-[#F3F1EC] dark:bg-[#18181D] hover:bg-[#EBE7DF] dark:hover:bg-[#1C1C22] text-[#111113] dark:text-[#F7F6F3] text-xs font-bold flex items-center gap-1.5 transition-colors"
+                className="min-h-[44px] px-3.5 py-2 rounded-xl bg-[#F3F1EC] dark:bg-[#18181D] hover:bg-[#EBE7DF] dark:hover:bg-[#1C1C22] text-[#111113] dark:text-[#F7F6F3] text-xs font-bold flex items-center gap-1.5 transition-colors"
               >
                 <PhoneCall className="w-3.5 h-3.5 text-[#FF6B00]" />
                 <span>{language === 'ar' ? 'اتصال' : 'Call'}</span>
@@ -352,7 +367,7 @@ export const OrderTrackingView: React.FC = () => {
                 href={`https://wa.me/${(siteSettings.whatsappPhone || '').replace(/\D/g, '')}?text=${encodeURIComponent(`Order ${activeOrder.trackingNumber}`)}`}
                 target="_blank"
                 rel="noreferrer"
-                className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition-colors"
+                className="min-h-[44px] px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition-colors"
               >
                 <MessageCircle className="w-3.5 h-3.5" />
                 <span>WhatsApp</span>
@@ -361,7 +376,7 @@ export const OrderTrackingView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setShowRefundBox(!showRefundBox)}
-                  className="px-3.5 py-2 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] hover:border-red-400 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                  className="min-h-[44px] px-3.5 py-2 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] hover:border-red-400 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
                 >
                   <RotateCcw className="w-3.5 h-3.5 text-[#7A756D] dark:text-[#8E8980]" />
                   <span>{t.payments.requestRefund}</span>
@@ -445,13 +460,7 @@ export const OrderTrackingView: React.FC = () => {
                   )}
                 </div>
 
-                {activeOrder.piiMasked ? (
-                  <p className="text-[11px] font-bold text-amber-700 dark:text-amber-300">
-                    لأمان حساباتنا وخصوصيتك، يرجى تأكيد رقم الهاتف في قسم "عنوان التوصيل" أدناه لعرض بيانات الـ RIB ورفع وصل التحويل.
-                  </p>
-                ) : (
-                  <>
-                    {(activeOrder.transferDetails || ccpFallbackDetails) && (
+                {(activeOrder.transferDetails || ccpFallbackDetails) && (
                       <div className="p-3 rounded-xl bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#32323C] space-y-1.5">
                         {(() => {
                           const det = (activeOrder.transferDetails || ccpFallbackDetails)!;
@@ -472,7 +481,7 @@ export const OrderTrackingView: React.FC = () => {
                                 <button
                                   type="button"
                                   onClick={() => handleCopy('trk_rib', det.ibanOrRib)}
-                                  className="px-2.5 py-1 rounded-lg border border-[#D6D0C4] dark:border-[#32323C] text-[11px] font-bold shrink-0 cursor-pointer"
+                                  className="min-h-[44px] px-3 py-2 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] text-[11px] font-bold shrink-0 cursor-pointer"
                                 >
                                   {copiedKey === 'trk_rib' ? t.payments.copied : t.payments.copy}
                                 </button>
@@ -571,8 +580,6 @@ export const OrderTrackingView: React.FC = () => {
                         </button>
                       </form>
                     )}
-                  </>
-                )}
               </div>
             )}
 
@@ -700,36 +707,13 @@ export const OrderTrackingView: React.FC = () => {
                   {activeOrder.shippingAddress.postalCode ? ` (${activeOrder.shippingAddress.postalCode})` : ''}
                 </p>
                 <p><strong>{t.checkout.street}:</strong> {activeOrder.shippingAddress.street}</p>
-                {activeOrder.piiMasked && isOnline && (
-                  <form onSubmit={handleVerifyTrackingPhone} className="pt-2 mt-2 border-t border-[#E6E2D8] dark:border-[#32323C] space-y-1.5">
-                    <p className="text-[11px] text-amber-700 dark:text-amber-300 font-semibold">
-                      {language === 'ar'
-                        ? 'بيانات المستلم مخفية لحماية الخصوصية. أدخل رقم الهاتف المستخدم في الطلب لعرضها:'
-                        : language === 'fr'
-                        ? 'Coordonnées masquées. Saisissez votre téléphone pour les afficher :'
-                        : 'Recipient details are masked for privacy. Enter order phone to reveal:'}
-                    </p>
-                    <div className="flex gap-1.5">
-                      <input
-                        type="tel"
-                        dir="ltr"
-                        value={verifyPhoneInput}
-                        onChange={(e) => setVerifyPhoneInput(e.target.value)}
-                        placeholder="+216 XX XXX XXX"
-                        className="flex-1 text-xs py-1.5 px-2.5 rounded-lg border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#141418] font-mono outline-none focus:border-[#FF6B00]"
-                      />
-                      <button
-                        type="submit"
-                        disabled={verifyPhoneLoading || !verifyPhoneInput.trim()}
-                        className="px-3 py-1.5 rounded-lg bg-[#FF6B00] hover:bg-[#e05e00] disabled:opacity-50 text-white text-[11px] font-bold cursor-pointer"
-                      >
-                        {language === 'ar' ? 'تأكيد' : 'Verify'}
-                      </button>
-                    </div>
-                    {verifyPhoneError && (
-                      <p className="text-[11px] text-red-600 dark:text-red-400 font-semibold">{verifyPhoneError}</p>
-                    )}
-                  </form>
+                {activeOrder.estimatedDelivery && (
+                  <p><strong>{t.tracking.estimatedDelivery}:</strong> {activeOrder.estimatedDelivery}</p>
+                )}
+                {activeOrder.piiMasked && (
+                  <p className="text-[11px] text-amber-700 dark:text-amber-300 font-semibold pt-2 mt-2 border-t border-[#E6E2D8] dark:border-[#32323C]">
+                    {t.tracking.privacyMaskedNotice}
+                  </p>
                 )}
               </div>
             </div>
@@ -794,7 +778,7 @@ export const OrderTrackingView: React.FC = () => {
         </div>
       ) : hasSearched ? (
         <div className="p-8 text-center bg-white dark:bg-[#141418] rounded-3xl border border-red-200 dark:border-red-500/30 text-[#5A5854] dark:text-[#B5B0A8] space-y-2">
-          <p className="font-bold text-red-600">{t.tracking.orderNotFound}</p>
+          <p className="font-bold text-red-600">{searchError || t.tracking.orderNotFound}</p>
           <p className="text-xs text-[#7A756D] dark:text-[#8E8980]">ECH-TN-XXXXXX</p>
         </div>
       ) : null}

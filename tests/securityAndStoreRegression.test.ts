@@ -346,27 +346,33 @@ async function run(): Promise<void> {
     assertEq(checkoutRes.status, 200, 'Server checkout accepts valid order and computes authoritative total');
     const checkoutData = (await checkoutRes.json()) as any;
     const trackingCode: string = checkoutData.order.trackingNumber;
+    const trackingToken: string = checkoutData.trackingToken;
+    assertTrue(typeof trackingToken === 'string' && trackingToken.length >= 16, 'Checkout issues guest trackingToken');
     assertTrue(checkoutData.order.items[0].unitPrice === firstProd.price, 'Server enforced authoritative product unitPrice');
 
     // Tracking code shorter than 6 chars rejected
     const shortTrackRes = await fetch(`${baseUrl}/api/payments/track/ABC`);
     assertEq(shortTrackRes.status, 400, 'Tracking code shorter than 6 chars returns 400');
 
-    // Public visitor tracking masks PII (customerEmail, notes, customerName, customerPhone, street, transferProof)
-    const publicTrackRes = await fetch(`${baseUrl}/api/payments/track/${encodeURIComponent(trackingCode)}`);
-    assertEq(publicTrackRes.status, 200, 'Public order tracking returns 200');
-    const publicTrackJson = (await publicTrackRes.json()) as any;
-    assertEq(publicTrackJson.order.piiMasked, true, 'Anonymous tracking marks piiMasked: true');
-    assertEq(publicTrackJson.order.customerEmail, '', 'Anonymous tracking strips customerEmail');
-    assertEq(publicTrackJson.order.notes, '', 'Anonymous tracking strips internal notes');
-    assertEq(publicTrackJson.order.shippingAddress.street, '***', 'Anonymous tracking masks street address');
-    assertTrue(publicTrackJson.order.customerPhone !== '22123456' && publicTrackJson.order.customerPhone.includes('*'), 'Anonymous tracking masks customerPhone');
+    // Anonymous & phone-only tracking rejected (401); guest trackingToken masks PII
+    const anonTrackRes = await fetch(`${baseUrl}/api/payments/track/${encodeURIComponent(trackingCode)}`);
+    assertEq(anonTrackRes.status, 401, 'Anonymous tracking without trackingToken rejected (401)');
 
-    // Phone proof reveals non-sensitive recipient delivery fields while keeping notes/email private
     const phoneTrackRes = await fetch(`${baseUrl}/api/payments/track/${encodeURIComponent(trackingCode)}?phone=22123456`);
-    const phoneTrackJson = (await phoneTrackRes.json()) as any;
-    assertEq(phoneTrackJson.order.piiMasked, false, 'Phone proof unmasks order tracking details');
-    assertEq(phoneTrackJson.order.shippingAddress.street, 'شارع الحبيب بورقيبة', 'Phone proof reveals street');
+    assertEq(phoneTrackRes.status, 401, 'Phone-only tracking rejected (401)');
+
+    const publicTrackRes = await fetch(`${baseUrl}/api/payments/track`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trackingNumber: trackingCode, trackingToken }),
+    });
+    assertEq(publicTrackRes.status, 200, 'Token-verified order tracking returns 200');
+    const publicTrackJson = (await publicTrackRes.json()) as any;
+    assertEq(publicTrackJson.order.piiMasked, true, 'Guest token tracking marks piiMasked: true');
+    assertEq(publicTrackJson.order.customerEmail, '', 'Guest token tracking strips customerEmail');
+    assertEq(publicTrackJson.order.notes, '', 'Guest token tracking strips internal notes');
+    assertEq(publicTrackJson.order.shippingAddress.street, '***', 'Guest token tracking masks street address');
+    assertTrue(publicTrackJson.order.customerPhone !== '22123456' && publicTrackJson.order.customerPhone.includes('*'), 'Guest token tracking masks customerPhone');
 
     // Authenticated owner sees full order on track endpoint
     const adminTrackRes = await fetch(`${baseUrl}/api/payments/track/${encodeURIComponent(trackingCode)}`, {
@@ -415,44 +421,46 @@ async function run(): Promise<void> {
       }),
     });
     assertEq(noEmailCheckoutRes.status, 200, 'Checkout succeeds with optional empty email and normalized +216 phone');
-    const noEmailTracking: string = ((await noEmailCheckoutRes.json()) as any).order.trackingNumber;
+    const noEmailCheckoutData = (await noEmailCheckoutRes.json()) as any;
+    const noEmailTracking: string = noEmailCheckoutData.order.trackingNumber;
+    const noEmailTrackingToken: string = noEmailCheckoutData.trackingToken;
 
-    // Customer refund/cancel request flow: wrong phone blocked (403), matching phone succeeds (200)
+    // Customer refund/cancel request flow: invalid token blocked (403), valid trackingToken succeeds (200)
     const badRefundReqRes = await fetch(`${baseUrl}/api/payments/request-refund`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.25' },
       body: JSON.stringify({
         trackingNumber: noEmailTracking,
-        customerPhone: '99887766',
-        reason: 'محاولة إلغاء برقم مختلف',
+        trackingToken: '00000000000000000000000000000000',
+        reason: 'محاولة إلغاء برمز مزور',
       }),
     });
-    assertEq(badRefundReqRes.status, 403, 'Customer refund/cancel request with mismatched phone blocked (403)');
+    assertEq(badRefundReqRes.status, 403, 'Customer refund/cancel request with invalid trackingToken blocked (403)');
 
     const refundReqRes = await fetch(`${baseUrl}/api/payments/request-refund`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.25' },
       body: JSON.stringify({
         trackingNumber: noEmailTracking,
-        customerPhone: '55123456',
+        trackingToken: noEmailTrackingToken,
         reason: 'تغيير العنوان قبل الشحن',
       }),
     });
-    assertEq(refundReqRes.status, 200, 'Customer refund/cancel request succeeds with matching phone (200)');
+    assertEq(refundReqRes.status, 200, 'Customer refund/cancel request succeeds with valid trackingToken (200)');
 
-    // Phone-ownership check blocks spoofed submission when phone doesn't match (403)
-    const phoneMismatchRes = await fetch(`${baseUrl}/api/payments/bank-transfer/proof`, {
+    // Token-ownership check blocks spoofed submission when token doesn't match (403)
+    const tokenMismatchRes = await fetch(`${baseUrl}/api/payments/bank-transfer/proof`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.30' },
       body: JSON.stringify({
         trackingNumber: trackingCode,
-        customerPhone: '99999999',
+        trackingToken: 'ffffffffffffffffffffffffffffffff',
         referenceNumber: 'REF-MISMATCH',
         senderName: 'Attacker',
         receiptImageDataUrl: VALID_PNG_BASE64,
       }),
     });
-    assertEq(phoneMismatchRes.status, 403, 'Proof submission with mismatched customerPhone blocked (403)');
+    assertEq(tokenMismatchRes.status, 403, 'Proof submission with mismatched trackingToken blocked (403)');
 
     // Temporarily enable legacy bank_transfer endpoint solely to exercise receipt Quarantine Vault magic-byte checks, then immediately re-disable
     const enableBankRes = await fetch(`${baseUrl}/api/admin/payments/config`, {
@@ -487,7 +495,9 @@ async function run(): Promise<void> {
       }),
     });
     assertEq(bankCheckoutRes.status, 200, 'Bank transfer order created (200)');
-    const bankOrderTracking: string = ((await bankCheckoutRes.json()) as any).order.trackingNumber;
+    const bankCheckoutJson = (await bankCheckoutRes.json()) as any;
+    const bankOrderTracking: string = bankCheckoutJson.order.trackingNumber;
+    const bankOrderToken: string = bankCheckoutJson.trackingToken;
 
     // Receipt upload: spoofed PNG ("Hello-world") & SVG polyglot rejected and quarantined
     const spoofProofRes = await fetch(`${baseUrl}/api/payments/bank-transfer/proof`, {
@@ -495,7 +505,7 @@ async function run(): Promise<void> {
       headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.30' },
       body: JSON.stringify({
         trackingNumber: bankOrderTracking,
-        customerPhone: '22123456',
+        trackingToken: bankOrderToken,
         referenceNumber: 'REF-SPOOF-1',
         senderName: 'Spoofer',
         receiptImageDataUrl: FAKE_PNG_TEXT_BASE64,
@@ -508,7 +518,7 @@ async function run(): Promise<void> {
       headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.31' },
       body: JSON.stringify({
         trackingNumber: bankOrderTracking,
-        customerPhone: '22123456',
+        trackingToken: bankOrderToken,
         referenceNumber: 'REF-SVG-1',
         senderName: 'XSS Tester',
         receiptImageDataUrl: SVG_DATA_URI,
@@ -522,7 +532,7 @@ async function run(): Promise<void> {
       headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.32' },
       body: JSON.stringify({
         trackingNumber: bankOrderTracking,
-        customerPhone: '22123456',
+        trackingToken: bankOrderToken,
         referenceNumber: 'REF-VALID-1',
         senderName: 'Valid Buyer',
         receiptImageDataUrl: VALID_PNG_BASE64,
@@ -1232,6 +1242,60 @@ async function run(): Promise<void> {
       headers: { Cookie: custACookie },
     });
     assertEq(postLogoutMeRes.status, 401, 'Customer session rejected with 401 after logout');
+
+    // =========================================================
+    // 9. Fail-Closed HMAC-SHA256 Enforcement (Missing or < 32 Bytes Blocks Sensitive Operations)
+    // =========================================================
+    const savedTestHmac = process.env.ECHOX_SECURITY_HMAC_SECRET || '';
+    try {
+      for (const badSecret of ['', 'short_key_16b', 'a'.repeat(62)]) {
+        if (badSecret === '') {
+          delete process.env.ECHOX_SECURITY_HMAC_SECRET;
+        } else {
+          process.env.ECHOX_SECURITY_HMAC_SECRET = badSecret;
+        }
+
+        const degradedHealthRes = await fetch(`${baseUrl}/api/health`);
+        assertEq(degradedHealthRes.status, 200, 'Health endpoint remains reachable when HMAC missing/weak');
+        const degradedHealthJson = (await degradedHealthRes.json()) as any;
+        assertEq(degradedHealthJson.status, 'degraded', `Health reports degraded for invalid secret (${badSecret.length} chars)`);
+        assertEq(degradedHealthJson.securityReady, false, 'Health reports securityReady: false');
+
+        const degradedSysRes = await fetch(`${baseUrl}/api/security/systemStatus`);
+        assertEq(degradedSysRes.status, 200, 'systemStatus remains reachable when HMAC missing/weak');
+        const degradedSysJson = (await degradedSysRes.json()) as any;
+        assertEq(degradedSysJson.hmacConfigured, false, 'systemStatus reports hmacConfigured: false');
+        assertEq(degradedSysJson.securityReady, false, 'systemStatus reports securityReady: false');
+
+        const sensitiveProbes: Array<{ name: string; path: string; method: string; body?: unknown }> = [
+          { name: 'verifyAccessCode', path: '/api/security/verifyAccessCode', method: 'POST', body: { code: TEST_ACCESS_CODE } },
+          { name: 'customerLogin', path: '/api/customer/login', method: 'POST', body: { email: 'custa@niapolor.tn', password: 'Password#123' } },
+          { name: 'paymentsCheckout', path: '/api/payments/checkout', method: 'POST', body: { customerName: 'Test' } },
+          { name: 'adminOrders', path: '/api/admin/orders', method: 'GET' },
+          { name: 'chatSession', path: '/api/chat/session/sess_failclosed/message', method: 'POST', body: { customerText: 'hi' } },
+        ];
+
+        for (const probe of sensitiveProbes) {
+          const probeRes = await fetch(`${baseUrl}${probe.path}`, {
+            method: probe.method,
+            headers: probe.body ? { 'Content-Type': 'application/json' } : undefined,
+            body: probe.body ? JSON.stringify(probe.body) : undefined,
+          });
+          assertEq(probeRes.status, 503, `${probe.name} fails closed with HTTP 503 when HMAC secret invalid`);
+          const probeJson = (await probeRes.json()) as any;
+          assertEq(probeJson.code, 'HMAC_SECRET_NOT_CONFIGURED', `${probe.name} returns HMAC_SECRET_NOT_CONFIGURED`);
+          if (badSecret) {
+            assertTrue(!JSON.stringify(probeJson).includes(badSecret), `${probe.name} never leaks secret value`);
+          }
+        }
+      }
+    } finally {
+      process.env.ECHOX_SECURITY_HMAC_SECRET = savedTestHmac;
+    }
+
+    const restoredHealthJson = (await (await fetch(`${baseUrl}/api/health`)).json()) as any;
+    assertEq(restoredHealthJson.status, 'ok', 'Health returns ok after restoring >= 32-byte HMAC secret');
+    assertEq(restoredHealthJson.securityReady, true, 'Health returns securityReady: true after restore');
 
     console.log('ALL ECHOX SECURITY & CONTROL ROOM REGRESSION TESTS PASSED');
   } finally {

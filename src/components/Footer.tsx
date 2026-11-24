@@ -122,12 +122,12 @@ export const Footer: React.FC = () => {
             <h4 className="text-xs font-black text-[#FF6B00] uppercase tracking-wider">
               {t.footer.quickLinks}
             </h4>
-            <ul className="space-y-1.5 text-xs text-[#5A5854] dark:text-[#B5B0A8] font-medium">
+            <ul className="space-y-0.5 text-xs text-[#5A5854] dark:text-[#B5B0A8] font-medium">
               <li>
                 <button 
                   type="button"
                   onClick={() => handleLinkClick('store')} 
-                  className="hover:text-[#FF6B00] transition-colors cursor-pointer text-start"
+                  className="min-h-[40px] sm:min-h-[32px] py-1.5 sm:py-1 inline-flex items-center hover:text-[#FF6B00] transition-colors cursor-pointer text-start"
                 >
                   {t.nav.store}
                 </button>
@@ -136,7 +136,7 @@ export const Footer: React.FC = () => {
                 <button 
                   type="button"
                   onClick={() => handleLinkClick('about')} 
-                  className="hover:text-[#FF6B00] transition-colors cursor-pointer text-start"
+                  className="min-h-[40px] sm:min-h-[32px] py-1.5 sm:py-1 inline-flex items-center hover:text-[#FF6B00] transition-colors cursor-pointer text-start"
                 >
                   {t.footer.aboutUs}
                 </button>
@@ -145,7 +145,7 @@ export const Footer: React.FC = () => {
                 <button 
                   type="button"
                   onClick={() => handleLinkClick('companies')} 
-                  className="hover:text-[#FF6B00] transition-colors cursor-pointer text-start"
+                  className="min-h-[40px] sm:min-h-[32px] py-1.5 sm:py-1 inline-flex items-center hover:text-[#FF6B00] transition-colors cursor-pointer text-start"
                 >
                   {t.nav.companies}
                 </button>
@@ -154,7 +154,7 @@ export const Footer: React.FC = () => {
                 <button 
                   type="button"
                   onClick={() => handleLinkClick('promise')} 
-                  className="hover:text-[#FF6B00] transition-colors cursor-pointer text-start"
+                  className="min-h-[40px] sm:min-h-[32px] py-1.5 sm:py-1 inline-flex items-center hover:text-[#FF6B00] transition-colors cursor-pointer text-start"
                 >
                   {t.nav.promise}
                 </button>
@@ -163,16 +163,25 @@ export const Footer: React.FC = () => {
                 <button 
                   type="button"
                   onClick={() => handleLinkClick('my_orders')} 
-                  className="hover:text-[#FF6B00] transition-colors cursor-pointer text-start"
+                  className="min-h-[40px] sm:min-h-[32px] py-1.5 sm:py-1 inline-flex items-center hover:text-[#FF6B00] transition-colors cursor-pointer text-start"
                 >
                   {t.nav.myOrders}
+                </button>
+              </li>
+              <li>
+                <button 
+                  type="button"
+                  onClick={() => handleLinkClick('account')} 
+                  className="min-h-[40px] sm:min-h-[32px] py-1.5 sm:py-1 inline-flex items-center hover:text-[#FF6B00] transition-colors cursor-pointer text-start"
+                >
+                  {t.nav.account}
                 </button>
               </li>
               <li>
                 <button
                   type="button"
                   onClick={() => setIsSupportModalOpen(true)}
-                  className="text-[#FF6B00] hover:underline font-bold transition-colors cursor-pointer text-start"
+                  className="min-h-[40px] sm:min-h-[32px] py-1.5 sm:py-1 inline-flex items-center text-[#FF6B00] hover:underline font-bold transition-colors cursor-pointer text-start"
                 >
                   {t.supportEchox.navLabel}
                 </button>
@@ -185,12 +194,12 @@ export const Footer: React.FC = () => {
             <h4 className="text-xs font-black text-[#FF6B00] uppercase tracking-wider">
               {t.footer.customerService}
             </h4>
-            <ul className="space-y-1.5 text-xs text-[#5A5854] dark:text-[#B5B0A8] font-medium">
+            <ul className="space-y-0.5 text-xs text-[#5A5854] dark:text-[#B5B0A8] font-medium">
               <li>
                 <button 
                   type="button"
                   onClick={() => handleLinkClick('contact')} 
-                  className="hover:text-[#FF6B00] transition-colors cursor-pointer text-start"
+                  className="min-h-[40px] sm:min-h-[32px] py-1.5 sm:py-1 inline-flex items-center hover:text-[#FF6B00] transition-colors cursor-pointer text-start"
                 >
                   {t.contactModal.title}
                 </button>
@@ -199,7 +208,7 @@ export const Footer: React.FC = () => {
                 <button 
                   type="button"
                   onClick={() => handleLinkClick('shipping')} 
-                  className="hover:text-[#FF6B00] transition-colors cursor-pointer text-start"
+                  className="min-h-[40px] sm:min-h-[32px] py-1.5 sm:py-1 inline-flex items-center hover:text-[#FF6B00] transition-colors cursor-pointer text-start"
                 >
                   {t.footer.shippingPolicy}
                 </button>
@@ -208,7 +217,7 @@ export const Footer: React.FC = () => {
                 <button 
                   type="button"
                   onClick={() => handleLinkClick('returns')} 
-                  className="hover:text-[#FF6B00] transition-colors cursor-pointer text-start"
+                  className="min-h-[40px] sm:min-h-[32px] py-1.5 sm:py-1 inline-flex items-center hover:text-[#FF6B00] transition-colors cursor-pointer text-start"
                 >
                   {t.footer.returnPolicy}
                 </button>
@@ -217,7 +226,7 @@ export const Footer: React.FC = () => {
                 <button 
                   type="button"
                   onClick={() => handleLinkClick('faq')} 
-                  className="hover:text-[#FF6B00] transition-colors cursor-pointer text-start"
+                  className="min-h-[40px] sm:min-h-[32px] py-1.5 sm:py-1 inline-flex items-center hover:text-[#FF6B00] transition-colors cursor-pointer text-start"
                 >
                   {t.footer.faq}
                 </button>
@@ -226,7 +235,7 @@ export const Footer: React.FC = () => {
                 <button 
                   type="button"
                   onClick={() => handleLinkClick('privacy')} 
-                  className="hover:text-[#FF6B00] transition-colors cursor-pointer text-start"
+                  className="min-h-[40px] sm:min-h-[32px] py-1.5 sm:py-1 inline-flex items-center hover:text-[#FF6B00] transition-colors cursor-pointer text-start"
                 >
                   {t.footer.privacyPolicy}
                 </button>
@@ -235,7 +244,7 @@ export const Footer: React.FC = () => {
                 <button 
                   type="button"
                   onClick={() => handleLinkClick('terms')} 
-                  className="hover:text-[#FF6B00] transition-colors cursor-pointer text-start"
+                  className="min-h-[40px] sm:min-h-[32px] py-1.5 sm:py-1 inline-flex items-center hover:text-[#FF6B00] transition-colors cursor-pointer text-start"
                 >
                   {t.footer.termsOfService}
                 </button>

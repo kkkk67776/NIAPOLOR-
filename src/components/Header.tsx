@@ -15,6 +15,7 @@ import {
   HeartHandshake,
   Download,
   Smartphone,
+  User,
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { Product } from '../types';
@@ -53,6 +54,7 @@ export default function Header(_props: HeaderProps) {
     toggleDarkMode,
     setIsSupportModalOpen,
     isOnline,
+    currentUser,
   } = useStore();
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -176,7 +178,7 @@ export default function Header(_props: HeaderProps) {
           <button
             type="button"
             onClick={() => setIsMenuOpen(true)}
-            className="p-2 rounded-xl hover:bg-[#F3F1EC] dark:hover:bg-[#18181E] text-[#111113] dark:text-[#F7F6F3] transition-colors cursor-pointer shrink-0"
+            className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl hover:bg-[#F3F1EC] dark:hover:bg-[#18181E] text-[#111113] dark:text-[#F7F6F3] transition-colors cursor-pointer shrink-0"
             title={language === 'ar' ? 'القائمة' : 'Menu'}
             aria-label={language === 'ar' ? 'القائمة' : 'Menu'}
           >
@@ -234,16 +236,16 @@ export default function Header(_props: HeaderProps) {
         </nav>
 
         {/* End: Compact Luxury Utility Controls */}
-        <div className="flex items-center gap-1 sm:gap-1.5 relative shrink-0">
+        <div className="flex items-center gap-0.5 sm:gap-1.5 relative shrink-0">
           {/* Quick Search Trigger (synced with Search Modal + # vault access) */}
           <button
             type="button"
             onClick={openUnifiedSearch}
-            className="hidden sm:inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-[#E6E2D8] dark:border-[#23232C] bg-[#FAF9F7] dark:bg-[#131317] hover:border-[#FF6B00]/60 text-xs text-[#6B665F] dark:text-[#9A958E] hover:text-[#111113] dark:hover:text-[#F7F6F3] transition-colors cursor-pointer"
+            className="hidden sm:inline-flex items-center justify-center gap-2 min-h-[44px] px-3 rounded-xl border border-[#E6E2D8] dark:border-[#23232C] bg-[#FAF9F7] dark:bg-[#131317] hover:border-[#FF6B00]/60 text-xs text-[#6B665F] dark:text-[#9A958E] hover:text-[#111113] dark:hover:text-[#F7F6F3] transition-colors cursor-pointer"
             title={t.nav.search}
             aria-label={t.nav.search}
           >
-            <Search className="w-3.5 h-3.5 text-[#FF6B00] shrink-0" />
+            <Search className="w-4 h-4 text-[#FF6B00] shrink-0" />
             <span className="hidden xl:inline font-semibold text-[11px]">{t.nav.search}</span>
           </button>
 
@@ -251,7 +253,7 @@ export default function Header(_props: HeaderProps) {
           <button
             type="button"
             onClick={toggleDarkMode}
-            className="p-2 rounded-xl hover:bg-[#F3F1EC] dark:hover:bg-[#18181E] text-[#111113] dark:text-[#C8A25A] transition-colors cursor-pointer"
+            className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl hover:bg-[#F3F1EC] dark:hover:bg-[#18181E] text-[#111113] dark:text-[#C8A25A] transition-colors cursor-pointer"
             title={isDarkMode ? t.header.lightMode : t.header.darkMode}
             aria-label="Toggle Theme"
           >
@@ -262,7 +264,7 @@ export default function Header(_props: HeaderProps) {
           <button
             type="button"
             onClick={cycleLanguage}
-            className="px-2.5 py-1 rounded-xl border border-[#E6E2D8] dark:border-[#23232C] bg-[#FAF9F7] dark:bg-[#131317] text-[11px] font-extrabold text-[#111113] dark:text-[#F7F6F3] hover:border-[#FF6B00] transition-colors cursor-pointer uppercase"
+            className="min-w-[44px] min-h-[44px] px-2.5 flex items-center justify-center rounded-xl border border-[#E6E2D8] dark:border-[#23232C] bg-[#FAF9F7] dark:bg-[#131317] text-[11px] font-extrabold text-[#111113] dark:text-[#F7F6F3] hover:border-[#FF6B00] transition-colors cursor-pointer uppercase"
             title={t.header.language}
           >
             {language}
@@ -272,25 +274,38 @@ export default function Header(_props: HeaderProps) {
           <button
             type="button"
             onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
-            className="relative p-2 rounded-xl hover:bg-[#F3F1EC] dark:hover:bg-[#18181E] text-[#111113] dark:text-[#F7F6F3] transition-colors cursor-pointer"
+            className="relative min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl hover:bg-[#F3F1EC] dark:hover:bg-[#18181E] text-[#111113] dark:text-[#F7F6F3] transition-colors cursor-pointer"
             title={t.header.notifications}
             aria-label={t.header.notifications}
           >
             <Bell className="w-[18px] h-[18px]" />
-            <span className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-[#FF6B00]" />
+            <span className="absolute top-2.5 right-2.5 w-1.5 h-1.5 rounded-full bg-[#FF6B00]" />
+          </button>
+
+          {/* Customer Account / Sign In */}
+          <button
+            type="button"
+            onClick={() => handleNavClick('account')}
+            className={`relative min-w-[44px] min-h-[44px] hidden sm:inline-flex items-center justify-center rounded-xl hover:bg-[#F3F1EC] dark:hover:bg-[#18181E] transition-colors cursor-pointer ${
+              currentView === 'account' || currentUser ? 'text-[#FF6B00]' : 'text-[#111113] dark:text-[#F7F6F3]'
+            }`}
+            title={currentUser ? currentUser.fullName : t.nav.account}
+            aria-label={t.nav.account}
+          >
+            <User className="w-[18px] h-[18px]" />
           </button>
 
           {/* Wishlist Heart with fiery-orange badge */}
           <button
             type="button"
             onClick={() => handleNavClick('wishlist')}
-            className="relative p-2 rounded-xl hover:bg-[#F3F1EC] dark:hover:bg-[#18181E] text-[#111113] dark:text-[#F7F6F3] transition-colors cursor-pointer hidden xs:inline-flex"
+            className="relative min-w-[44px] min-h-[44px] hidden sm:inline-flex items-center justify-center rounded-xl hover:bg-[#F3F1EC] dark:hover:bg-[#18181E] text-[#111113] dark:text-[#F7F6F3] transition-colors cursor-pointer"
             title={t.nav.wishlist}
             aria-label={t.nav.wishlist}
           >
             <Heart className={`w-[18px] h-[18px] ${wishlistCount > 0 ? 'text-[#FF6B00]' : ''}`} />
             {wishlistCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 bg-[#FF6B00] text-white text-[9px] font-black min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center tabular-nums">
+              <span className="absolute top-1 right-1 bg-[#FF6B00] text-white text-[9px] font-black min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center tabular-nums">
                 {wishlistCount}
               </span>
             )}
@@ -300,13 +315,13 @@ export default function Header(_props: HeaderProps) {
           <button
             type="button"
             onClick={() => setIsCartOpen(true)}
-            className="relative p-2 rounded-xl hover:bg-[#F3F1EC] dark:hover:bg-[#18181E] text-[#111113] dark:text-[#F7F6F3] transition-colors cursor-pointer"
+            className="relative min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl hover:bg-[#F3F1EC] dark:hover:bg-[#18181E] text-[#111113] dark:text-[#F7F6F3] transition-colors cursor-pointer"
             title={t.nav.cart}
             aria-label={t.nav.cart}
           >
             <ShoppingBag className="w-[18px] h-[18px]" />
             {totalCartItems > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 bg-[#FF6B00] text-white text-[9px] font-black min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center tabular-nums">
+              <span className="absolute top-1 right-1 bg-[#FF6B00] text-white text-[9px] font-black min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center tabular-nums">
                 {totalCartItems}
               </span>
             )}
@@ -323,9 +338,10 @@ export default function Header(_props: HeaderProps) {
                 <button
                   type="button"
                   onClick={() => setIsNotificationsOpen(false)}
-                  className="text-[#7A756D] hover:text-[#111113] dark:hover:text-white cursor-pointer"
+                  aria-label="Close notifications"
+                  className="text-[#7A756D] hover:text-[#111113] dark:hover:text-white min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl cursor-pointer"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 
@@ -338,7 +354,7 @@ export default function Header(_props: HeaderProps) {
                   type="button"
                   disabled={pushBusy}
                   onClick={handleToggleStorePush}
-                  className={`w-full py-1.5 px-3 rounded-lg text-[11px] font-black flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-60 ${
+                  className={`w-full min-h-[44px] py-2 px-3 rounded-lg text-[11px] font-black flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-60 ${
                     isPushEnabled
                       ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
                       : 'bg-[#FF6B00] hover:bg-[#E05E00] text-white'
@@ -456,52 +472,68 @@ export default function Header(_props: HeaderProps) {
                 type="button"
                 onClick={() => setIsMenuOpen(false)}
                 aria-label={language === 'ar' ? 'إغلاق القائمة' : 'Close menu'}
-                className="text-[#4B4741] hover:text-[#111113] dark:text-[#B5B0A8] dark:hover:text-white p-2 rounded-lg bg-[#F5F3EE] dark:bg-[#1E1E22] border border-[#E5E0D5] dark:border-[#2E2E36] transition-colors cursor-pointer"
+                className="text-[#4B4741] hover:text-[#111113] dark:text-[#B5B0A8] dark:hover:text-white min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl bg-[#F5F3EE] dark:bg-[#1E1E22] border border-[#E5E0D5] dark:border-[#2E2E36] transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <nav className="space-y-1.5 text-xs font-bold text-[#272521] dark:text-[#E5E2DC]">
+            <nav className="space-y-1 text-xs font-bold text-[#272521] dark:text-[#E5E2DC]">
               <button
                 type="button"
                 onClick={() => handleNavClick('store')}
-                className="w-full text-start block px-3 py-2.5 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer"
+                className="w-full text-start flex items-center min-h-[44px] px-3 py-2 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer"
               >
                 {t.nav.store}
               </button>
               <button
                 type="button"
+                onClick={openUnifiedSearch}
+                className="w-full text-start flex items-center justify-between min-h-[44px] px-3 py-2 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer sm:hidden"
+              >
+                <span>{t.nav.search}</span>
+                <Search className="w-4 h-4 text-[#FF6B00]" />
+              </button>
+              <button
+                type="button"
                 onClick={() => handleNavClick('companies')}
-                className="w-full text-start block px-3 py-2.5 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer"
+                className="w-full text-start flex items-center min-h-[44px] px-3 py-2 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer"
               >
                 {t.nav.companies}
               </button>
               <button
                 type="button"
                 onClick={() => handleNavClick('promise')}
-                className="w-full text-start block px-3 py-2.5 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer"
+                className="w-full text-start flex items-center min-h-[44px] px-3 py-2 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer"
               >
                 {t.nav.promise}
               </button>
               <button
                 type="button"
                 onClick={() => handleNavClick('my_orders')}
-                className="w-full text-start block px-3 py-2.5 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer"
+                className="w-full text-start flex items-center min-h-[44px] px-3 py-2 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer"
               >
                 {t.nav.myOrders}
               </button>
               <button
                 type="button"
+                onClick={() => handleNavClick('account')}
+                className="w-full text-start flex items-center justify-between min-h-[44px] px-3 py-2 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer"
+              >
+                <span>{currentUser ? `${t.nav.account} (${currentUser.fullName})` : `${t.nav.account} · ${(t as any).customerAuth?.signInTab || ''}`}</span>
+                <User className="w-4 h-4 text-[#FF6B00] shrink-0" />
+              </button>
+              <button
+                type="button"
                 onClick={() => handleNavClick('wishlist')}
-                className="w-full text-start block px-3 py-2.5 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer"
+                className="w-full text-start flex items-center min-h-[44px] px-3 py-2 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer"
               >
                 {t.nav.wishlist} ({wishlistCount})
               </button>
               <button
                 type="button"
                 onClick={() => handleNavClick('contact')}
-                className="w-full text-start block px-3 py-2.5 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer"
+                className="w-full text-start flex items-center min-h-[44px] px-3 py-2 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer"
               >
                 {language === 'ar' ? 'اتصل بنا' : language === 'fr' ? 'Contactez-nous' : 'Contact Us'}
               </button>
@@ -510,42 +542,42 @@ export default function Header(_props: HeaderProps) {
                 <button
                   type="button"
                   onClick={() => handleNavClick('about')}
-                  className="w-full text-start block px-3 py-2 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer"
+                  className="w-full text-start flex items-center min-h-[44px] px-3 py-2 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer"
                 >
                   {t.nav.about}
                 </button>
                 <button
                   type="button"
                   onClick={() => handleNavClick('shipping')}
-                  className="w-full text-start block px-3 py-2 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer"
+                  className="w-full text-start flex items-center min-h-[44px] px-3 py-2 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer"
                 >
                   {t.nav.shipping}
                 </button>
                 <button
                   type="button"
                   onClick={() => handleNavClick('returns')}
-                  className="w-full text-start block px-3 py-2 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer"
+                  className="w-full text-start flex items-center min-h-[44px] px-3 py-2 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer"
                 >
                   {t.nav.returns}
                 </button>
                 <button
                   type="button"
                   onClick={() => handleNavClick('faq')}
-                  className="w-full text-start block px-3 py-2 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer"
+                  className="w-full text-start flex items-center min-h-[44px] px-3 py-2 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer"
                 >
                   {t.nav.faq}
                 </button>
                 <button
                   type="button"
                   onClick={() => handleNavClick('privacy')}
-                  className="w-full text-start block px-3 py-2 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer"
+                  className="w-full text-start flex items-center min-h-[44px] px-3 py-2 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer"
                 >
                   {t.footer.privacyPolicy}
                 </button>
                 <button
                   type="button"
                   onClick={() => handleNavClick('terms')}
-                  className="w-full text-start block px-3 py-2 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer"
+                  className="w-full text-start flex items-center min-h-[44px] px-3 py-2 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer"
                 >
                   {t.footer.termsOfService}
                 </button>
@@ -557,7 +589,7 @@ export default function Header(_props: HeaderProps) {
                   setIsMenuOpen(false);
                   setIsSupportModalOpen(true);
                 }}
-                className="w-full text-start flex items-center gap-2 px-3 py-2.5 rounded-xl bg-[#FFF3EA] dark:bg-[#241912] border border-[#FF6B00]/25 text-[#FF6B00] hover:bg-[#FFE6D3] dark:hover:bg-[#2F1F15] transition-colors cursor-pointer mt-3"
+                className="w-full text-start flex items-center gap-2 min-h-[44px] px-3 py-2.5 rounded-xl bg-[#FFF3EA] dark:bg-[#241912] border border-[#FF6B00]/25 text-[#FF6B00] hover:bg-[#FFE6D3] dark:hover:bg-[#2F1F15] transition-colors cursor-pointer mt-3"
               >
                 <HeartHandshake className="w-4 h-4 shrink-0" />
                 <span>{t.supportEchox.navLabel}</span>
@@ -568,7 +600,7 @@ export default function Header(_props: HeaderProps) {
                   <button
                     type="button"
                     onClick={handleInstallPwa}
-                    className="w-full text-start flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-[#111113] dark:bg-[#1E1E22] text-white border border-[#27272E] hover:border-[#FF6B00] transition-colors cursor-pointer"
+                    className="w-full text-start flex items-center gap-2.5 min-h-[44px] px-3 py-2.5 rounded-xl bg-[#111113] dark:bg-[#1E1E22] text-white border border-[#27272E] hover:border-[#FF6B00] transition-colors cursor-pointer"
                   >
                     <img
                       src="/pwa-any-192-v3.png"

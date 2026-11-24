@@ -301,6 +301,7 @@ async function run(): Promise<void> {
     assertEq(okCheckoutRes.status, 200, 'Online Konnect checkout succeeds (200)');
     const okCheckoutJson = (await okCheckoutRes.json()) as any;
     const order = okCheckoutJson.order;
+    const orderTrackingToken: string = okCheckoutJson.trackingToken;
     assertTrue(typeof okCheckoutJson.paymentUrl === 'string' && okCheckoutJson.paymentUrl.startsWith('https://sandbox.konnect.network/pay/'), 'Returns HTTPS Konnect payUrl');
     assertEq(order.paymentStatus, 'Pending Payment', 'Order starts as Pending Payment before Konnect confirmation');
 
@@ -337,7 +338,9 @@ async function run(): Promise<void> {
     // 7c. Pending payment status on Konnect does NOT mark order Paid
     const pendingWh = await fetch(`${baseUrl}/api/payments/webhook/konnect/${whToken}?payment_ref=${encodeURIComponent(payRef)}`);
     assertEq(pendingWh.status, 200, 'Pending Konnect webhook returns 200 without marking Paid');
-    const trackPendingRes = await fetch(`${baseUrl}/api/payments/track/${encodeURIComponent(order.trackingNumber)}`);
+    const trackPendingRes = await fetch(`${baseUrl}/api/payments/track/${encodeURIComponent(order.trackingNumber)}`, {
+      headers: { 'x-tracking-token': orderTrackingToken },
+    });
     const trackPendingJson = (await trackPendingRes.json()) as any;
     assertEq(trackPendingJson.order.paymentStatus, 'Pending Payment', 'Pending Konnect status does NOT mark order Paid');
 
@@ -362,7 +365,9 @@ async function run(): Promise<void> {
     const validWhJson = (await validWhRes.json()) as any;
     assertTrue(validWhJson.ok === true && /Paid/i.test(validWhJson.message), 'Order confirmed Paid after S2S Konnect verification');
 
-    const trackPaidRes = await fetch(`${baseUrl}/api/payments/track/${encodeURIComponent(order.trackingNumber)}`);
+    const trackPaidRes = await fetch(`${baseUrl}/api/payments/track/${encodeURIComponent(order.trackingNumber)}`, {
+      headers: { 'x-tracking-token': orderTrackingToken },
+    });
     const trackPaidJson = (await trackPaidRes.json()) as any;
     assertEq(trackPaidJson.order.paymentStatus, 'Paid', 'Tracked order status updated to Paid');
 

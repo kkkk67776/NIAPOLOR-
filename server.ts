@@ -15,6 +15,9 @@ import {
   updateAdminPaymentConfig,
   testOnlineGatewayConnection,
   processServerCheckout,
+  calculateServerOrderQuote,
+  validateCouponServer,
+  recoverCheckoutByRequestId,
   submitBankTransferProof,
   adminVerifyPayment,
   adminProcessRefundOrCancel,
@@ -23,6 +26,7 @@ import {
   adminSettleVendorPayout,
   getScopedVendorFinancials,
   getAdminPaymentOverview,
+  getAdminOrdersFiltered,
   adminCreateManualOrder,
   adminDeleteOrder,
   trackPublicOrder,
@@ -47,12 +51,20 @@ import {
   registerCustomerAccount,
   authenticateCustomerAccount,
   getCustomerById,
+  updateCustomerProfileServer,
+  syncCustomerWishlistServer,
   addCustomerAddressServer,
   setDefaultCustomerAddressServer,
+  deleteCustomerAddressServer,
   signCustomerSessionToken,
   verifyCustomerSessionToken,
   revokeCustomerSession,
 } from './server/customerEngine';
+import {
+  resolveCustomerLang,
+  getCustomerAuthMessage,
+  type AuthLang,
+} from './src/lib/customerAuthMessages';
 import { getGovernorateName } from './src/data/governorates';
 import {
   getPublicStoreState,
@@ -70,6 +82,7 @@ import {
   syncStoreStateIfStale,
   getStoreRecoverySnapshot,
   restoreStoreRecoverySnapshot,
+  initStorePaymentBridge,
 } from './server/storeEngine';
 import {
   atomicWriteJsonSync,
@@ -139,6 +152,12 @@ import {
   readStoredProductImage,
   uploadVerifiedProductImage,
 } from './server/mediaStorage';
+import {
+  getServerHmacStatus,
+  getValidatedHmacSecret,
+  HmacSecretNotConfiguredError,
+  requireServerHmacSecret,
+} from './server/hmacKey';
 
 dotenv.config();
 
@@ -266,23 +285,61 @@ function buildCustomerSessionCookie(req: Request, value: string, maxAgeSeconds: 
 }
 
 function resolveCustomerSession(req: Request): { customerId: string; sessionId: string } | null {
+  const secret = getValidatedHmacSecret();
+  if (!secret) return null;
   const cookies = parseCookies(req);
   const raw = cookies['__customer_session'];
   if (!raw) return null;
-  const parsed = verifyCustomerSessionToken(raw, getHmacSecret());
+  const parsed = verifyCustomerSessionToken(raw, secret);
   if (!parsed) return null;
   return { customerId: parsed.customerId, sessionId: parsed.sessionId };
 }
 
+function extractCustomerLang(req: Request): AuthLang {
+  return resolveCustomerLang(req.body?.lang ?? req.query?.lang, req.headers['accept-language']);
+}
+
+function assertNoCustomerIdorTampering(
+  req: Request,
+  res: Response,
+  sessionCustomerId: string,
+  lang: AuthLang
+): boolean {
+  const paramId = typeof req.params?.customerId === 'string' ? req.params.customerId.trim() : '';
+  const queryId = typeof req.query?.customerId === 'string' ? req.query.customerId.trim() : '';
+  const bodyId =
+    req.body && typeof req.body === 'object' && typeof req.body.customerId === 'string'
+      ? req.body.customerId.trim()
+      : '';
+
+  const suppliedId = paramId || queryId || bodyId;
+  if (suppliedId && suppliedId !== sessionCustomerId) {
+    res.status(403).json({
+      success: false,
+      error: getCustomerAuthMessage(lang, 'forbiddenIdor'),
+    });
+    return false;
+  }
+  return true;
+}
+
 function verifyCustomerMutationSecurity(req: Request, res: Response): boolean {
+  const lang = extractCustomerLang(req);
   const reqOrigin = String(req.headers.origin || '').trim();
   if (reqOrigin && !isAllowedOrigin(reqOrigin)) {
-    res.status(403).json({ success: false, error: 'Origin not allowed.' });
+    res.status(403).json({ success: false, error: getCustomerAuthMessage(lang, 'csrfOriginDenied') });
     return false;
+  }
+  if (!reqOrigin) {
+    const reqReferer = String(req.headers.referer || '').trim();
+    if (reqReferer && !isAllowedOrigin(reqReferer)) {
+      res.status(403).json({ success: false, error: getCustomerAuthMessage(lang, 'csrfOriginDenied') });
+      return false;
+    }
   }
   const xrw = String(req.headers['x-requested-with'] || '').trim();
   if (xrw !== 'NIAPOLOR-Customer') {
-    res.status(403).json({ success: false, error: 'Missing required X-Requested-With customer header.' });
+    res.status(403).json({ success: false, error: getCustomerAuthMessage(lang, 'csrfHeaderMissing') });
     return false;
   }
   return true;
@@ -467,6 +524,45 @@ app.use('/api', async (_req, _res, next) => {
   next();
 });
 
+function isSensitiveHmacRoute(reqPath: string): boolean {
+  if (reqPath === '/api/health') return false;
+  if (reqPath === '/api/security/status' || reqPath === '/api/security/systemStatus') return false;
+  if (reqPath === '/api/store/state' || reqPath === '/api/store/inquiries') return false;
+  if (/^\/api\/store\/products\/[^/]+\/reviews$/.test(reqPath)) return false;
+  if (reqPath === '/api/payments/config' || reqPath.startsWith('/api/payments/track/')) return false;
+  if (reqPath === '/api/chat/config' || reqPath === '/api/notifications/public') return false;
+  if (reqPath.startsWith('/api/media/products/')) return false;
+  return (
+    reqPath === '/api/createOwnerSession' ||
+    reqPath.startsWith('/api/owner/') ||
+    reqPath.startsWith('/api/security/') ||
+    reqPath.startsWith('/api/admin/') ||
+    reqPath.startsWith('/api/customer/') ||
+    reqPath.startsWith('/api/payments/') ||
+    reqPath.startsWith('/api/support/') ||
+    reqPath.startsWith('/api/vendor/') ||
+    reqPath.startsWith('/api/chat/session/') ||
+    reqPath.startsWith('/api/notifications/public/')
+  );
+}
+
+app.use('/api', (req: Request, res: Response, next) => {
+  const reqPath = `${req.baseUrl || ''}${req.path || ''}`;
+  if (!isSensitiveHmacRoute(reqPath)) {
+    return next();
+  }
+  const hmacStatus = getServerHmacStatus();
+  if (!hmacStatus.valid) {
+    return res.status(503).json({
+      success: false,
+      code: 'HMAC_SECRET_NOT_CONFIGURED',
+      error:
+        'تعذر تشغيل الوظائف الأمنية الحساسة: متغير البيئة ECHOX_SECURITY_HMAC_SECRET غير مضبوط أو أقصر من 32 بايت.',
+    });
+  }
+  return next();
+});
+
 app.use('/api/admin', async (_req, _res, next) => {
   await syncCentralSecurityIfStale(true).catch(() => null);
   next();
@@ -476,18 +572,22 @@ app.use('/api/admin', async (_req, _res, next) => {
 app.get('/api/health', async (req: Request, res: Response) => {
   res.setHeader('Cache-Control', 'no-store');
   await syncCentralSecurityIfStale().catch(() => null);
+  const hmacStatus = getServerHmacStatus();
   const session = resolveSessionRecord(req);
   const isAdmin = Boolean(session && session.email === OWNER_EMAIL && session.owner && session.codeVerified);
   if (!isAdmin) {
     return res.json({
-      status: 'ok',
+      status: hmacStatus.valid ? 'ok' : 'degraded',
+      securityReady: hmacStatus.valid,
       service: 'echox-store-api',
       timestamp: new Date().toISOString(),
     });
   }
   const persistence = getPersistenceStatus();
   return res.json({
-    status: 'ok',
+    status: hmacStatus.valid ? 'ok' : 'degraded',
+    securityReady: hmacStatus.valid,
+    hmacConfigured: hmacStatus.valid,
     service: 'echox-store-api',
     uptimeSeconds: Math.floor(process.uptime()),
     storageMode: persistence.storageMode,
@@ -596,60 +696,11 @@ ${entries}
 `);
 });
 
-// Sovereign Security Config (zero plaintext secrets or default codes in source)
+// Sovereign Security Config (zero plaintext secrets or ephemeral fallback keys in source)
 const OWNER_EMAIL = (process.env.ECHOX_OWNER_EMAIL || 'abdelkaderbahri570@gmail.com').trim().toLowerCase();
 
-function getEffectiveHmacByteLength(secret: string): number {
-  const trimmed = (secret || '').trim();
-  if (!trimmed) return 0;
-  if (/^[a-f0-9]+$/i.test(trimmed)) {
-    return Math.floor(trimmed.length / 2);
-  }
-  return Buffer.byteLength(trimmed, 'utf8');
-}
-
-function isStrongHmacSecret(secret: string): boolean {
-  return getEffectiveHmacByteLength(secret) >= 32;
-}
-
-function loadOrCreateHmacSecret(): string {
-  const fromEnv = (process.env.ECHOX_SECURITY_HMAC_SECRET || '').trim();
-  if (isStrongHmacSecret(fromEnv)) return fromEnv;
-
-  const generated = crypto.randomBytes(48).toString('hex');
-  if (process.env.NODE_ENV === 'production') {
-    console.warn('[Security] ECHOX_SECURITY_HMAC_SECRET env var not configured with >= 32 bytes; using ephemeral in-memory secret.');
-  }
-  return generated;
-}
-
-let runtimeHmacSecret = loadOrCreateHmacSecret();
-process.env.ECHOX_RUNTIME_HMAC_SECRET = runtimeHmacSecret;
-const CLOUD_HMAC_KEY = 'echox:security_hmac_secret';
-
 function getHmacSecret(): string {
-  return runtimeHmacSecret;
-}
-
-async function initHmacSecretFromCloud(): Promise<void> {
-  const envSecret = (process.env.ECHOX_SECURITY_HMAC_SECRET || '').trim();
-  if (isStrongHmacSecret(envSecret)) {
-    runtimeHmacSecret = envSecret;
-    process.env.ECHOX_RUNTIME_HMAC_SECRET = runtimeHmacSecret;
-    return;
-  }
-  if (!isCloudPersistenceEnabled()) return;
-  try {
-    const cloudVal = await loadCloudJson<{ secret?: string }>(CLOUD_HMAC_KEY);
-    if (cloudVal && typeof cloudVal.secret === 'string' && isStrongHmacSecret(cloudVal.secret)) {
-      runtimeHmacSecret = cloudVal.secret.trim();
-      process.env.ECHOX_RUNTIME_HMAC_SECRET = runtimeHmacSecret;
-      return;
-    }
-    await saveCloudJson(CLOUD_HMAC_KEY, { secret: runtimeHmacSecret, updatedAt: new Date().toISOString() });
-  } catch (err) {
-    console.warn('[Security] Cloud HMAC sync notice:', err);
-  }
+  return requireServerHmacSecret();
 }
 
 // Pre-computed one-way Argon2id bootstrap hashes (zero plaintext credentials stored in code)
@@ -828,12 +879,13 @@ function verifySignedSessionDetailed(cookieVal: string): {
   expiresAt?: number;
   codeVerified?: boolean;
 } | null {
-  if (!cookieVal || !cookieVal.includes('.')) return null;
+  const secret = getValidatedHmacSecret();
+  if (!secret || !cookieVal || !cookieVal.includes('.')) return null;
   const parts = cookieVal.split('.');
   if (parts.length === 6 && parts[0] === 'v2') {
     const [ver, sessionId, iatStr, expStr, cvStr, hmac] = parts;
     const payload = `${ver}.${sessionId}.${iatStr}.${expStr}.${cvStr}`;
-    const expected = crypto.createHmac('sha256', getHmacSecret()).update(payload).digest('hex');
+    const expected = crypto.createHmac('sha256', secret).update(payload).digest('hex');
     if (hmac.length === expected.length && crypto.timingSafeEqual(Buffer.from(hmac), Buffer.from(expected))) {
       const issuedAt = Number(iatStr);
       const expiresAt = Number(expStr);
@@ -855,7 +907,7 @@ function verifySignedSessionDetailed(cookieVal: string): {
   }
   if (parts.length !== 2) return null;
   const [sessionId, hmac] = parts;
-  const expected = crypto.createHmac('sha256', getHmacSecret()).update(sessionId).digest('hex');
+  const expected = crypto.createHmac('sha256', secret).update(sessionId).digest('hex');
   if (hmac.length === expected.length && crypto.timingSafeEqual(Buffer.from(hmac), Buffer.from(expected))) {
     return { sessionId };
   }
@@ -880,7 +932,8 @@ function issueCsrfToken(sessionId: string): string {
 }
 
 function verifyCsrfToken(token: string, expectedSessionId: string): boolean {
-  if (!token || typeof token !== 'string') return false;
+  const secret = getValidatedHmacSecret();
+  if (!secret || !token || typeof token !== 'string') return false;
   const parts = token.trim().split('.');
   if (parts.length !== 5 || parts[0] !== 'csrf1') return false;
   const [ver, nonce, expStr, sidHint, sig] = parts;
@@ -888,7 +941,7 @@ function verifyCsrfToken(token: string, expectedSessionId: string): boolean {
   if (!Number.isFinite(exp) || exp < Date.now()) return false;
   if (sidHint !== computeSessionHint(expectedSessionId)) return false;
   const payload = `${ver}.${nonce}.${expStr}.${sidHint}`;
-  const expected = crypto.createHmac('sha256', getHmacSecret()).update(payload).digest('hex');
+  const expected = crypto.createHmac('sha256', secret).update(payload).digest('hex');
   return sig.length === expected.length && crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
 }
 
@@ -1655,7 +1708,8 @@ function createVaultGateToken(): string {
 }
 
 function verifyVaultGateToken(token: unknown): { valid: boolean; nonce?: string; exp?: number } {
-  if (!token || typeof token !== 'string') return { valid: false };
+  const secret = getValidatedHmacSecret();
+  if (!secret || !token || typeof token !== 'string') return { valid: false };
   const parts = token.trim().split('.');
   if (parts.length !== 4 || parts[0] !== 'gate1') return { valid: false };
   const [ver, expStr, nonce, sig] = parts;
@@ -1664,7 +1718,7 @@ function verifyVaultGateToken(token: unknown): { valid: boolean; nonce?: string;
     return { valid: false };
   }
   const payload = `${ver}.${expStr}.${nonce}`;
-  const expected = crypto.createHmac('sha256', getHmacSecret()).update(payload).digest('hex');
+  const expected = crypto.createHmac('sha256', secret).update(payload).digest('hex');
   if (sig.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) {
     return { valid: false };
   }
@@ -1676,13 +1730,14 @@ function verifyVaultGateToken(token: unknown): { valid: boolean; nonce?: string;
 }
 
 function verifyReauthSessionToken(token: unknown): { valid: boolean; sessionId?: string; expiresAt?: number } {
-  if (!token || typeof token !== 'string') return { valid: false };
+  const secret = getValidatedHmacSecret();
+  if (!secret || !token || typeof token !== 'string') return { valid: false };
   const parts = token.trim().split('.');
   if (parts.length !== 6 || parts[0] !== 'v2') return { valid: false };
   const [ver, sessionId, iatStr, expStr, cvStr, hmac] = parts;
   if (cvStr !== '1') return { valid: false };
   const payload = `${ver}.${sessionId}.${iatStr}.${expStr}.${cvStr}`;
-  const expected = crypto.createHmac('sha256', getHmacSecret()).update(payload).digest('hex');
+  const expected = crypto.createHmac('sha256', secret).update(payload).digest('hex');
   if (hmac.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(hmac), Buffer.from(expected))) {
     return { valid: false };
   }
@@ -2215,6 +2270,7 @@ app.get('/api/security/sessions', (req: Request, res: Response) => {
 // 6. Security System Status (Minimized for public callers; full telemetry reserved for authenticated owner)
 app.get('/api/security/systemStatus', (req: Request, res: Response) => {
   res.setHeader('Cache-Control', 'no-store');
+  const hmacStatus = getServerHmacStatus();
   const session = resolveSessionRecord(req);
   const isAdmin = Boolean(session && session.email === OWNER_EMAIL && session.owner && session.codeVerified);
   if (!isAdmin) {
@@ -2222,6 +2278,8 @@ app.get('/api/security/systemStatus', (req: Request, res: Response) => {
       argon2idEnabled: true,
       hashingAlgorithm: 'Argon2id (m=65536, t=3, p=4)',
       serverSideEnforced: true,
+      hmacConfigured: hmacStatus.valid,
+      securityReady: hmacStatus.valid,
       accessCodeConfigured: true,
       pinConfigured: true,
     });
@@ -2231,6 +2289,8 @@ app.get('/api/security/systemStatus', (req: Request, res: Response) => {
     argon2idEnabled: true,
     hashingAlgorithm: 'Argon2id (m=65536, t=3, p=4)',
     serverSideEnforced: true,
+    hmacConfigured: hmacStatus.valid,
+    securityReady: hmacStatus.valid,
     storageMode: persistence.storageMode,
     durablePersistence: persistence.durable,
     persistence,
@@ -2333,6 +2393,110 @@ app.post('/api/admin/payments/catalog-sync', async (req: Request, res: Response)
   return res.json({ success: true });
 });
 
+// 2.1 Server Authoritative Quote & Price Check
+app.post('/api/payments/quote', async (req: Request, res: Response) => {
+  const ip = getClientIp(req);
+  const rate = checkSlidingWindowLimit('paymentQuote', ip, 45, 60 * 1000);
+  if (!rate.allowed) {
+    return res.status(429).json({ success: false, error: `تم تجاوز الحد المسموح، يرجى الانتظار ${rate.retryAfterSeconds} ثانية.` });
+  }
+  res.setHeader('Cache-Control', 'no-store');
+  await syncPaymentDbIfStale(false).catch(() => {});
+  const quote = calculateServerOrderQuote(req.body || {});
+  if (!quote.ok && quote.code !== 'PRICE_CHANGED') {
+    return res.status(quote.statusCode || 400).json({
+      success: false,
+      code: quote.code,
+      error: quote.error,
+    });
+  }
+  return res.json({
+    success: true,
+    priceChanged: quote.code === 'PRICE_CHANGED',
+    code: quote.code,
+    message: quote.code === 'PRICE_CHANGED' ? quote.error : undefined,
+    updatedPrices: quote.updatedPrices,
+    verifiedItems: quote.verifiedItems,
+    subtotal: quote.subtotal,
+    discount: quote.discount,
+    coupon: quote.coupon,
+    taxAmount: quote.taxAmount,
+    shippingFee: quote.shippingFee,
+    estimatedDelivery: quote.estimatedDelivery,
+    freeShippingApplied: quote.freeShippingApplied,
+    totalAmount: quote.totalAmount,
+    currency: quote.currency,
+  });
+});
+
+// 2.2 Server Coupon Validation
+app.post('/api/payments/apply-coupon', async (req: Request, res: Response) => {
+  const ip = getClientIp(req);
+  const rate = checkSlidingWindowLimit('applyCoupon', ip, 30, 60 * 1000);
+  if (!rate.allowed) {
+    return res.status(429).json({ success: false, error: `تم تجاوز الحد المسموح، يرجى الانتظار ${rate.retryAfterSeconds} ثانية.` });
+  }
+  res.setHeader('Cache-Control', 'no-store');
+  await syncPaymentDbIfStale(false).catch(() => {});
+  const couponCode = typeof req.body?.couponCode === 'string' ? req.body.couponCode.trim() : '';
+  if (!couponCode) {
+    return res.status(400).json({ success: false, code: 'INVALID_COUPON', error: 'يرجى إدخال كود الخصم.' });
+  }
+  let subtotal = Number(req.body?.subtotal || 0);
+  if (Array.isArray(req.body?.items) && req.body.items.length > 0) {
+    const q = calculateServerOrderQuote({ items: req.body.items });
+    if (typeof q.subtotal === 'number') {
+      subtotal = q.subtotal;
+    } else if (!q.ok) {
+      return res.status(q.statusCode || 400).json({ success: false, code: q.code, error: q.error });
+    }
+  }
+  const check = validateCouponServer({ couponCode, subtotal });
+  if (!check.ok) {
+    return res.status(check.statusCode || 400).json({
+      success: false,
+      code: check.code,
+      error: check.error,
+    });
+  }
+  return res.json({
+    success: true,
+    discount: check.discount,
+    coupon: check.coupon,
+    subtotal,
+  });
+});
+
+// 2.3 Timeout / Idempotent Checkout Recovery Status
+app.post('/api/payments/checkout/status', async (req: Request, res: Response) => {
+  const ip = getClientIp(req);
+  const rate = checkSlidingWindowLimit('checkoutRecovery', ip, 30, 60 * 1000);
+  if (!rate.allowed) {
+    return res.status(429).json({ success: false, error: `تم تجاوز الحد المسموح، يرجى الانتظار ${rate.retryAfterSeconds} ثانية.` });
+  }
+  res.setHeader('Cache-Control', 'no-store');
+  const clientRequestId = typeof req.body?.clientRequestId === 'string' ? req.body.clientRequestId : '';
+  const recovered = await recoverCheckoutByRequestId(clientRequestId);
+  if (!recovered.ok) {
+    return res.status(400).json({ success: false, found: false, error: 'معرف الطلب المؤقت غير صالح.' });
+  }
+  return res.json(recovered);
+});
+
+app.get('/api/payments/checkout/status/:requestId', async (req: Request, res: Response) => {
+  const ip = getClientIp(req);
+  const rate = checkSlidingWindowLimit('checkoutRecovery', ip, 30, 60 * 1000);
+  if (!rate.allowed) {
+    return res.status(429).json({ success: false, error: `تم تجاوز الحد المسموح، يرجى الانتظار ${rate.retryAfterSeconds} ثانية.` });
+  }
+  res.setHeader('Cache-Control', 'no-store');
+  const recovered = await recoverCheckoutByRequestId(String(req.params.requestId || ''));
+  if (!recovered.ok) {
+    return res.status(400).json({ success: false, found: false, error: 'معرف الطلب المؤقت غير صالح.' });
+  }
+  return res.json(recovered);
+});
+
 // 3. Server-Verified Multi-Vendor Checkout (Rate limited per IP)
 app.post('/api/payments/checkout', async (req: Request, res: Response) => {
   const ip = getClientIp(req);
@@ -2357,7 +2521,13 @@ app.post('/api/payments/checkout', async (req: Request, res: Response) => {
           url: '/owner/dashboard',
         });
       }
-      return res.status(result.statusCode || 400).json({ success: false, error: result.error });
+      return res.status(result.statusCode || 400).json({
+        success: false,
+        code: result.code,
+        error: result.error,
+        ...(result.updatedPrices ? { updatedPrices: result.updatedPrices } : {}),
+        ...(result.updatedQuote ? { updatedQuote: result.updatedQuote } : {}),
+      });
     }
     if (result.order) {
       const ord = result.order;
@@ -2377,6 +2547,7 @@ app.post('/api/payments/checkout', async (req: Request, res: Response) => {
       order: result.order,
       transaction: result.transaction,
       paymentUrl: result.paymentUrl,
+      ...(result.trackingToken ? { trackingToken: result.trackingToken } : {}),
       ...(result.transferDetails ? { transferDetails: result.transferDetails } : {}),
     });
   } catch (err: any) {
@@ -2394,9 +2565,15 @@ const handleTransferProofSubmit = async (req: Request, res: Response) => {
   }
   const sess = resolveSessionRecord(req);
   const isAdmin = Boolean(sess && sess.codeVerified);
+  const custSess = resolveCustomerSession(req);
+  const trackingToken = String(
+    req.body?.trackingToken || req.headers['x-tracking-token'] || req.query?.token || ''
+  ).trim();
 
   const result = await submitBankTransferProof({
     ...(req.body || {}),
+    trackingToken: trackingToken || undefined,
+    customerId: custSess?.customerId || undefined,
     isAdmin,
     actorIp: ip,
   });
@@ -2434,7 +2611,15 @@ app.post('/api/payments/request-refund', async (req: Request, res: Response) => 
   if (!rate.allowed) {
     return res.status(429).json({ success: false, error: `تم تجاوز الحد المسموح، يرجى الانتظار ${rate.retryAfterSeconds} ثانية.` });
   }
-  const result = await createCustomerRefundOrCancelRequest(req.body || {});
+  const custSess = resolveCustomerSession(req);
+  const trackingToken = String(
+    req.body?.trackingToken || req.headers['x-tracking-token'] || req.query?.token || ''
+  ).trim();
+  const result = await createCustomerRefundOrCancelRequest({
+    ...(req.body || {}),
+    trackingToken: trackingToken || undefined,
+    customerId: custSess?.customerId || undefined,
+  });
   if (!result.ok) {
     return res.status(result.statusCode || 400).json({ success: false, error: result.error });
   }
@@ -2727,7 +2912,7 @@ app.post('/api/admin/support/verify', async (req: Request, res: Response) => {
   return res.json({ success: true, supportTransaction: result.supportTransaction });
 });
 
-app.get('/api/payments/track/:code', async (req: Request, res: Response) => {
+const handleTrackOrderRequest = async (req: Request, res: Response) => {
   const ip = getClientIp(req);
   const rate = checkSlidingWindowLimit('trackOrder', ip, 15, 60 * 1000);
   if (!rate.allowed) {
@@ -2737,20 +2922,34 @@ app.get('/api/payments/track/:code', async (req: Request, res: Response) => {
   await syncPaymentDbIfStale(true).catch(() => {});
   const sess = resolveSessionRecord(req);
   const isAdmin = Boolean(sess && sess.codeVerified);
-  const phoneProof = String(req.query.phone || req.headers['x-tracking-phone'] || '').trim();
-  const result = trackPublicOrder(req.params.code, isAdmin, phoneProof);
+  const custSess = resolveCustomerSession(req);
+  const code = String(req.params.code || req.body?.trackingNumber || req.body?.code || '').trim();
+  const trackingToken = String(
+    req.headers['x-tracking-token'] || req.body?.trackingToken || req.query?.token || ''
+  ).trim();
+  const result = trackPublicOrder(code, {
+    isAdmin,
+    customerId: custSess?.customerId || undefined,
+    trackingToken: trackingToken || undefined,
+  });
   if (!result.ok) {
     return res.status(result.statusCode || 404).json({ success: false, error: result.error });
   }
   return res.json({ success: true, order: result.order });
-});
+};
+
+app.get('/api/payments/track/:code', handleTrackOrderRequest);
+app.post('/api/payments/track', handleTrackOrderRequest);
 
 app.get('/api/admin/orders', async (req: Request, res: Response) => {
   if (!requireAdminAuth(req, res)) return;
   res.setHeader('Cache-Control', 'no-store');
   await syncPaymentDbIfStale(true).catch(() => {});
-  const overview = getAdminPaymentOverview();
-  return res.json({ success: true, orders: overview.orders || [] });
+  const q = typeof req.query.q === 'string' ? req.query.q : undefined;
+  const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+  const paymentStatus = typeof req.query.paymentStatus === 'string' ? req.query.paymentStatus : undefined;
+  const orders = getAdminOrdersFiltered({ q, status, paymentStatus });
+  return res.json({ success: true, orders });
 });
 
 app.post('/api/admin/orders', async (req: Request, res: Response) => {
@@ -2773,8 +2972,8 @@ app.post('/api/admin/orders', async (req: Request, res: Response) => {
 
 app.patch('/api/admin/orders/:orderId/status', async (req: Request, res: Response) => {
   if (!requireAdminAuth(req, res)) return;
-  const { status, note } = req.body || {};
-  const result = await adminUpdateOrderStatus(req.params.orderId, status, note);
+  const { status, note, reason } = req.body || {};
+  const result = await adminUpdateOrderStatus(req.params.orderId, status, note, reason);
   if (!result.ok) {
     return res.status(result.statusCode || 409).json({ success: false, error: result.error });
   }
@@ -2829,8 +3028,12 @@ function issueChatSessionToken(sessionId: string): string {
 }
 
 function verifyChatSessionToken(token: string, expectedSessionId: string): boolean {
-  if (!token || !expectedSessionId) return false;
-  const expected = issueChatSessionToken(expectedSessionId);
+  const secret = getValidatedHmacSecret();
+  if (!secret || !token || !expectedSessionId) return false;
+  const expected = `chat1.${expectedSessionId}.${crypto
+    .createHmac('sha256', secret)
+    .update(`chat1:${expectedSessionId}`)
+    .digest('hex')}`;
   const a = Buffer.from(token.trim());
   const b = Buffer.from(expected);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
@@ -3369,13 +3572,22 @@ app.get('/api/media/products/:fileName', async (req: Request, res: Response) => 
 // 👤 CUSTOMER ACCOUNTS, SESSIONS & ORDERS
 // ==========================================
 app.post('/api/customer/register', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
   if (!verifyCustomerMutationSecurity(req, res)) return;
+  const lang = extractCustomerLang(req);
   const ip = getClientIp(req);
   const rate = checkSlidingWindowLimit('custRegister', ip, 10, 15 * 60 * 1000);
   if (!rate.allowed) {
     return res.status(429).json({
       success: false,
-      error: `تم تجاوز حد التسجيل المؤقت، يرجى الانتظار ${rate.retryAfterSeconds} ثانية.`,
+      error: getCustomerAuthMessage(lang, 'rateLimitRegister'),
+    });
+  }
+  const secret = getValidatedHmacSecret();
+  if (!secret) {
+    return res.status(503).json({
+      success: false,
+      error: getCustomerAuthMessage(lang, 'sessionSignFailed'),
     });
   }
   const result = await registerCustomerAccount({
@@ -3383,44 +3595,77 @@ app.post('/api/customer/register', async (req: Request, res: Response) => {
     email: String(req.body?.email || ''),
     phone: String(req.body?.phone || ''),
     password: String(req.body?.password || ''),
+    confirmPassword: req.body?.confirmPassword,
+    lang,
   });
   if (!result.ok || !result.customer) {
     return res.status(result.statusCode || 400).json({ success: false, error: result.error });
   }
-  const signed = signCustomerSessionToken(result.customer.id, getHmacSecret());
+  const signed = signCustomerSessionToken(result.customer.id, secret);
   res.setHeader('Set-Cookie', [buildCustomerSessionCookie(req, signed.token, 14 * 24 * 3600)]);
   return res.status(201).json({ success: true, customer: result.customer });
 });
 
 app.post('/api/customer/login', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
   if (!verifyCustomerMutationSecurity(req, res)) return;
+  const lang = extractCustomerLang(req);
   const ip = getClientIp(req);
-  const lock = checkLockout('custLogin', ip);
-  if (lock.locked) {
+  const cleanEmailKey = String(req.body?.email || '').trim().toLowerCase();
+
+  const ipLock = checkLockout('custLogin', ip);
+  if (ipLock.locked) {
     return res.status(429).json({
       success: false,
-      error: `محاولات دخول متكررة، يرجى الانتظار ${lock.remainingSeconds} ثانية.`,
+      error: getCustomerAuthMessage(lang, 'rateLimitLogin'),
     });
   }
+  if (cleanEmailKey) {
+    const emailLock = checkLockout('custLoginEmail', cleanEmailKey);
+    if (emailLock.locked) {
+      return res.status(429).json({
+        success: false,
+        error: getCustomerAuthMessage(lang, 'rateLimitLogin'),
+      });
+    }
+  }
+
+  const secret = getValidatedHmacSecret();
+  if (!secret) {
+    return res.status(503).json({
+      success: false,
+      error: getCustomerAuthMessage(lang, 'sessionSignFailed'),
+    });
+  }
+
   const result = await authenticateCustomerAccount({
     email: String(req.body?.email || ''),
     password: String(req.body?.password || ''),
+    lang,
   });
   if (!result.ok || !result.customer) {
     recordFailedAttempt('custLogin', ip, 10, 5 * 60 * 1000);
+    if (cleanEmailKey) {
+      recordFailedAttempt('custLoginEmail', cleanEmailKey, 8, 5 * 60 * 1000);
+    }
     return res.status(result.statusCode || 401).json({ success: false, error: result.error });
   }
   resetBucket('custLogin', ip);
-  const signed = signCustomerSessionToken(result.customer.id, getHmacSecret());
+  if (cleanEmailKey) {
+    resetBucket('custLoginEmail', cleanEmailKey);
+  }
+  const signed = signCustomerSessionToken(result.customer.id, secret);
   res.setHeader('Set-Cookie', [buildCustomerSessionCookie(req, signed.token, 14 * 24 * 3600)]);
   return res.json({ success: true, customer: result.customer });
 });
 
 app.post('/api/customer/logout', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
   if (!verifyCustomerMutationSecurity(req, res)) return;
   const rawToken = parseCookies(req)['__customer_session'];
-  if (rawToken) {
-    const parsed = verifyCustomerSessionToken(rawToken, getHmacSecret());
+  const secret = getValidatedHmacSecret();
+  if (rawToken && secret) {
+    const parsed = verifyCustomerSessionToken(rawToken, secret);
     if (parsed) {
       await revokeCustomerSession(parsed.sessionId, parsed.expiresAt);
     }
@@ -3431,25 +3676,95 @@ app.post('/api/customer/logout', async (req: Request, res: Response) => {
 
 app.get('/api/customer/me', async (req: Request, res: Response) => {
   res.setHeader('Cache-Control', 'no-store');
+  const lang = extractCustomerLang(req);
   await syncCustomerAccountsIfStale(false).catch(() => {});
   const sess = resolveCustomerSession(req);
   if (!sess) {
-    return res.status(401).json({ authenticated: false, customer: null });
+    return res.status(401).json({ success: false, authenticated: false, customer: null });
   }
+  if (!assertNoCustomerIdorTampering(req, res, sess.customerId, lang)) return;
+
+  let customer = getCustomerById(sess.customerId);
+  if (!customer) {
+    await syncCustomerAccountsIfStale(true, 0).catch(() => {});
+    customer = getCustomerById(sess.customerId);
+  }
+  if (!customer) {
+    return res.status(401).json({ success: false, authenticated: false, customer: null });
+  }
+  return res.json({ success: true, authenticated: true, customer });
+});
+
+app.get('/api/customer/profile', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const lang = extractCustomerLang(req);
+  await syncCustomerAccountsIfStale(false).catch(() => {});
+  const sess = resolveCustomerSession(req);
+  if (!sess) {
+    return res.status(401).json({ success: false, error: getCustomerAuthMessage(lang, 'loginRequiredProfile') });
+  }
+  if (!assertNoCustomerIdorTampering(req, res, sess.customerId, lang)) return;
   const customer = getCustomerById(sess.customerId);
   if (!customer) {
-    return res.status(401).json({ authenticated: false, customer: null });
+    return res.status(401).json({ success: false, error: getCustomerAuthMessage(lang, 'accountNotFound') });
   }
-  return res.json({ authenticated: true, customer });
+  return res.json({ success: true, customer });
+});
+
+app.patch('/api/customer/profile', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  if (!verifyCustomerMutationSecurity(req, res)) return;
+  const lang = extractCustomerLang(req);
+  const sess = resolveCustomerSession(req);
+  if (!sess) {
+    return res.status(401).json({ success: false, error: getCustomerAuthMessage(lang, 'loginRequiredProfile') });
+  }
+  if (!assertNoCustomerIdorTampering(req, res, sess.customerId, lang)) return;
+
+  const rate = checkSlidingWindowLimit('custProfile', sess.customerId, 15, 5 * 60 * 1000);
+  if (!rate.allowed) {
+    return res.status(429).json({ success: false, error: getCustomerAuthMessage(lang, 'rateLimitProfile') });
+  }
+
+  const result = await updateCustomerProfileServer(sess.customerId, {
+    fullName: typeof req.body?.fullName === 'string' ? req.body.fullName : undefined,
+    phone: typeof req.body?.phone === 'string' ? req.body.phone : undefined,
+    lang,
+  });
+  if (!result.ok || !result.customer) {
+    return res.status(result.statusCode || 400).json({ success: false, error: result.error });
+  }
+  return res.json({ success: true, customer: result.customer });
+});
+
+app.put('/api/customer/wishlist', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  if (!verifyCustomerMutationSecurity(req, res)) return;
+  const lang = extractCustomerLang(req);
+  const sess = resolveCustomerSession(req);
+  if (!sess) {
+    return res.status(401).json({ success: false, error: getCustomerAuthMessage(lang, 'loginRequiredWishlist') });
+  }
+  if (!assertNoCustomerIdorTampering(req, res, sess.customerId, lang)) return;
+
+  const result = await syncCustomerWishlistServer(sess.customerId, req.body?.wishlist, lang);
+  if (!result.ok || !result.customer) {
+    return res.status(result.statusCode || 400).json({ success: false, error: result.error });
+  }
+  return res.json({ success: true, customer: result.customer });
 });
 
 app.post('/api/customer/addresses', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
   if (!verifyCustomerMutationSecurity(req, res)) return;
+  const lang = extractCustomerLang(req);
   const sess = resolveCustomerSession(req);
   if (!sess) {
-    return res.status(401).json({ success: false, error: 'يرجى تسجيل الدخول لإدارة العناوين.' });
+    return res.status(401).json({ success: false, error: getCustomerAuthMessage(lang, 'loginRequiredAddresses') });
   }
-  const result = await addCustomerAddressServer(sess.customerId, req.body || {});
+  if (!assertNoCustomerIdorTampering(req, res, sess.customerId, lang)) return;
+
+  const result = await addCustomerAddressServer(sess.customerId, req.body || {}, lang);
   if (!result.ok || !result.customer) {
     return res.status(result.statusCode || 400).json({ success: false, error: result.error });
   }
@@ -3457,12 +3772,33 @@ app.post('/api/customer/addresses', async (req: Request, res: Response) => {
 });
 
 app.patch('/api/customer/addresses/default', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
   if (!verifyCustomerMutationSecurity(req, res)) return;
+  const lang = extractCustomerLang(req);
   const sess = resolveCustomerSession(req);
   if (!sess) {
-    return res.status(401).json({ success: false, error: 'يرجى تسجيل الدخول لإدارة العناوين.' });
+    return res.status(401).json({ success: false, error: getCustomerAuthMessage(lang, 'loginRequiredAddresses') });
   }
-  const result = await setDefaultCustomerAddressServer(sess.customerId, String(req.body?.addressId || ''));
+  if (!assertNoCustomerIdorTampering(req, res, sess.customerId, lang)) return;
+
+  const result = await setDefaultCustomerAddressServer(sess.customerId, String(req.body?.addressId || ''), lang);
+  if (!result.ok || !result.customer) {
+    return res.status(result.statusCode || 400).json({ success: false, error: result.error });
+  }
+  return res.json({ success: true, customer: result.customer });
+});
+
+app.delete('/api/customer/addresses/:addressId', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  if (!verifyCustomerMutationSecurity(req, res)) return;
+  const lang = extractCustomerLang(req);
+  const sess = resolveCustomerSession(req);
+  if (!sess) {
+    return res.status(401).json({ success: false, error: getCustomerAuthMessage(lang, 'loginRequiredAddresses') });
+  }
+  if (!assertNoCustomerIdorTampering(req, res, sess.customerId, lang)) return;
+
+  const result = await deleteCustomerAddressServer(sess.customerId, req.params.addressId || '', lang);
   if (!result.ok || !result.customer) {
     return res.status(result.statusCode || 400).json({ success: false, error: result.error });
   }
@@ -3471,19 +3807,26 @@ app.patch('/api/customer/addresses/default', async (req: Request, res: Response)
 
 app.get('/api/customer/orders', async (req: Request, res: Response) => {
   res.setHeader('Cache-Control', 'no-store');
+  const lang = extractCustomerLang(req);
   await Promise.all([
     syncCustomerAccountsIfStale(false).catch(() => {}),
     syncPaymentDbIfStale(false).catch(() => {}),
   ]);
   const sess = resolveCustomerSession(req);
   if (!sess) {
-    return res.status(401).json({ success: false, error: 'يرجى تسجيل الدخول لعرض طلباتك.' });
+    return res.status(401).json({ success: false, error: getCustomerAuthMessage(lang, 'loginRequiredOrders') });
   }
-  const customer = getCustomerById(sess.customerId);
+  if (!assertNoCustomerIdorTampering(req, res, sess.customerId, lang)) return;
+
+  let customer = getCustomerById(sess.customerId);
   if (!customer) {
-    return res.status(401).json({ success: false, error: 'الحساب غير موجود.' });
+    await syncCustomerAccountsIfStale(true, 0).catch(() => {});
+    customer = getCustomerById(sess.customerId);
   }
-  const orders = getCustomerScopedOrders(customer.id, customer.phone);
+  if (!customer) {
+    return res.status(401).json({ success: false, error: getCustomerAuthMessage(lang, 'accountNotFound') });
+  }
+  const orders = getCustomerScopedOrders(customer.id);
   return res.json({ success: true, orders });
 });
 
@@ -3730,13 +4073,13 @@ app.get('/api/admin/security/integrity', async (req: Request, res: Response) => 
     syncPaymentDbIfStale(true).catch(() => {}),
   ]);
   const paymentOverview = getAdminPaymentOverview();
-  const currentHmacSecret = getHmacSecret();
+  const hmacStatus = getServerHmacStatus();
   const report = runSystemIntegrityAudit({
     actorIp: getClientIp(req),
     centralSecurityConfig,
-    hmacSecretLength: currentHmacSecret.length,
-    hmacEffectiveBytes: getEffectiveHmacByteLength(currentHmacSecret),
-    hmacFromEnv: isStrongHmacSecret((process.env.ECHOX_SECURITY_HMAC_SECRET || '').trim()),
+    hmacSecretLength: hmacStatus.charLength,
+    hmacEffectiveBytes: hmacStatus.effectiveBytes,
+    hmacFromEnv: hmacStatus.valid,
     storeState: getStoreRecoverySnapshot(),
     paymentPublicConfig: getAdminPaymentConfig(),
     paymentOrders: paymentOverview.orders,
@@ -3993,16 +4336,24 @@ app.post('/api/admin/security/backup/rollback', async (req: Request, res: Respon
   });
 });
 
+app.use((err: any, _req: Request, res: Response, next: any) => {
+  if (err instanceof HmacSecretNotConfiguredError || err?.code === 'HMAC_SECRET_NOT_CONFIGURED') {
+    return res.status(503).json({
+      success: false,
+      code: 'HMAC_SECRET_NOT_CONFIGURED',
+      error:
+        'تعذر تشغيل الوظائف الأمنية الحساسة: متغير البيئة ECHOX_SECURITY_HMAC_SECRET غير مضبوط أو أقصر من 32 بايت.',
+    });
+  }
+  return next(err);
+});
+
 // --- SERVER INITIALIZATION & EXPORT (Supports both Render/Dev standalone & Serverless Node adapters) ---
 let initPromise: Promise<void> | null = null;
 
 async function ensureServerInitialized(): Promise<void> {
   if (!initPromise) {
     initPromise = (async () => {
-      // Hydrate shared HMAC secret FIRST so signed sessions and sealed bank hashes stay consistent
-      await initHmacSecretFromCloud().catch((err) => console.error('[Security] HMAC cloud init notice:', err));
-      process.env.ECHOX_RUNTIME_HMAC_SECRET = runtimeHmacSecret;
-
       await Promise.all([
         initCentralSecurityConfig().catch((err) => console.error('[Security] Init notice:', err)),
         hydrateUsedGateNoncesFromCloud().catch((err) => console.error('[Security] Gate nonces hydrate notice:', err)),
@@ -4016,6 +4367,7 @@ async function ensureServerInitialized(): Promise<void> {
         hydrateCustomerAccountsFromCloud().catch((err) => console.error('[CustomerEngine] Cloud hydrate notice:', err)),
       ]);
 
+      initStorePaymentBridge();
       ensureInitialBankSealAfterHydrate();
       await syncCatalogSnapshot(getPublicStoreState().products, { replaceAll: true, allowEphemeral: true }).catch(() => {});
     })();
@@ -4025,6 +4377,19 @@ async function ensureServerInitialized(): Promise<void> {
 
 async function startServer() {
   await ensureServerInitialized();
+
+  const hmacStatus = getServerHmacStatus();
+  if (!hmacStatus.valid) {
+    if (process.env.NODE_ENV === 'production') {
+      console.error(
+        '[Security CRITICAL] ECHOX_SECURITY_HMAC_SECRET is missing or shorter than 32 bytes. Sensitive security, authentication, session signing, payment sealing, and recovery features are blocked.'
+      );
+    } else {
+      console.error(
+        '[Security ERROR] ECHOX_SECURITY_HMAC_SECRET is missing or shorter than 32 bytes. Sensitive security, auth, session, and payment endpoints will return 503 until configured.'
+      );
+    }
+  }
 
   if (process.env.NODE_ENV === 'production') {
     if (
