@@ -98,6 +98,40 @@ function mergeMultilingual(
   };
 }
 
+function mergeLegalProfile(
+  base: SiteSettings['legalProfile'] | undefined,
+  patch?: Partial<NonNullable<SiteSettings['legalProfile']>>
+): NonNullable<SiteSettings['legalProfile']> {
+  const def = INITIAL_SITE_SETTINGS.legalProfile!;
+  const cleanStr = (val: unknown, fallback: string, maxLen = 160) =>
+    typeof val === 'string' ? val.trim().slice(0, maxLen) : fallback;
+  const rawRetraction = patch?.retractionDays;
+  const retractionDays =
+    typeof rawRetraction === 'number' && Number.isFinite(rawRetraction) && rawRetraction >= 1 && rawRetraction <= 90
+      ? Math.round(rawRetraction)
+      : base?.retractionDays ?? def.retractionDays;
+
+  return {
+    legalForm: cleanStr(patch?.legalForm, base?.legalForm ?? def.legalForm, 120),
+    rneNumber: cleanStr(patch?.rneNumber, base?.rneNumber ?? def.rneNumber, 80),
+    taxId: cleanStr(patch?.taxId, base?.taxId ?? def.taxId, 80),
+    shareCapital: cleanStr(patch?.shareCapital, base?.shareCapital ?? def.shareCapital, 80),
+    publicationDirector: cleanStr(patch?.publicationDirector, base?.publicationDirector ?? def.publicationDirector, 140),
+    dpoEmail: cleanStr(patch?.dpoEmail, base?.dpoEmail ?? def.dpoEmail, 140),
+    dpoPhone: cleanStr(patch?.dpoPhone, base?.dpoPhone ?? def.dpoPhone, 40),
+    hostingProvider: cleanStr(patch?.hostingProvider, base?.hostingProvider ?? def.hostingProvider, 160),
+    hostingAddress: cleanStr(patch?.hostingAddress, base?.hostingAddress ?? def.hostingAddress, 220),
+    policyVersion: cleanStr(patch?.policyVersion, base?.policyVersion ?? def.policyVersion, 32) || def.policyVersion,
+    effectiveDate: cleanStr(patch?.effectiveDate, base?.effectiveDate ?? def.effectiveDate, 20) || def.effectiveDate,
+    retractionDays,
+    mediationContact: cleanStr(patch?.mediationContact, base?.mediationContact ?? def.mediationContact, 180),
+    customLegalNotice: mergeMultilingual(
+      base?.customLegalNotice ?? def.customLegalNotice,
+      patch?.customLegalNotice
+    ),
+  };
+}
+
 function mergeStoreState(raw: Partial<StorefrontDatabase>): StorefrontDatabase {
   const def = createInitialStoreState();
   return {
@@ -123,6 +157,7 @@ function mergeStoreState(raw: Partial<StorefrontDatabase>): StorefrontDatabase {
         def.siteSettings.deliveryTimeEstimate,
         raw.siteSettings?.deliveryTimeEstimate
       ),
+      legalProfile: mergeLegalProfile(def.siteSettings.legalProfile, raw.siteSettings?.legalProfile),
     },
     ownerSettings: {
       ...def.ownerSettings,
@@ -278,6 +313,14 @@ export function getAdminStoreState() {
   };
 }
 
+export function getStoreLegalPolicyMeta(): { policyVersion: string; effectiveDate: string } {
+  const lp = storeDb.siteSettings?.legalProfile;
+  return {
+    policyVersion: lp?.policyVersion?.trim() || '2026.1',
+    effectiveDate: lp?.effectiveDate?.trim() || '2026-01-01',
+  };
+}
+
 function validateStorePatchSecurity(
   patch: Partial<StorefrontDatabase>,
   actorIp: string
@@ -397,7 +440,31 @@ export async function updateAdminStoreState(
     next.products = patch.products;
   }
   if (Array.isArray(patch.companies)) {
-    next.companies = patch.companies;
+    next.companies = patch.companies.map((c) => {
+      if (!c.legalMetadata || typeof c.legalMetadata !== 'object') return c;
+      const lm = c.legalMetadata;
+      return {
+        ...c,
+        legalMetadata: {
+          ...(typeof lm.legalForm === 'string' && lm.legalForm.trim()
+            ? { legalForm: lm.legalForm.trim().slice(0, 100) }
+            : {}),
+          ...(typeof lm.rneNumber === 'string' && lm.rneNumber.trim()
+            ? { rneNumber: lm.rneNumber.trim().slice(0, 80) }
+            : {}),
+          ...(typeof lm.taxId === 'string' && lm.taxId.trim()
+            ? { taxId: lm.taxId.trim().slice(0, 80) }
+            : {}),
+          ...(lm.agreementAccepted === true ? { agreementAccepted: true } : {}),
+          ...(typeof lm.agreementVersion === 'string' && lm.agreementVersion.trim()
+            ? { agreementVersion: lm.agreementVersion.trim().slice(0, 32) }
+            : {}),
+          ...(typeof lm.agreementAcceptedAt === 'string' && lm.agreementAcceptedAt.trim()
+            ? { agreementAcceptedAt: lm.agreementAcceptedAt.trim().slice(0, 40) }
+            : {}),
+        },
+      };
+    });
   }
   if (Array.isArray(patch.categories) && patch.categories.length > 0) {
     next.categories = patch.categories;
@@ -423,6 +490,10 @@ export async function updateAdminStoreState(
       deliveryTimeEstimate: mergeMultilingual(
         next.siteSettings.deliveryTimeEstimate,
         patch.siteSettings.deliveryTimeEstimate
+      ),
+      legalProfile: mergeLegalProfile(
+        next.siteSettings.legalProfile,
+        patch.siteSettings.legalProfile
       ),
       legalEntityName:
         typeof patch.siteSettings.legalEntityName === 'string'

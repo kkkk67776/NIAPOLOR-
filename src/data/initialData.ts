@@ -349,5 +349,25 @@ export const INITIAL_SITE_SETTINGS: SiteSettings = {
     ar: 'من 24 إلى 72 ساعة حسب الولاية',
     fr: '24 à 72 heures selon le gouvernorat',
     en: '24 to 72 hours depending on the governorate'
+  },
+  legalProfile: {
+    legalForm: '',
+    rneNumber: '',
+    taxId: '',
+    shareCapital: '',
+    publicationDirector: '',
+    dpoEmail: '',
+    dpoPhone: '',
+    hostingProvider: '',
+    hostingAddress: '',
+    policyVersion: '2026.1',
+    effectiveDate: '2026-01-01',
+    retractionDays: 10,
+    mediationContact: '',
+    customLegalNotice: {
+      ar: '',
+      fr: '',
+      en: ''
+    }
   }
 };

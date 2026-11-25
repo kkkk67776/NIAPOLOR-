@@ -40,6 +40,9 @@ import {
   submitPosteCcpProofClient,
   type ServerQuoteResponse,
 } from '../lib/payments';
+import { LEGAL_TRANSLATIONS } from '../data/legalTranslations';
+import { resolveLegalDisclosures } from '../lib/legal';
+import { LegalPreviewModal, type LegalPreviewTopic } from './LegalPreviewModal';
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -67,6 +70,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
     updateOrderInState,
     currentUser,
     addCustomerAddress,
+    siteSettings,
     setCurrentView,
     isOnline,
     isReconnecting,
@@ -133,13 +137,22 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
   const [postProofError, setPostProofError] = useState('');
   const [postProofSuccess, setPostProofSuccess] = useState('');
 
+  // Tunisian Law 2000-83 pre-contractual disclosure & explicit legal consent
+  const lt = LEGAL_TRANSLATIONS[language] || LEGAL_TRANSLATIONS.ar;
+  const disclosures = resolveLegalDisclosures(siteSettings, language);
+  const [legalAccepted, setLegalAccepted] = useState(false);
+  const [legalError, setLegalError] = useState('');
+  const [previewTopic, setPreviewTopic] = useState<LegalPreviewTopic | null>(null);
+
   useEffect(() => {
     if (isOpen) {
       refreshPaymentConfig();
       setErrorMsg('');
       setFieldErrors({});
+      setLegalError('');
       setPriceChangedBanner('');
       if (!completedOrder) {
+        setLegalAccepted(false);
         setClientRequestId(`chk_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
       }
       if (currentUser) {
@@ -375,6 +388,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
       return;
     }
 
+    if (!legalAccepted) {
+      setLegalError(lt.checkoutLegal.requiredError);
+      setErrorMsg(lt.checkoutLegal.requiredError);
+      return;
+    }
+    setLegalError('');
+
     const cleanName = fullName.trim();
     const cleanDelegation = delegation.trim();
     const cleanStreet = street.trim();
@@ -412,6 +432,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
           }
         : {}),
       clientRequestId,
+      legalConsent: {
+        termsAccepted: true,
+        privacyAccepted: true,
+        returnsAccepted: true,
+        termsVersion: disclosures.policyVersion,
+        privacyVersion: disclosures.policyVersion,
+        acceptedAt: new Date().toISOString(),
+        language,
+        source: 'checkout_order',
+      },
     });
     setIsSubmitting(false);
 
@@ -535,7 +565,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
 
   return (
     <div
-      className="fixed inset-0 z-50 overflow-y-auto bg-black/65 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-5 animate-fadeIn"
+      className="fixed inset-0 z-[60] overflow-y-auto bg-black/65 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-5 animate-fadeIn"
       onClick={handleCloseModal}
     >
       <div
@@ -1496,6 +1526,71 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
                             </div>
                           )}
 
+                          <div className="p-3 rounded-xl bg-[#FAF9F7] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#2A2A34] space-y-2">
+                            <p className="text-[11px] text-[#5A5854] dark:text-[#B5B0A8] leading-relaxed">
+                              {lt.checkoutLegal.retractionNotePrefix}{' '}
+                              <strong className="text-[#111113] dark:text-[#F7F6F3]">
+                                {disclosures.returnWindowDays}
+                              </strong>{' '}
+                              {lt.checkoutLegal.retractionNoteSuffix}
+                            </p>
+                            <label className="flex items-start gap-2.5 text-[11px] leading-relaxed text-[#111113] dark:text-[#F7F6F3] cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={legalAccepted}
+                                onChange={(e) => {
+                                  setLegalAccepted(e.target.checked);
+                                  if (e.target.checked) setLegalError('');
+                                }}
+                                className="mt-0.5 w-4 h-4 accent-[#FF6B00] shrink-0 cursor-pointer"
+                              />
+                              <span>
+                                {lt.checkoutLegal.prefix}{' '}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setPreviewTopic('terms');
+                                  }}
+                                  className="font-bold text-[#FF6B00] underline hover:opacity-80 cursor-pointer"
+                                >
+                                  {lt.checkoutLegal.termsLabel}
+                                </button>
+                                {', '}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setPreviewTopic('returns');
+                                  }}
+                                  className="font-bold text-[#FF6B00] underline hover:opacity-80 cursor-pointer"
+                                >
+                                  {lt.checkoutLegal.returnsLabel}
+                                </button>{' '}
+                                {lt.checkoutLegal.andWord}{' '}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setPreviewTopic('privacy');
+                                  }}
+                                  className="font-bold text-[#FF6B00] underline hover:opacity-80 cursor-pointer"
+                                >
+                                  {lt.checkoutLegal.privacyLabel}
+                                </button>
+                                .
+                              </span>
+                            </label>
+                            {legalError && (
+                              <p className="text-[11px] font-bold text-red-600 dark:text-red-400">
+                                {legalError}
+                              </p>
+                            )}
+                          </div>
+
                           <button
                             type="submit"
                             disabled={isSubmitting || cart.length === 0 || !hasAnyMethod || !isOnline || quoteUnavailable}
@@ -1513,6 +1608,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose })
           )}
         </div>
       </div>
+
+      <LegalPreviewModal
+        topic={previewTopic}
+        onClose={() => setPreviewTopic(null)}
+        onNavigateFullPage={(view) => {
+          onClose();
+          setCurrentView(view);
+        }}
+      />
     </div>
   );
 };

@@ -362,7 +362,7 @@ export default function OwnerSecurityRoom({ onUnlockSuccess, onNavigate, vaultOp
     return (
       <aside
         aria-label="شريط أمان مركز التحكم"
-        className="fixed bottom-20 sm:bottom-6 right-3 sm:right-6 z-50 bg-[#0A0A0F]/95 border border-[#F59E0B]/40 backdrop-blur-md px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-2xl shadow-2xl flex items-center gap-2.5 sm:gap-3 text-xs text-gray-300 animate-fadeIn max-w-[calc(100vw-1.5rem)]"
+        className="fixed bottom-20 sm:bottom-6 start-3 sm:start-6 z-30 bg-[#0A0A0F]/95 border border-[#F59E0B]/40 backdrop-blur-md px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-2xl shadow-2xl flex items-center gap-2.5 sm:gap-3 text-xs text-gray-300 animate-fadeIn max-w-[calc(100vw-1.5rem)]"
       >
         <span className="flex h-2.5 w-2.5 relative">
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -403,7 +403,7 @@ export default function OwnerSecurityRoom({ onUnlockSuccess, onNavigate, vaultOp
   if (!isModalOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-xl p-4 animate-fadeIn">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 backdrop-blur-xl p-4 animate-fadeIn">
       <div
         className={`relative w-full max-w-md bg-[#0A0A0F] border border-[#F59E0B]/30 rounded-2xl p-6 sm:p-8 shadow-2xl text-white ${
           shake ? 'animate-shake' : ''

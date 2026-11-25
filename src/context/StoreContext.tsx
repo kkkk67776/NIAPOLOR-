@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Language, 
   Product, 
@@ -21,7 +21,8 @@ import {
   PosteCcpTransferDetails,
   TransferProof,
   SupportChatConfig,
-  ChatSuggestedProduct
+  ChatSuggestedProduct,
+  LegalConsentRecord
 } from '../types';
 import {
   DEFAULT_CHAT_CONFIG,
@@ -74,6 +75,10 @@ import {
 } from '../lib/security';
 import { normalizeProductImageUrl } from '../lib/imageUrl';
 import { getCustomerAuthMessage, type AuthLang } from '../lib/customerAuthMessages';
+import {
+  type FloatingPanelId,
+  resolveFloatingPanelTransition,
+} from '../lib/floatingUiCoordinator';
 
 
 export interface DeleteActionResult {
@@ -139,6 +144,7 @@ interface StoreContextType {
     email: string;
     phone: string;
     password: string;
+    legalConsent?: LegalConsentRecord;
   }) => Promise<{ ok: boolean; error?: string; retryable?: boolean }>;
   logoutCustomer: () => Promise<void>;
   refreshCustomerOrders: () => Promise<void>;
@@ -221,6 +227,7 @@ interface StoreContextType {
     notes?: string;
     transferProof?: Partial<TransferProof>;
     clientRequestId?: string;
+    legalConsent?: LegalConsentRecord;
   }) => Promise<{
     ok: boolean;
     code?: string;
@@ -271,6 +278,18 @@ interface StoreContextType {
   justReconnected: boolean;
   lastSyncedAt: string | null;
   retryConnection: () => Promise<boolean>;
+
+  // Centralized Floating UI & Overlay Mutual Exclusion
+  activeFloatingPanel: FloatingPanelId;
+  openFloatingPanel: (panel: Exclude<FloatingPanelId, 'none'>) => void;
+  toggleFloatingPanel: (panel: Exclude<FloatingPanelId, 'none'>) => void;
+  closeFloatingPanel: (panel?: Exclude<FloatingPanelId, 'none'>) => void;
+  isCheckoutOpen: boolean;
+  setIsCheckoutOpen: (open: boolean) => void;
+  isBottomNavVisible: boolean;
+  setIsBottomNavVisible: (visible: boolean) => void;
+  isCookieBannerVisible: boolean;
+  setIsCookieBannerVisible: (visible: boolean) => void;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -286,14 +305,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   });
 
-  const setLanguage = (lang: Language) => {
+  const setLanguage = useCallback((lang: Language) => {
     setLanguageState(lang);
     try {
       localStorage.setItem('echox_language', lang);
     } catch (e) {
       console.warn('Storage quota or access error:', e);
     }
-  };
+  }, []);
 
   useEffect(() => {
     document.documentElement.lang = language;
@@ -338,11 +357,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // 2. Navigation & Views (with clean browser URL sync)
   const [currentView, setCurrentViewState] = useState<string>('store');
+  const currentViewRef = useRef<string>('store');
   const [selectedProductId, setSelectedProductIdState] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [isCartOpen, setIsCartOpen] = useState<boolean>(false);
-  const [isSupportModalOpen, setIsSupportModalOpen] = useState<boolean>(false);
+  const [isCartOpen, setIsCartOpenState] = useState<boolean>(false);
+  const [isSupportModalOpen, setIsSupportModalOpenState] = useState<boolean>(false);
+  const [isCheckoutOpen, setIsCheckoutOpenState] = useState<boolean>(false);
+  const [activeFloatingPanel, setActiveFloatingPanel] = useState<FloatingPanelId>('none');
+  const [isBottomNavVisible, setIsBottomNavVisible] = useState<boolean>(true);
+  const [isCookieBannerVisible, setIsCookieBannerVisible] = useState<boolean>(false);
   const [paymentConfig, setPaymentConfig] = useState<PaymentSystemPublicConfig>(DEFAULT_PUBLIC_PAYMENT_CONFIG);
   const [persistenceStatus, setPersistenceStatus] = useState<ServerPersistenceStatus | null>(null);
   const [isOnline, setIsOnline] = useState<boolean>(() =>
@@ -358,7 +382,79 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   });
 
-  const setCurrentView = (view: string) => {
+  const openFloatingPanel = useCallback((panel: Exclude<FloatingPanelId, 'none'>) => {
+    setIsCartOpenState(false);
+    setIsSupportModalOpenState(false);
+    setActiveFloatingPanel((prev) =>
+      resolveFloatingPanelTransition(prev, { type: 'open', panel })
+    );
+  }, []);
+
+  const toggleFloatingPanel = useCallback((panel: Exclude<FloatingPanelId, 'none'>) => {
+    setActiveFloatingPanel((prev) => {
+      const next = resolveFloatingPanelTransition(prev, { type: 'toggle', panel });
+      if (next !== 'none') {
+        setIsCartOpenState(false);
+        setIsSupportModalOpenState(false);
+      }
+      return next;
+    });
+  }, []);
+
+  const closeFloatingPanel = useCallback((panel?: Exclude<FloatingPanelId, 'none'>) => {
+    setActiveFloatingPanel((prev) =>
+      resolveFloatingPanelTransition(prev, { type: 'close', panel })
+    );
+  }, []);
+
+  const setIsCartOpen = useCallback((open: boolean) => {
+    if (open) {
+      setActiveFloatingPanel((prev) =>
+        resolveFloatingPanelTransition(prev, { type: 'external_modal_opened' })
+      );
+      setIsSupportModalOpenState(false);
+    }
+    setIsCartOpenState(open);
+  }, []);
+
+  const setIsSupportModalOpen = useCallback((open: boolean) => {
+    if (open) {
+      setActiveFloatingPanel((prev) =>
+        resolveFloatingPanelTransition(prev, { type: 'external_modal_opened' })
+      );
+      setIsCartOpenState(false);
+    }
+    setIsSupportModalOpenState(open);
+  }, []);
+
+  const setIsCheckoutOpen = useCallback((open: boolean) => {
+    if (open) {
+      setActiveFloatingPanel((prev) =>
+        resolveFloatingPanelTransition(prev, { type: 'external_modal_opened' })
+      );
+      setIsCartOpenState(false);
+      setIsSupportModalOpenState(false);
+    }
+    setIsCheckoutOpenState(open);
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setActiveFloatingPanel((prev) =>
+          resolveFloatingPanelTransition(prev, { type: 'escape' })
+        );
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  const setCurrentView = useCallback((view: string) => {
+    if (currentViewRef.current !== view) {
+      setActiveFloatingPanel('none');
+    }
+    currentViewRef.current = view;
     setCurrentViewState(view);
     if (typeof window !== 'undefined') {
       const targetPath =
@@ -372,9 +468,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         window.history.pushState({}, '', `${targetPath}${currentSearch}`);
       }
     }
-  };
+  }, []);
 
-  const setSelectedProductId = (id: string | null) => {
+  const setSelectedProductId = useCallback((id: string | null) => {
+    if (id !== null) {
+      setActiveFloatingPanel((prev) =>
+        resolveFloatingPanelTransition(prev, { type: 'external_modal_opened' })
+      );
+    }
     setSelectedProductIdState(id);
     if (typeof window !== 'undefined') {
       const url = new URL(window.location.href);
@@ -388,7 +489,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         window.history.replaceState({}, '', nextUrl);
       }
     }
-  };
+  }, []);
 
   const refreshPaymentConfig = async () => {
     try {
@@ -1510,6 +1611,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     email: string;
     phone: string;
     password: string;
+    legalConsent?: LegalConsentRecord;
   }): Promise<{ ok: boolean; error?: string; retryable?: boolean }> => {
     if (customerAuthInFlightRef.current) {
       return { ok: false, error: getCustomerAuthMessage(language as AuthLang, 'serviceWakingRetry') };
@@ -1949,6 +2051,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     notes?: string;
     transferProof?: Partial<TransferProof>;
     clientRequestId?: string;
+    legalConsent?: LegalConsentRecord;
   }): Promise<{
     ok: boolean;
     code?: string;
@@ -1983,6 +2086,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       notes: orderData.notes,
       transferProof: orderData.transferProof,
       clientRequestId: reqId,
+      legalConsent: orderData.legalConsent,
     };
 
     const finalizeCreatedOrder = (
@@ -2516,7 +2620,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       isReconnecting,
       justReconnected,
       lastSyncedAt,
-      retryConnection
+      retryConnection,
+
+      activeFloatingPanel,
+      openFloatingPanel,
+      toggleFloatingPanel,
+      closeFloatingPanel,
+      isCheckoutOpen,
+      setIsCheckoutOpen,
+      isBottomNavVisible,
+      setIsBottomNavVisible,
+      isCookieBannerVisible,
+      setIsCookieBannerVisible
     }}>
       {children}
     </StoreContext.Provider>

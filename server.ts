@@ -51,6 +51,7 @@ import {
   registerCustomerAccount,
   authenticateCustomerAccount,
   getCustomerById,
+  getCustomerFullPrivacyExport,
   updateCustomerProfileServer,
   syncCustomerWishlistServer,
   addCustomerAddressServer,
@@ -61,6 +62,15 @@ import {
   revokeCustomerSession,
 } from './server/customerEngine';
 import {
+  getAdminLegalConsents,
+  hydrateLegalConsentsFromCloud,
+  maskIpForAudit,
+  recordLegalConsentEvent,
+  syncLegalConsentsIfStale,
+  updatePrivacyRequestStatus,
+  validateExplicitConsentPayload,
+} from './server/legalEngine';
+import {
   resolveCustomerLang,
   getCustomerAuthMessage,
   type AuthLang,
@@ -69,6 +79,7 @@ import { getGovernorateName } from './src/data/governorates';
 import {
   getPublicStoreState,
   getAdminStoreState,
+  getStoreLegalPolicyMeta,
   updateAdminStoreState,
   hardDeleteProduct,
   hardDeleteCategory,
@@ -616,10 +627,12 @@ app.get('/robots.txt', (req: Request, res: Response) => {
   res.send(`User-agent: *
 Allow: /
 Allow: /about
+Allow: /legal
 Allow: /privacy
 Allow: /terms
 Allow: /returns
 Allow: /shipping
+Allow: /seller-terms
 Allow: /faq
 Allow: /promise
 Allow: /companies
@@ -645,11 +658,13 @@ app.get('/sitemap.xml', (req: Request, res: Response) => {
   const staticRoutes = [
     { loc: '/', changefreq: 'daily', priority: '1.0', multilingual: true },
     { loc: '/about', changefreq: 'monthly', priority: '0.8', multilingual: true },
+    { loc: '/legal', changefreq: 'yearly', priority: '0.6', multilingual: true },
     { loc: '/shipping', changefreq: 'monthly', priority: '0.8', multilingual: true },
     { loc: '/returns', changefreq: 'monthly', priority: '0.8', multilingual: true },
     { loc: '/faq', changefreq: 'monthly', priority: '0.8', multilingual: true },
     { loc: '/privacy', changefreq: 'yearly', priority: '0.6', multilingual: true },
     { loc: '/terms', changefreq: 'yearly', priority: '0.6', multilingual: true },
+    { loc: '/seller-terms', changefreq: 'yearly', priority: '0.6', multilingual: true },
     { loc: '/promise', changefreq: 'monthly', priority: '0.8', multilingual: true },
     { loc: '/companies', changefreq: 'weekly', priority: '0.8', multilingual: true },
     { loc: '/contact', changefreq: 'monthly', priority: '0.7', multilingual: true },
@@ -2506,11 +2521,42 @@ app.post('/api/payments/checkout', async (req: Request, res: Response) => {
   }
   try {
     const custSess = resolveCustomerSession(req);
+    const reqLang = extractCustomerLang(req);
+    const enforceCheckoutConsent = Boolean(
+      req.headers.origin ||
+        req.headers.referer ||
+        req.body?.legalConsent !== undefined ||
+        req.body?.requireLegalConsent === true
+    );
+    let verifiedConsentRecord: ReturnType<typeof validateExplicitConsentPayload> extends infer T
+      ? T extends { ok: true; record: infer R }
+        ? R | undefined
+        : never
+      : never;
+
+    if (enforceCheckoutConsent) {
+      const policyMeta = getStoreLegalPolicyMeta();
+      const consentCheck = validateExplicitConsentPayload(req.body?.legalConsent, reqLang, {
+        source: 'checkout_order',
+        policyVersion: policyMeta.policyVersion,
+        requireReturns: true,
+      });
+      if (!consentCheck.ok) {
+        return res.status(consentCheck.statusCode).json({
+          success: false,
+          code: 'LEGAL_CONSENT_REQUIRED',
+          error: consentCheck.error,
+        });
+      }
+      verifiedConsentRecord = consentCheck.record;
+    }
+
     const result = await processServerCheckout({
       ...(req.body || {}),
       customerId: custSess?.customerId || undefined,
       origin: getRequestOrigin(req),
       actorIp: ip,
+      ...(verifiedConsentRecord ? { legalConsent: verifiedConsentRecord } : {}),
     });
     if (!result.ok) {
       if ((result.statusCode || 400) >= 400 && /تلاعب|ملف|SVG|صورة/i.test(result.error || '')) {
@@ -2531,6 +2577,23 @@ app.post('/api/payments/checkout', async (req: Request, res: Response) => {
     }
     if (result.order) {
       const ord = result.order;
+      if (verifiedConsentRecord) {
+        await recordLegalConsentEvent({
+          source: 'checkout_order',
+          actorType: custSess ? 'customer' : 'guest',
+          actorId: custSess?.customerId || ord.customerPhone,
+          actorLabel: ord.customerName,
+          trackingNumber: ord.trackingNumber,
+          termsAccepted: verifiedConsentRecord.termsAccepted,
+          privacyAccepted: verifiedConsentRecord.privacyAccepted,
+          returnsAccepted: verifiedConsentRecord.returnsAccepted,
+          termsVersion: verifiedConsentRecord.termsVersion,
+          privacyVersion: verifiedConsentRecord.privacyVersion,
+          language: verifiedConsentRecord.language,
+          ipMasked: maskIpForAudit(ip),
+          acceptedAt: verifiedConsentRecord.acceptedAt,
+        }).catch(() => {});
+      }
       const govLabel = getGovernorateName(ord.shippingAddress?.governorate || '', 'ar');
       const delLabel = ord.shippingAddress?.delegation || ord.shippingAddress?.city || '';
       emitAdminNotification({
@@ -3238,6 +3301,34 @@ app.put('/api/admin/store/state', async (req: Request, res: Response) => {
     summary: changedSections.length > 0 ? `تحديث بيانات المتجر (${changedSections.join('، ')}).` : 'تحديث بيانات المتجر.',
   });
 
+  if (Array.isArray(req.body?.companies)) {
+    const policyMeta = getStoreLegalPolicyMeta();
+    for (const nextComp of result.state.companies) {
+      const lm = nextComp.legalMetadata;
+      if (!lm?.agreementAccepted) continue;
+      const prevComp = prevState.companies.find((old) => old.id === nextComp.id);
+      const alreadyLogged =
+        prevComp?.legalMetadata?.agreementAccepted &&
+        prevComp?.legalMetadata?.agreementAcceptedAt === lm.agreementAcceptedAt;
+      if (!alreadyLogged) {
+        await recordLegalConsentEvent({
+          source: 'seller_onboarding',
+          actorType: 'admin',
+          actorId: nextComp.id,
+          actorLabel: `${nextComp.name} (${admin.email})`,
+          termsAccepted: true,
+          privacyAccepted: true,
+          partnerAgreementAccepted: true,
+          termsVersion: lm.agreementVersion || policyMeta.policyVersion,
+          privacyVersion: policyMeta.policyVersion,
+          language: 'ar',
+          ipMasked: maskIpForAudit(ip),
+          acceptedAt: lm.agreementAcceptedAt || new Date().toISOString(),
+        }).catch(() => {});
+      }
+    }
+  }
+
   emitAdminNotification({
     category: 'activity',
     severity: 'info',
@@ -3590,6 +3681,34 @@ app.post('/api/customer/register', async (req: Request, res: Response) => {
       error: getCustomerAuthMessage(lang, 'sessionSignFailed'),
     });
   }
+  const enforceRegisterConsent = Boolean(
+    req.headers.origin ||
+      req.headers.referer ||
+      req.body?.legalConsent !== undefined ||
+      req.body?.requireLegalConsent === true
+  );
+  let verifiedConsentRecord: ReturnType<typeof validateExplicitConsentPayload> extends infer T
+    ? T extends { ok: true; record: infer R }
+      ? R | undefined
+      : never
+    : never;
+
+  if (enforceRegisterConsent) {
+    const policyMeta = getStoreLegalPolicyMeta();
+    const consentCheck = validateExplicitConsentPayload(req.body?.legalConsent, lang, {
+      source: 'customer_registration',
+      policyVersion: policyMeta.policyVersion,
+    });
+    if (!consentCheck.ok) {
+      return res.status(consentCheck.statusCode).json({
+        success: false,
+        code: 'LEGAL_CONSENT_REQUIRED',
+        error: consentCheck.error,
+      });
+    }
+    verifiedConsentRecord = consentCheck.record;
+  }
+
   const result = await registerCustomerAccount({
     fullName: String(req.body?.fullName || ''),
     email: String(req.body?.email || ''),
@@ -3597,9 +3716,25 @@ app.post('/api/customer/register', async (req: Request, res: Response) => {
     password: String(req.body?.password || ''),
     confirmPassword: req.body?.confirmPassword,
     lang,
+    ...(verifiedConsentRecord ? { legalConsent: verifiedConsentRecord } : {}),
   });
   if (!result.ok || !result.customer) {
     return res.status(result.statusCode || 400).json({ success: false, error: result.error });
+  }
+  if (verifiedConsentRecord) {
+    await recordLegalConsentEvent({
+      source: 'customer_registration',
+      actorType: 'customer',
+      actorId: result.customer.id,
+      actorLabel: result.customer.email,
+      termsAccepted: verifiedConsentRecord.termsAccepted,
+      privacyAccepted: verifiedConsentRecord.privacyAccepted,
+      termsVersion: verifiedConsentRecord.termsVersion,
+      privacyVersion: verifiedConsentRecord.privacyVersion,
+      language: verifiedConsentRecord.language,
+      ipMasked: maskIpForAudit(ip),
+      acceptedAt: verifiedConsentRecord.acceptedAt,
+    }).catch(() => {});
   }
   const signed = signCustomerSessionToken(result.customer.id, secret);
   res.setHeader('Set-Cookie', [buildCustomerSessionCookie(req, signed.token, 14 * 24 * 3600)]);
@@ -3828,6 +3963,159 @@ app.get('/api/customer/orders', async (req: Request, res: Response) => {
   }
   const orders = getCustomerScopedOrders(customer.id);
   return res.json({ success: true, orders });
+});
+
+// Customer Loi 2004-63 Data Access Export & Privacy Rights Requests
+app.get('/api/customer/privacy/export', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const lang = extractCustomerLang(req);
+  await Promise.all([
+    syncCustomerAccountsIfStale(false).catch(() => {}),
+    syncPaymentDbIfStale(false).catch(() => {}),
+  ]);
+  const sess = resolveCustomerSession(req);
+  if (!sess) {
+    return res.status(401).json({ success: false, error: getCustomerAuthMessage(lang, 'loginRequiredProfile') });
+  }
+  if (!assertNoCustomerIdorTampering(req, res, sess.customerId, lang)) return;
+
+  const rate = checkSlidingWindowLimit('custPrivacyExport', sess.customerId, 10, 5 * 60 * 1000);
+  if (!rate.allowed) {
+    return res.status(429).json({ success: false, error: getCustomerAuthMessage(lang, 'rateLimitProfile') });
+  }
+
+  const baseExport = getCustomerFullPrivacyExport(sess.customerId);
+  if (!baseExport) {
+    return res.status(404).json({ success: false, error: getCustomerAuthMessage(lang, 'accountNotFound') });
+  }
+  const orders = getCustomerScopedOrders(sess.customerId);
+  return res.json({
+    success: true,
+    exportData: {
+      ...baseExport,
+      orders,
+    },
+  });
+});
+
+app.post('/api/customer/privacy/request', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  if (!verifyCustomerMutationSecurity(req, res)) return;
+  const lang = extractCustomerLang(req);
+  const ip = getClientIp(req);
+  const sess = resolveCustomerSession(req);
+  if (!sess) {
+    return res.status(401).json({ success: false, error: getCustomerAuthMessage(lang, 'loginRequiredProfile') });
+  }
+  if (!assertNoCustomerIdorTampering(req, res, sess.customerId, lang)) return;
+
+  const rate = checkSlidingWindowLimit('custPrivacyReq', sess.customerId, 8, 15 * 60 * 1000);
+  if (!rate.allowed) {
+    return res.status(429).json({ success: false, error: getCustomerAuthMessage(lang, 'rateLimitProfile') });
+  }
+
+  const customer = getCustomerById(sess.customerId);
+  if (!customer) {
+    return res.status(404).json({ success: false, error: getCustomerAuthMessage(lang, 'accountNotFound') });
+  }
+
+  const requestType = req.body?.requestType;
+  if (requestType !== 'rectification' && requestType !== 'erasure' && requestType !== 'opposition') {
+    return res.status(400).json({ success: false, error: 'Invalid privacy request type.' });
+  }
+  const rawDetails = String(req.body?.details || '').trim().slice(0, 600);
+  if (/<[^>]*>|<script|<iframe|javascript:|onerror=|onload=/i.test(rawDetails)) {
+    return res.status(400).json({ success: false, error: 'Invalid characters in privacy request details.' });
+  }
+
+  const policyMeta = getStoreLegalPolicyMeta();
+  const saved = await recordLegalConsentEvent({
+    source: 'privacy_request',
+    actorType: 'customer',
+    actorId: customer.id,
+    actorLabel: `${customer.fullName} (${customer.email})`,
+    termsAccepted: Boolean(customer.legalConsent?.termsAccepted ?? true),
+    privacyAccepted: true,
+    requestType,
+    requestDetails: rawDetails || undefined,
+    requestStatus: 'recorded',
+    termsVersion: policyMeta.policyVersion,
+    privacyVersion: policyMeta.policyVersion,
+    language: lang,
+    ipMasked: maskIpForAudit(ip),
+  });
+
+  if (!saved.ok || !saved.entry) {
+    return res.status(503).json({ success: false, error: getCustomerAuthMessage(lang, 'dbSaveFailed') });
+  }
+
+  emitAdminNotification({
+    category: 'security',
+    severity: 'info',
+    title: `🛡️ طلب حماية معطيات (${requestType})`,
+    body: `${customer.fullName} (${customer.email}) قدّم طلباً وفق القانون الأساسي عدد 63 لسنة 2004.`,
+    url: '/owner/dashboard',
+    meta: { entryId: saved.entry.id, requestType },
+  });
+
+  return res.status(201).json({ success: true, entry: saved.entry });
+});
+
+// Explicit Cookie / Local Storage Choice Recording (Visitor Action Only)
+app.post('/api/legal/cookie-consent', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const ip = getClientIp(req);
+  const rate = checkSlidingWindowLimit('cookieConsent', ip, 30, 60 * 1000);
+  if (!rate.allowed) {
+    return res.status(429).json({ success: false, error: 'Too many requests.' });
+  }
+  const choice = req.body?.choice;
+  if (choice !== 'essential_only' && choice !== 'all_preferences') {
+    return res.status(400).json({ success: false, error: 'Invalid cookie preference choice.' });
+  }
+  const lang = extractCustomerLang(req);
+  const custSess = resolveCustomerSession(req);
+  const policyMeta = getStoreLegalPolicyMeta();
+  const saved = await recordLegalConsentEvent({
+    source: 'cookie_preferences',
+    actorType: custSess ? 'customer' : 'visitor',
+    actorId: custSess?.customerId,
+    termsAccepted: false,
+    privacyAccepted: true,
+    cookieConsentChoice: choice,
+    termsVersion: policyMeta.policyVersion,
+    privacyVersion: policyMeta.policyVersion,
+    language: lang,
+    ipMasked: maskIpForAudit(ip),
+  });
+  return res.json({ success: saved.ok, entry: saved.entry });
+});
+
+// Owner Legal Consents & Privacy Requests Audit Routes
+app.get('/api/admin/legal/consents', async (req: Request, res: Response) => {
+  if (!requireAdminAuth(req, res)) return;
+  res.setHeader('Cache-Control', 'no-store');
+  await syncLegalConsentsIfStale(false).catch(() => {});
+  const source = typeof req.query.source === 'string' ? req.query.source : undefined;
+  const limit = req.query.limit ? Number(req.query.limit) : undefined;
+  return res.json({
+    success: true,
+    ...getAdminLegalConsents({ source, limit }),
+  });
+});
+
+app.patch('/api/admin/legal/requests/:id', async (req: Request, res: Response) => {
+  if (!requireAdminAuth(req, res)) return;
+  res.setHeader('Cache-Control', 'no-store');
+  const nextStatus = req.body?.status;
+  if (nextStatus !== 'reviewed' && nextStatus !== 'completed') {
+    return res.status(400).json({ success: false, error: 'حالة المعالجة غير صالحة.' });
+  }
+  const updated = await updatePrivacyRequestStatus(req.params.id || '', nextStatus);
+  if (!updated.ok) {
+    return res.status(updated.statusCode || 400).json({ success: false, error: updated.error });
+  }
+  return res.json({ success: true, entry: updated.entry });
 });
 
 app.post('/api/store/products/:productId/reviews', async (req: Request, res: Response) => {
@@ -4365,6 +4653,7 @@ async function ensureServerInitialized(): Promise<void> {
         hydrateStoreStateFromCloud().catch((err) => console.error('[StoreEngine] Cloud hydrate notice:', err)),
         hydrateNotificationsFromCloud().catch((err) => console.error('[Notifications] Cloud hydrate notice:', err)),
         hydrateCustomerAccountsFromCloud().catch((err) => console.error('[CustomerEngine] Cloud hydrate notice:', err)),
+        hydrateLegalConsentsFromCloud().catch((err) => console.error('[LegalEngine] Cloud hydrate notice:', err)),
       ]);
 
       initStorePaymentBridge();

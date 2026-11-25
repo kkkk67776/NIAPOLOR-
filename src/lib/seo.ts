@@ -173,6 +173,48 @@ const PAGES: Record<string, PageMeta> = {
       },
     },
   },
+  legal: {
+    path: '/legal',
+    index: true,
+    meta: {
+      ar: {
+        title: 'البيانات القانونية والتجارية (Mentions Légales) | NIAPOLOR',
+        description:
+          'الهوية القانونية والتجارية ومعرّف السجل الوطني للمؤسسات (RNE) والمعرّف الجبائي وبيانات الاستضافة الرسمية لمنصة NIAPOLOR.',
+      },
+      fr: {
+        title: 'Mentions Légales & Transparence | NIAPOLOR Tunisie',
+        description:
+          'Informations légales, immatriculation RNE, matricule fiscal et coordonnées d’hébergement de la plateforme NIAPOLOR en Tunisie.',
+      },
+      en: {
+        title: 'Legal Notice & Disclosures | NIAPOLOR Tunisia',
+        description:
+          'Corporate identity, RNE commercial registration, tax disclosure, and cloud hosting information for NIAPOLOR Tunisia.',
+      },
+    },
+  },
+  seller_terms: {
+    path: '/seller-terms',
+    index: true,
+    meta: {
+      ar: {
+        title: 'شروط البائعين والشركاء | NIAPOLOR',
+        description:
+          'ميثاق والتزامات البائعين والشركاء التجاريين في سوق NIAPOLOR متعدد الفئات في تونس.',
+      },
+      fr: {
+        title: 'Conditions Vendeurs & Partenaires | NIAPOLOR',
+        description:
+          'Accord commercial et obligations de conformité des vendeurs et partenaires sur la marketplace NIAPOLOR Tunisie.',
+      },
+      en: {
+        title: 'Seller & Partner Terms | NIAPOLOR',
+        description:
+          'Marketplace compliance agreement, commission terms, and fulfillment obligations for NIAPOLOR Tunisia sellers and partners.',
+      },
+    },
+  },
   promise: {
     path: '/promise',
     index: true,
@@ -362,7 +404,7 @@ function updateProductJsonLd(origin: string, product: Product | null, lang: Lang
 function updatePageSchemaJsonLd(origin: string, view: string, lang: Language) {
   const existing = document.getElementById('niapolor-page-schema');
   const page = PAGES[view];
-  const legalViews = ['about', 'shipping', 'returns', 'faq', 'privacy', 'terms'];
+  const legalViews = ['about', 'shipping', 'returns', 'faq', 'privacy', 'terms', 'legal', 'seller_terms'];
   if (!page || !legalViews.includes(view)) {
     if (existing) existing.remove();
     return;

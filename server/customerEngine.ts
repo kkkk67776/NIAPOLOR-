@@ -22,7 +22,7 @@ import {
   mapPasswordReasonToMsgKey,
   validateCustomerPasswordStrength,
 } from '../src/lib/customerAuthMessages';
-import type { CustomerAddress, CustomerUser } from '../src/types/index';
+import type { CustomerAddress, CustomerUser, LegalConsentRecord } from '../src/types/index';
 
 export interface StoredCustomerRecord {
   id: string;
@@ -32,6 +32,7 @@ export interface StoredCustomerRecord {
   passwordHash: string;
   addresses: CustomerAddress[];
   wishlist: string[];
+  legalConsent?: LegalConsentRecord;
   createdAt: string;
   updatedAt: string;
 }
@@ -259,6 +260,7 @@ export function toPublicCustomerUser(rec: StoredCustomerRecord): CustomerUser {
     phone: rec.phone,
     addresses: Array.isArray(rec.addresses) ? rec.addresses : [],
     wishlist: Array.isArray(rec.wishlist) ? rec.wishlist : [],
+    ...(rec.legalConsent ? { legalConsent: rec.legalConsent } : {}),
   };
 }
 
@@ -339,6 +341,7 @@ export async function registerCustomerAccount(input: {
   password: string;
   confirmPassword?: unknown;
   lang?: AuthLang;
+  legalConsent?: LegalConsentRecord;
 }): Promise<{ ok: boolean; statusCode?: number; error?: string; customer?: CustomerUser }> {
   const lang: AuthLang = input.lang || 'ar';
   const fullName = String(input.fullName || '').trim().slice(0, 100);
@@ -389,6 +392,7 @@ export async function registerCustomerAccount(input: {
       passwordHash,
       addresses: [],
       wishlist: [],
+      ...(input.legalConsent ? { legalConsent: input.legalConsent } : {}),
       createdAt: now,
       updatedAt: now,
     };
@@ -449,6 +453,24 @@ export async function authenticateCustomerAccount(input: {
 export function getCustomerById(customerId: string): CustomerUser | null {
   const found = customerDb.customers.find((c) => c.id === customerId);
   return found ? toPublicCustomerUser(found) : null;
+}
+
+export function getCustomerFullPrivacyExport(customerId: string): {
+  exportedAt: string;
+  legalBasis: string;
+  account: CustomerUser & { createdAt: string; updatedAt: string };
+} | null {
+  const found = customerDb.customers.find((c) => c.id === customerId);
+  if (!found) return null;
+  return {
+    exportedAt: new Date().toISOString(),
+    legalBasis: 'Tunisian Organic Law No. 2004-63 of 27 July 2004 (Right of Access to Personal Data)',
+    account: {
+      ...toPublicCustomerUser(found),
+      createdAt: found.createdAt,
+      updatedAt: found.updatedAt,
+    },
+  };
 }
 
 export async function updateCustomerProfileServer(

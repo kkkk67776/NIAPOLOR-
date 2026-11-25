@@ -23,11 +23,15 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
     products,
     searchQuery,
     setSearchQuery,
-    categories: storeCategories
+    categories: storeCategories,
+    activeFloatingPanel,
+    openFloatingPanel,
+    closeFloatingPanel,
+    setIsBottomNavVisible,
   } = useStore();
 
-  const [isCategoriesSheetOpen, setIsCategoriesSheetOpen] = useState(false);
-  const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
+  const isCategoriesSheetOpen = activeFloatingPanel === 'categories_sheet';
+  const isSearchModalOpen = activeFloatingPanel === 'search_modal';
   const [localSearchInput, setLocalSearchInput] = useState('');
   const [searchResults, setSearchResults] = useState<Product[]>([]);
   const [isNavVisible, setIsNavVisible] = useState(true);
@@ -37,9 +41,12 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
   const scrollRafRef = useRef<number | null>(null);
 
   useEffect(() => {
+    setIsBottomNavVisible(isNavVisible || isSearchModalOpen || isCategoriesSheetOpen);
+  }, [isNavVisible, isSearchModalOpen, isCategoriesSheetOpen, setIsBottomNavVisible]);
+
+  useEffect(() => {
     const handleOpenSearch = () => {
-      setIsCategoriesSheetOpen(false);
-      setIsSearchModalOpen(true);
+      openFloatingPanel('search_modal');
     };
     window.addEventListener('open_echox_search', handleOpenSearch);
     return () => {
@@ -123,7 +130,7 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
         setLocalSearchInput('');
         setSearchQuery('');
         setSearchResults([]);
-        setIsSearchModalOpen(false);
+        closeFloatingPanel('search_modal');
         if (onOpenVault) onOpenVault();
         window.dispatchEvent(new CustomEvent('open_echox_vault'));
       }
@@ -209,7 +216,7 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
 
   const handleSelectProduct = (product: Product) => {
     setSelectedProductId(product.id);
-    setIsSearchModalOpen(false);
+    closeFloatingPanel('search_modal');
   };
 
   const defaultCatDescs: Record<string, { ar: string; fr: string; en: string }> = {
@@ -268,18 +275,14 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
       if (currentView !== 'store' && currentView !== '/') {
         setCurrentView('store');
       }
-      setIsCategoriesSheetOpen(false);
-      setIsSearchModalOpen(false);
+      closeFloatingPanel();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } else if (tab === 'categories') {
-      setIsSearchModalOpen(false);
-      setIsCategoriesSheetOpen(true);
+      openFloatingPanel('categories_sheet');
     } else if (tab === 'search') {
-      setIsCategoriesSheetOpen(false);
-      setIsSearchModalOpen(true);
+      openFloatingPanel('search_modal');
     } else if (tab === 'cart') {
-      setIsCategoriesSheetOpen(false);
-      setIsSearchModalOpen(false);
+      closeFloatingPanel();
       setIsCartOpen(true);
     }
   };
@@ -289,7 +292,7 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
     if (currentView !== 'store' && currentView !== '/') {
       setCurrentView('store');
     }
-    setIsCategoriesSheetOpen(false);
+    closeFloatingPanel('categories_sheet');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -314,13 +317,13 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
             <button
               type="button"
               onClick={() => {
-                setIsSearchModalOpen(false);
+                closeFloatingPanel('search_modal');
                 setLocalSearchInput('');
                 setSearchResults([]);
               }}
               className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl hover:bg-[#F3F1EC] dark:hover:bg-[#1D1D24] text-[#111113] dark:text-[#F7F6F3] transition-colors cursor-pointer shrink-0"
-              title="رجوع"
-              aria-label="رجوع"
+              title={(t.header as any).backLabel || 'Back'}
+              aria-label={(t.header as any).backLabel || 'Back'}
             >
               <ArrowRight className={`w-5 h-5 ${language !== 'ar' ? 'rotate-180' : ''}`} />
             </button>
@@ -352,8 +355,8 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
                     setSearchQuery('');
                     setSearchResults([]);
                   }}
-                  aria-label="Clear search"
-                  className="min-w-[40px] min-h-[40px] flex items-center justify-center text-[#7A756D] hover:text-[#111113] dark:hover:text-white rounded-lg cursor-pointer shrink-0"
+                  aria-label={(t.header as any).clearSearchLabel || 'Clear search'}
+                  className="min-w-[44px] min-h-[44px] flex items-center justify-center text-[#7A756D] hover:text-[#111113] dark:hover:text-white rounded-lg cursor-pointer shrink-0"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -398,7 +401,7 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
                         type="button"
                         onClick={() => {
                           handleSelectCategory(cat.id);
-                          setIsSearchModalOpen(false);
+                          closeFloatingPanel('search_modal');
                         }}
                         className="min-h-[48px] p-3 rounded-xl bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#27272E] hover:border-[#FF6B00] flex items-center gap-3 text-start cursor-pointer transition-colors"
                       >
@@ -494,8 +497,8 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
               </div>
               <button 
                 type="button"
-                onClick={() => setIsCategoriesSheetOpen(false)}
-                aria-label="Close categories"
+                onClick={() => closeFloatingPanel('categories_sheet')}
+                aria-label={t.header.close}
                 className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl bg-[#FAF9F7] dark:bg-[#1C1C22] text-[#6B665F] dark:text-[#A19E97] hover:text-[#111113] dark:hover:text-white transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
@@ -545,7 +548,7 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ onOpenVault 
             </div>
 
           </div>
-          <div className="fixed inset-0 -z-10 cursor-pointer" onClick={() => setIsCategoriesSheetOpen(false)}></div>
+          <div className="fixed inset-0 -z-10 cursor-pointer" onClick={() => closeFloatingPanel('categories_sheet')}></div>
         </div>
       )}
 

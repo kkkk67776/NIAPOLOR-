@@ -42,15 +42,27 @@ import {
   RotateCcw,
   CreditCard,
   BellRing,
-  Database
+  Database,
+  Scale,
 } from 'lucide-react';
-import { Product, Company, Order, OrderStatus, CategoryItem, PromoBanner, SiteSettings } from '../types';
+import { Product, Company, Order, OrderStatus, CategoryItem, PromoBanner, SiteSettings, LegalConsentAuditEntry } from '../types';
 import { INITIAL_SITE_SETTINGS } from '../data/initialData';
 import { PaymentManagementTab } from './PaymentManagementTab';
 import { SupportChatTab } from './SupportChatTab';
 import { NotificationsCenterTab } from './NotificationsCenterTab';
 import { SecretControlRoom } from './security/SecretControlRoom';
-import { canOrderShipClient, getPaymentStatusTone } from '../lib/payments';
+import {
+  canOrderShipClient,
+  fetchAdminLegalConsents,
+  getPaymentStatusTone,
+  updateAdminPrivacyRequestStatus,
+} from '../lib/payments';
+import {
+  DEFAULT_LEGAL_PROFILE,
+  getLegalConsentErrorMessage,
+  resolveLegalDisclosures,
+} from '../lib/legal';
+import { LegalPreviewModal, type LegalPreviewTopic } from './LegalPreviewModal';
 import {
   AdminNotificationDevice,
   AdminNotificationEvent,
@@ -95,6 +107,7 @@ type DashboardTab =
   | 'account_security'
   | 'secret_control_room'
   | 'footer_info'
+  | 'legal_compliance'
   | 'products'
   | 'categories'
   | 'partners'
@@ -225,6 +238,46 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
   const [footerSaving, setFooterSaving] = useState(false);
   const [previewFooterLang, setPreviewFooterLang] = useState<'ar' | 'fr' | 'en'>('ar');
 
+  // 1.2 Legal Compliance & Tunisian Corporate Disclosure Form States
+  const initLegal = siteSettings.legalProfile || DEFAULT_LEGAL_PROFILE;
+  const [legalEntityInput, setLegalEntityInput] = useState(siteSettings.legalEntityName || '');
+  const [legalFormInput, setLegalFormInput] = useState(initLegal.legalForm || '');
+  const [legalRneInput, setLegalRneInput] = useState(initLegal.rneNumber || siteSettings.commercialRegisterId || '');
+  const [legalTaxIdInput, setLegalTaxIdInput] = useState(initLegal.taxId || '');
+  const [legalCapitalInput, setLegalCapitalInput] = useState(initLegal.shareCapital || '');
+  const [legalDirectorInput, setLegalDirectorInput] = useState(initLegal.publicationDirector || '');
+  const [legalDpoEmailInput, setLegalDpoEmailInput] = useState(initLegal.dpoEmail || '');
+  const [legalDpoPhoneInput, setLegalDpoPhoneInput] = useState(initLegal.dpoPhone || '');
+  const [legalHostingProviderInput, setLegalHostingProviderInput] = useState(initLegal.hostingProvider || '');
+  const [legalHostingAddressInput, setLegalHostingAddressInput] = useState(initLegal.hostingAddress || '');
+  const [legalPolicyVersionInput, setLegalPolicyVersionInput] = useState(initLegal.policyVersion || '2026.1');
+  const [legalEffectiveDateInput, setLegalEffectiveDateInput] = useState(initLegal.effectiveDate || '2026-01-01');
+  const [legalRetractionDaysInput, setLegalRetractionDaysInput] = useState(String(initLegal.retractionDays ?? 10));
+  const [legalMediationInput, setLegalMediationInput] = useState(initLegal.mediationContact || '');
+  const [legalCustomAr, setLegalCustomAr] = useState(initLegal.customLegalNotice?.ar || '');
+  const [legalCustomFr, setLegalCustomFr] = useState(initLegal.customLegalNotice?.fr || '');
+  const [legalCustomEn, setLegalCustomEn] = useState(initLegal.customLegalNotice?.en || '');
+  const [legalProfileSaving, setLegalProfileSaving] = useState(false);
+  const [legalProfileSaved, setLegalProfileSaved] = useState(false);
+  const [legalProfileError, setLegalProfileError] = useState('');
+
+  // Legal Consent Audit & Privacy Requests Log
+  const [legalConsentFilter, setLegalConsentFilter] = useState<string>('all');
+  const [legalAuditEntries, setLegalAuditEntries] = useState<LegalConsentAuditEntry[]>([]);
+  const [legalAuditSummary, setLegalAuditSummary] = useState({
+    totalConsents: 0,
+    checkoutConsents: 0,
+    registrationConsents: 0,
+    sellerConsents: 0,
+    cookieChoices: 0,
+    privacyRequests: 0,
+    pendingPrivacyRequests: 0,
+  });
+  const [legalAuditLoading, setLegalAuditLoading] = useState(false);
+  const [legalAuditError, setLegalAuditError] = useState('');
+  const [legalRequestBusyId, setLegalRequestBusyId] = useState<string | null>(null);
+  const [legalPreviewTopic, setLegalPreviewTopic] = useState<LegalPreviewTopic | null>(null);
+
   // Security & Access Management States (Argon2id)
   const [accessCodeCurrent, setAccessCodeCurrent] = useState('');
   const [accessCodeNew, setAccessCodeNew] = useState('');
@@ -332,6 +385,10 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
   const [partnerGov, setPartnerGov] = useState('tunis');
   const [partnerDesc, setPartnerDesc] = useState('');
   const [partnerLogo, setPartnerLogo] = useState('');
+  const [partnerLegalForm, setPartnerLegalForm] = useState('');
+  const [partnerRneNumber, setPartnerRneNumber] = useState('');
+  const [partnerTaxId, setPartnerTaxId] = useState('');
+  const [partnerAgreementAccepted, setPartnerAgreementAccepted] = useState(false);
 
   // 5. Banner Form States
   const [showAddBannerModal, setShowAddBannerModal] = useState(false);
@@ -406,7 +463,45 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
     setFooterDeliveryAr(siteSettings.deliveryTimeEstimate?.ar || '');
     setFooterDeliveryFr(siteSettings.deliveryTimeEstimate?.fr || '');
     setFooterDeliveryEn(siteSettings.deliveryTimeEstimate?.en || '');
+
+    const lp = siteSettings.legalProfile || DEFAULT_LEGAL_PROFILE;
+    setLegalEntityInput(siteSettings.legalEntityName || '');
+    setLegalFormInput(lp.legalForm || '');
+    setLegalRneInput(lp.rneNumber || siteSettings.commercialRegisterId || '');
+    setLegalTaxIdInput(lp.taxId || '');
+    setLegalCapitalInput(lp.shareCapital || '');
+    setLegalDirectorInput(lp.publicationDirector || '');
+    setLegalDpoEmailInput(lp.dpoEmail || '');
+    setLegalDpoPhoneInput(lp.dpoPhone || '');
+    setLegalHostingProviderInput(lp.hostingProvider || '');
+    setLegalHostingAddressInput(lp.hostingAddress || '');
+    setLegalPolicyVersionInput(lp.policyVersion || '2026.1');
+    setLegalEffectiveDateInput(lp.effectiveDate || '2026-01-01');
+    setLegalRetractionDaysInput(String(lp.retractionDays ?? 10));
+    setLegalMediationInput(lp.mediationContact || '');
+    setLegalCustomAr(lp.customLegalNotice?.ar || '');
+    setLegalCustomFr(lp.customLegalNotice?.fr || '');
+    setLegalCustomEn(lp.customLegalNotice?.en || '');
   }, [siteSettings]);
+
+  const loadLegalAudit = async (filterSource = legalConsentFilter) => {
+    setLegalAuditLoading(true);
+    setLegalAuditError('');
+    try {
+      const data = await fetchAdminLegalConsents(filterSource, 120);
+      setLegalAuditEntries(data.entries);
+      setLegalAuditSummary(data.summary);
+    } catch (err: any) {
+      setLegalAuditError(err?.message || 'تعذر تحميل سجل الموافقات القانونية.');
+    } finally {
+      setLegalAuditLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!authorized || activeTab !== 'legal_compliance') return;
+    void loadLegalAudit(legalConsentFilter);
+  }, [authorized, activeTab, legalConsentFilter]);
 
   useEffect(() => {
     if (ownerSettings.loginEmail) setEditOwnerEmail(ownerSettings.loginEmail);
@@ -652,6 +747,48 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
 
     setFooterSavedSuccess(true);
     setTimeout(() => setFooterSavedSuccess(false), 4000);
+  };
+
+  const handleSaveLegalProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLegalProfileSaving(true);
+    setLegalProfileError('');
+    setLegalProfileSaved(false);
+
+    const parsedRetraction = Math.min(90, Math.max(1, Number(legalRetractionDaysInput) || 10));
+    const res = await updateSiteSettings({
+      legalEntityName: legalEntityInput.trim(),
+      commercialRegisterId: legalRneInput.trim(),
+      legalProfile: {
+        legalForm: legalFormInput.trim(),
+        rneNumber: legalRneInput.trim(),
+        taxId: legalTaxIdInput.trim(),
+        shareCapital: legalCapitalInput.trim(),
+        publicationDirector: legalDirectorInput.trim(),
+        dpoEmail: legalDpoEmailInput.trim(),
+        dpoPhone: legalDpoPhoneInput.trim(),
+        hostingProvider: legalHostingProviderInput.trim(),
+        hostingAddress: legalHostingAddressInput.trim(),
+        policyVersion: legalPolicyVersionInput.trim() || '2026.1',
+        effectiveDate: legalEffectiveDateInput.trim() || '2026-01-01',
+        retractionDays: parsedRetraction,
+        mediationContact: legalMediationInput.trim(),
+        customLegalNotice: {
+          ar: legalCustomAr.trim(),
+          fr: legalCustomFr.trim(),
+          en: legalCustomEn.trim(),
+        },
+      },
+    });
+
+    setLegalProfileSaving(false);
+    if (!res.ok) {
+      setLegalProfileError(res.error || 'تعذر حفظ المعطيات القانونية على الخادم.');
+      return;
+    }
+
+    setLegalProfileSaved(true);
+    setTimeout(() => setLegalProfileSaved(false), 4000);
   };
 
   // Handlers for Centralized Argon2id Security & Access Management
@@ -1024,6 +1161,10 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
   const handleSavePartner = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!partnerName.trim() || !partnerPhone.trim()) return;
+    if (!partnerAgreementAccepted) {
+      setEntityModalError(getLegalConsentErrorMessage('ar', 'partner'));
+      return;
+    }
 
     setEntitySaving(true);
     setEntityModalError('');
@@ -1035,7 +1176,15 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
       email: partnerEmail.trim() || 'contact@partner.tn',
       address: partnerAddress.trim() || 'المنطقة الصناعية',
       governorate: partnerGov,
-      description: { ar: partnerDesc.trim() || partnerName, fr: partnerDesc.trim() || partnerName, en: partnerDesc.trim() || partnerName }
+      description: { ar: partnerDesc.trim() || partnerName, fr: partnerDesc.trim() || partnerName, en: partnerDesc.trim() || partnerName },
+      legalMetadata: {
+        legalForm: partnerLegalForm.trim() || undefined,
+        rneNumber: partnerRneNumber.trim() || undefined,
+        taxId: partnerTaxId.trim() || undefined,
+        agreementAccepted: true,
+        agreementVersion: siteSettings.legalProfile?.policyVersion || '2026.1',
+        agreementAcceptedAt: new Date().toISOString(),
+      },
     });
 
     setEntitySaving(false);
@@ -1051,6 +1200,10 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
     setPartnerAddress('');
     setPartnerDesc('');
     setPartnerLogo('');
+    setPartnerLegalForm('');
+    setPartnerRneNumber('');
+    setPartnerTaxId('');
+    setPartnerAgreementAccepted(false);
   };
 
   // Handlers for Banners
@@ -1414,6 +1567,19 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
         >
           <FileText className="w-3.5 h-3.5" />
           <span>تذييل وتفاصيل المتجر</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('legal_compliance')}
+          className={`px-4 py-2 rounded-full text-xs font-bold shrink-0 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 ${
+            activeTab === 'legal_compliance'
+              ? 'bg-[#FF6B00] text-white shadow-xs'
+              : 'bg-[#F3F1EC] dark:bg-[#18181D] text-[#5A5854] dark:text-[#B5B0A8] border border-[#E6E2D8] dark:border-[#23232A] hover:border-[#FF6B00]'
+          }`}
+        >
+          <Scale className="w-3.5 h-3.5" />
+          <span>الامتثال القانوني والخصوصية</span>
         </button>
 
         <button
@@ -2878,6 +3044,469 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
         </div>
       )}
 
+      {/* Tab: Legal Compliance, Tunisian Corporate Disclosures & Consent Audit */}
+      {activeTab === 'legal_compliance' && (() => {
+        const disclosures = resolveLegalDisclosures(siteSettings, 'ar');
+        const missingLabels: Record<string, string> = {
+          entityName: 'الاسم القانوني للشركة',
+          legalForm: 'الشكل القانوني (SARL / SUARL...)',
+          rneNumber: 'معرّف السجل الوطني (RNE)',
+          taxId: 'المعرّف الجبائي (Matricule Fiscal)',
+          publicationDirector: 'الممثل القانوني / مدير النشر',
+          hostingProvider: 'مزوّد الاستضافة السحابية',
+        };
+        const sourceLabels: Record<string, string> = {
+          all: 'الكل',
+          checkout_order: 'طلبات الشراء',
+          customer_registration: 'تسجيل الحسابات',
+          seller_onboarding: 'اتفاقيات الشركاء',
+          cookie_preferences: 'تفضيلات التخزين',
+          privacy_request: 'طلبات الخصوصية',
+        };
+        return (
+          <div className="space-y-6">
+            {/* Disclosure Completion Overview */}
+            <div className="bg-[#F3F1EC] dark:bg-[#18181D] rounded-3xl p-5 sm:p-6 border border-[#E6E2D8] dark:border-[#23232A] space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-2xl bg-[#FF6B00]/10 border border-[#FF6B00]/30 flex items-center justify-center text-[#FF6B00]">
+                    <Scale className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-black text-[#111113] dark:text-[#F7F6F3]">
+                      مركز الامتثال القانوني والخصوصية (التشريع التونسي)
+                    </h2>
+                    <p className="text-xs text-[#7A756D] dark:text-[#8E8980]">
+                      القانون 2000-83 (التجارة الإلكترونية) · القانون الأساسي 2004-63 (INPDP) · القانون 2018-52 (RNE)
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => setLegalPreviewTopic('legal')}
+                    className="px-3.5 py-2 rounded-xl bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#23232A] text-xs font-bold hover:border-[#FF6B00] cursor-pointer"
+                  >
+                    معاينة صفحة البيانات القانونية
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLegalPreviewTopic('seller_terms')}
+                    className="px-3.5 py-2 rounded-xl bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#23232A] text-xs font-bold hover:border-[#FF6B00] cursor-pointer"
+                  >
+                    شروط البائعين والشركاء
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-white dark:bg-[#141418] rounded-2xl p-4 border border-[#E6E2D8] dark:border-[#23232A] space-y-2.5">
+                <div className="flex items-center justify-between text-xs font-bold">
+                  <span>اكتمال المعرّفات القانونية الإلزامية قبل النشر التجاري الواسع</span>
+                  <span className="font-mono text-[#FF6B00]">{disclosures.completionPercent}%</span>
+                </div>
+                <div className="w-full h-2 rounded-full bg-[#EBE7DF] dark:bg-[#23232A] overflow-hidden">
+                  <div
+                    className={`h-full bg-[#FF6B00] transition-all ${
+                      disclosures.completionPercent >= 100
+                        ? 'w-full'
+                        : disclosures.completionPercent >= 80
+                        ? 'w-5/6'
+                        : disclosures.completionPercent >= 65
+                        ? 'w-2/3'
+                        : disclosures.completionPercent >= 45
+                        ? 'w-1/2'
+                        : disclosures.completionPercent >= 30
+                        ? 'w-1/3'
+                        : disclosures.completionPercent >= 10
+                        ? 'w-1/6'
+                        : 'w-0'
+                    }`}
+                  />
+                </div>
+                {disclosures.missingMandatoryKeys.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {disclosures.missingMandatoryKeys.map((k) => (
+                      <span
+                        key={k}
+                        className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/25"
+                      >
+                        ناقص: {missingLabels[k] || k}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>جميع المعرّفات الأساسية مضبوطة ومعلنة بشفافية في الصفحة القانونية.</span>
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Legal Profile Configuration Form */}
+            <form
+              onSubmit={handleSaveLegalProfile}
+              className="bg-[#F3F1EC] dark:bg-[#18181D] rounded-3xl p-5 sm:p-6 border border-[#E6E2D8] dark:border-[#23232A] space-y-4"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-[#E6E2D8] dark:border-[#23232A]">
+                <h3 className="text-sm font-black text-[#111113] dark:text-[#F7F6F3]">
+                  1. معرّفات الكيان القانوني والسجل الوطني والاستضافة (لا تُملأ إلا ببيانات حقيقية)
+                </h3>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-white dark:bg-[#141418] p-3.5 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-1.5">
+                  <label className="text-xs font-bold block">الاسم القانوني / التسمية الاجتماعية</label>
+                  <input
+                    type="text"
+                    value={legalEntityInput}
+                    onChange={(e) => setLegalEntityInput(e.target.value)}
+                    placeholder="مثال: Société NIAPOLOR..."
+                    className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent outline-none focus:border-[#FF6B00]"
+                  />
+                </div>
+                <div className="bg-white dark:bg-[#141418] p-3.5 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-1.5">
+                  <label className="text-xs font-bold block">الشكل القانوني</label>
+                  <input
+                    type="text"
+                    value={legalFormInput}
+                    onChange={(e) => setLegalFormInput(e.target.value)}
+                    placeholder="SUARL / SARL / المؤسسة الفردية"
+                    className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent outline-none focus:border-[#FF6B00]"
+                  />
+                </div>
+                <div className="bg-white dark:bg-[#141418] p-3.5 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-1.5">
+                  <label className="text-xs font-bold block">معرّف السجل الوطني للمؤسسات (RNE)</label>
+                  <input
+                    type="text"
+                    dir="ltr"
+                    value={legalRneInput}
+                    onChange={(e) => setLegalRneInput(e.target.value)}
+                    placeholder="1234567A"
+                    className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent font-mono outline-none focus:border-[#FF6B00]"
+                  />
+                </div>
+                <div className="bg-white dark:bg-[#141418] p-3.5 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-1.5">
+                  <label className="text-xs font-bold block">المعرّف الجبائي (Matricule Fiscal)</label>
+                  <input
+                    type="text"
+                    dir="ltr"
+                    value={legalTaxIdInput}
+                    onChange={(e) => setLegalTaxIdInput(e.target.value)}
+                    placeholder="1234567/A/M/000"
+                    className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent font-mono outline-none focus:border-[#FF6B00]"
+                  />
+                </div>
+                <div className="bg-white dark:bg-[#141418] p-3.5 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-1.5">
+                  <label className="text-xs font-bold block">رأس المال الاجتماعي (اختياري)</label>
+                  <input
+                    type="text"
+                    value={legalCapitalInput}
+                    onChange={(e) => setLegalCapitalInput(e.target.value)}
+                    placeholder="مثال: 10 000 DT"
+                    className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent outline-none focus:border-[#FF6B00]"
+                  />
+                </div>
+                <div className="bg-white dark:bg-[#141418] p-3.5 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-1.5">
+                  <label className="text-xs font-bold block">الممثل القانوني / مدير النشر</label>
+                  <input
+                    type="text"
+                    value={legalDirectorInput}
+                    onChange={(e) => setLegalDirectorInput(e.target.value)}
+                    placeholder="الاسم والصفة القانونية"
+                    className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent outline-none focus:border-[#FF6B00]"
+                  />
+                </div>
+                <div className="bg-white dark:bg-[#141418] p-3.5 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-1.5">
+                  <label className="text-xs font-bold block">بريد حماية المعطيات (INPDP)</label>
+                  <input
+                    type="email"
+                    dir="ltr"
+                    value={legalDpoEmailInput}
+                    onChange={(e) => setLegalDpoEmailInput(e.target.value)}
+                    placeholder="privacy@niapolor.tn"
+                    className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent font-mono outline-none focus:border-[#FF6B00]"
+                  />
+                </div>
+                <div className="bg-white dark:bg-[#141418] p-3.5 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-1.5">
+                  <label className="text-xs font-bold block">مزوّد الاستضافة والبنية السحابية</label>
+                  <input
+                    type="text"
+                    value={legalHostingProviderInput}
+                    onChange={(e) => setLegalHostingProviderInput(e.target.value)}
+                    placeholder="مثال: Render / Google Cloud EMEA..."
+                    className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent outline-none focus:border-[#FF6B00]"
+                  />
+                </div>
+                <div className="bg-white dark:bg-[#141418] p-3.5 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-1.5">
+                  <label className="text-xs font-bold block">عنوان مقر الاستضافة</label>
+                  <input
+                    type="text"
+                    value={legalHostingAddressInput}
+                    onChange={(e) => setLegalHostingAddressInput(e.target.value)}
+                    placeholder="عنوان الشركة المستضيفة"
+                    className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent outline-none focus:border-[#FF6B00]"
+                  />
+                </div>
+                <div className="bg-white dark:bg-[#141418] p-3.5 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-1.5">
+                  <label className="text-xs font-bold block">رقم إصدار السياسات</label>
+                  <input
+                    type="text"
+                    dir="ltr"
+                    value={legalPolicyVersionInput}
+                    onChange={(e) => setLegalPolicyVersionInput(e.target.value)}
+                    className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent font-mono outline-none focus:border-[#FF6B00]"
+                  />
+                </div>
+                <div className="bg-white dark:bg-[#141418] p-3.5 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-1.5">
+                  <label className="text-xs font-bold block">تاريخ السريان</label>
+                  <input
+                    type="date"
+                    dir="ltr"
+                    value={legalEffectiveDateInput}
+                    onChange={(e) => setLegalEffectiveDateInput(e.target.value)}
+                    className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent font-mono outline-none focus:border-[#FF6B00]"
+                  />
+                </div>
+                <div className="bg-white dark:bg-[#141418] p-3.5 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-1.5">
+                  <label className="text-xs font-bold block">مهلة العدول (أيام — القانون 2000-83)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={90}
+                    dir="ltr"
+                    value={legalRetractionDaysInput}
+                    onChange={(e) => setLegalRetractionDaysInput(e.target.value)}
+                    className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent font-mono outline-none focus:border-[#FF6B00]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-white dark:bg-[#141418] p-3.5 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-1.5">
+                  <label className="text-xs font-bold block">قناة معالجة الشكاوى والوساطة</label>
+                  <input
+                    type="text"
+                    value={legalMediationInput}
+                    onChange={(e) => setLegalMediationInput(e.target.value)}
+                    placeholder="بريد أو هاتف خدمة النزاعات"
+                    className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent outline-none focus:border-[#FF6B00]"
+                  />
+                </div>
+                <div className="bg-white dark:bg-[#141418] p-3.5 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-1.5">
+                  <label className="text-xs font-bold block">هاتف حماية المعطيات (اختياري)</label>
+                  <input
+                    type="text"
+                    dir="ltr"
+                    value={legalDpoPhoneInput}
+                    onChange={(e) => setLegalDpoPhoneInput(e.target.value)}
+                    placeholder="+216 ..."
+                    className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent font-mono outline-none focus:border-[#FF6B00]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-white dark:bg-[#141418] p-3.5 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-1.5">
+                  <label className="text-xs font-bold block">ملاحظة قانونية إضافية (AR)</label>
+                  <textarea
+                    rows={2}
+                    value={legalCustomAr}
+                    onChange={(e) => setLegalCustomAr(e.target.value)}
+                    className="w-full text-xs p-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent resize-none outline-none focus:border-[#FF6B00]"
+                  />
+                </div>
+                <div className="bg-white dark:bg-[#141418] p-3.5 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-1.5">
+                  <label className="text-xs font-bold block">Note légale additionnelle (FR)</label>
+                  <textarea
+                    rows={2}
+                    dir="ltr"
+                    value={legalCustomFr}
+                    onChange={(e) => setLegalCustomFr(e.target.value)}
+                    className="w-full text-xs p-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent resize-none outline-none focus:border-[#FF6B00]"
+                  />
+                </div>
+                <div className="bg-white dark:bg-[#141418] p-3.5 rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] space-y-1.5">
+                  <label className="text-xs font-bold block">Additional Legal Notice (EN)</label>
+                  <textarea
+                    rows={2}
+                    dir="ltr"
+                    value={legalCustomEn}
+                    onChange={(e) => setLegalCustomEn(e.target.value)}
+                    className="w-full text-xs p-2.5 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent resize-none outline-none focus:border-[#FF6B00]"
+                  />
+                </div>
+              </div>
+
+              {legalProfileError && (
+                <p className="text-xs font-bold text-red-600 dark:text-red-400">{legalProfileError}</p>
+              )}
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                <button
+                  type="submit"
+                  disabled={legalProfileSaving}
+                  className="px-5 py-2.5 rounded-xl bg-[#FF6B00] hover:bg-[#e05e00] text-white text-xs font-bold flex items-center gap-2 cursor-pointer disabled:opacity-60"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>{legalProfileSaving ? 'جارٍ الحفظ...' : 'حفظ ونشر المعطيات القانونية'}</span>
+                </button>
+                {legalProfileSaved && (
+                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>تم حفظ البيانات القانونية في الخادم وتحديث الصفحة القانونية فوراً!</span>
+                  </span>
+                )}
+              </div>
+            </form>
+
+            {/* Real Legal Consent & Privacy Requests Audit Log */}
+            <div className="bg-[#F3F1EC] dark:bg-[#18181D] rounded-3xl p-5 sm:p-6 border border-[#E6E2D8] dark:border-[#23232A] space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#E6E2D8] dark:border-[#23232A]">
+                <div>
+                  <h3 className="text-sm font-black text-[#111113] dark:text-[#F7F6F3]">
+                    2. سجل إثبات الموافقات القانونية وطلبات حماية المعطيات (INPDP / الفصل 36)
+                  </h3>
+                  <p className="text-[11px] text-[#7A756D] dark:text-[#8E8980]">
+                    يسجل فقط الأحداث الفعلية الناتجة عن موافقات العملاء، الطلبات، البائعين، التفضيلات، أو طلبات الحقوق الشخصية.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void loadLegalAudit(legalConsentFilter)}
+                  disabled={legalAuditLoading}
+                  className="px-3.5 py-2 rounded-xl bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#23232A] text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-[#FF6B00] ${legalAuditLoading ? 'animate-spin' : ''}`} />
+                  <span>تحديث السجل</span>
+                </button>
+              </div>
+
+              {/* Summary Counters */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 text-center">
+                {[
+                  { label: 'إجمالي السجلات', value: legalAuditSummary.totalConsents },
+                  { label: 'موافقات الطلبات', value: legalAuditSummary.checkoutConsents },
+                  { label: 'موافقات التسجيل', value: legalAuditSummary.registrationConsents },
+                  { label: 'اتفاقيات الشركاء', value: legalAuditSummary.sellerConsents },
+                  { label: 'خيارات التخزين', value: legalAuditSummary.cookieChoices },
+                  {
+                    label: `طلبات الخصوصية (${legalAuditSummary.pendingPrivacyRequests} مفتوح)`,
+                    value: legalAuditSummary.privacyRequests,
+                  },
+                ].map((stat, idx) => (
+                  <div
+                    key={idx}
+                    className="p-3 rounded-2xl bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#23232A]"
+                  >
+                    <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980] block">{stat.label}</span>
+                    <strong className="text-base font-black text-[#FF6B00] font-mono">{stat.value}</strong>
+                  </div>
+                ))}
+              </div>
+
+              {/* Filter Pills */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                {Object.entries(sourceLabels).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setLegalConsentFilter(key)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-bold shrink-0 cursor-pointer ${
+                      legalConsentFilter === key
+                        ? 'bg-[#111113] dark:bg-[#FF6B00] text-white'
+                        : 'bg-white dark:bg-[#141418] text-[#5A5854] dark:text-[#B5B0A8] border border-[#E6E2D8] dark:border-[#23232A]'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {legalAuditError && (
+                <p className="text-xs font-bold text-red-600 dark:text-red-400">{legalAuditError}</p>
+              )}
+
+              {legalAuditEntries.length === 0 ? (
+                <div className="p-6 text-center rounded-2xl bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#23232A] text-xs text-[#7A756D] dark:text-[#8E8980]">
+                  لا توجد سجلات مطابقة لهذا التصنيف حتى الآن.
+                </div>
+              ) : (
+                <div className="space-y-2.5 max-h-[420px] overflow-y-auto">
+                  {legalAuditEntries.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="p-3.5 rounded-2xl bg-white dark:bg-[#141418] border border-[#E6E2D8] dark:border-[#23232A] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+                    >
+                      <div className="space-y-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#FF6B00]/10 text-[#FF6B00]">
+                            {sourceLabels[entry.source] || entry.source}
+                          </span>
+                          {entry.actorLabel && <strong className="truncate">{entry.actorLabel}</strong>}
+                          {entry.trackingNumber && (
+                            <span className="font-mono text-[11px] text-[#7A756D]">{entry.trackingNumber}</span>
+                          )}
+                          {entry.cookieConsentChoice && (
+                            <span className="font-mono text-[10px] px-2 py-0.5 rounded-md bg-[#F3F1EC] dark:bg-[#18181D]">
+                              {entry.cookieConsentChoice}
+                            </span>
+                          )}
+                          {entry.requestType && (
+                            <span className="font-bold text-[10px] px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                              {entry.requestType} · {entry.requestStatus || 'recorded'}
+                            </span>
+                          )}
+                        </div>
+                        {entry.requestDetails && (
+                          <p className="text-[11px] text-[#5A5854] dark:text-[#B5B0A8]">{entry.requestDetails}</p>
+                        )}
+                        <p className="text-[10px] text-[#7A756D] dark:text-[#8E8980] font-mono">
+                          v{entry.termsVersion} · {entry.language.toUpperCase()} · {new Date(entry.acceptedAt).toLocaleString('ar-TN')}
+                          {entry.ipMasked ? ` · ${entry.ipMasked}` : ''}
+                        </p>
+                      </div>
+
+                      {entry.source === 'privacy_request' && entry.requestStatus !== 'completed' && (
+                        <div className="flex items-center gap-2 shrink-0">
+                          {entry.requestStatus !== 'reviewed' && (
+                            <button
+                              type="button"
+                              disabled={legalRequestBusyId === entry.id}
+                              onClick={async () => {
+                                setLegalRequestBusyId(entry.id);
+                                const res = await updateAdminPrivacyRequestStatus(entry.id, 'reviewed');
+                                setLegalRequestBusyId(null);
+                                if (res.ok) void loadLegalAudit(legalConsentFilter);
+                              }}
+                              className="px-2.5 py-1.5 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300 text-[11px] font-bold cursor-pointer disabled:opacity-50"
+                            >
+                              قيد المراجعة
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            disabled={legalRequestBusyId === entry.id}
+                            onClick={async () => {
+                              setLegalRequestBusyId(entry.id);
+                              const res = await updateAdminPrivacyRequestStatus(entry.id, 'completed');
+                              setLegalRequestBusyId(null);
+                              if (res.ok) void loadLegalAudit(legalConsentFilter);
+                            }}
+                            className="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 text-[11px] font-bold cursor-pointer disabled:opacity-50"
+                          >
+                            مكتمل التنفيذ
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Tab 3: Products Management */}
       {activeTab === 'products' && (
         <div className="space-y-4">
@@ -3112,6 +3741,13 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                     <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980] truncate block mt-0.5">
                       {comp.email}
                     </span>
+                    {comp.legalMetadata && (
+                      <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-mono block mt-0.5">
+                        {comp.legalMetadata.rneNumber ? `RNE: ${comp.legalMetadata.rneNumber}` : ''}
+                        {comp.legalMetadata.rneNumber && comp.legalMetadata.agreementAccepted ? ' · ' : ''}
+                        {comp.legalMetadata.agreementAccepted ? 'اتفاقية البائع ✓' : ''}
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -4052,6 +4688,59 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                 />
               </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <input
+                  type="text"
+                  value={partnerLegalForm}
+                  onChange={e => setPartnerLegalForm(e.target.value)}
+                  placeholder="الشكل (SARL...)"
+                  className="w-full text-xs p-2 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent outline-none focus:border-[#FF6B00]"
+                />
+                <input
+                  type="text"
+                  dir="ltr"
+                  value={partnerRneNumber}
+                  onChange={e => setPartnerRneNumber(e.target.value)}
+                  placeholder="RNE"
+                  className="w-full text-xs p-2 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent font-mono outline-none focus:border-[#FF6B00]"
+                />
+                <input
+                  type="text"
+                  dir="ltr"
+                  value={partnerTaxId}
+                  onChange={e => setPartnerTaxId(e.target.value)}
+                  placeholder="MF / Tax ID"
+                  className="w-full text-xs p-2 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent font-mono outline-none focus:border-[#FF6B00]"
+                />
+              </div>
+
+              <label className="flex items-start gap-2 p-2.5 rounded-xl bg-[#FAF9F7] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] text-[11px] leading-relaxed cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={partnerAgreementAccepted}
+                  onChange={e => {
+                    setPartnerAgreementAccepted(e.target.checked);
+                    if (e.target.checked) setEntityModalError('');
+                  }}
+                  className="mt-0.5 w-4 h-4 accent-[#FF6B00] shrink-0 cursor-pointer"
+                />
+                <span>
+                  يؤكد الشريك موافقته على{' '}
+                  <button
+                    type="button"
+                    onClick={e => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setLegalPreviewTopic('seller_terms');
+                    }}
+                    className="font-bold text-[#FF6B00] underline cursor-pointer"
+                  >
+                    شروط البائعين والشركاء في NIAPOLOR
+                  </button>
+                  .
+                </span>
+              </label>
+
               {entityModalError && (
                 <div className="p-3 rounded-2xl bg-red-500/10 border border-red-500/30 text-xs font-bold text-red-600 dark:text-red-400 flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4 shrink-0" />
@@ -4080,6 +4769,11 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
           </div>
         </div>
       )}
+
+      <LegalPreviewModal
+        topic={legalPreviewTopic}
+        onClose={() => setLegalPreviewTopic(null)}
+      />
 
       {/* Modal: Add Banner */}
       {showAddBannerModal && (

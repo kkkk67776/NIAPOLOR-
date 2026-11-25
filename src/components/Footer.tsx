@@ -249,6 +249,33 @@ export const Footer: React.FC = () => {
                   {t.footer.termsOfService}
                 </button>
               </li>
+              <li>
+                <button 
+                  type="button"
+                  onClick={() => handleLinkClick('legal')} 
+                  className="min-h-[40px] sm:min-h-[32px] py-1.5 sm:py-1 inline-flex items-center hover:text-[#FF6B00] transition-colors cursor-pointer text-start"
+                >
+                  {(t.footer as any).legalInfo}
+                </button>
+              </li>
+              <li>
+                <button 
+                  type="button"
+                  onClick={() => handleLinkClick('seller_terms')} 
+                  className="min-h-[40px] sm:min-h-[32px] py-1.5 sm:py-1 inline-flex items-center hover:text-[#FF6B00] transition-colors cursor-pointer text-start"
+                >
+                  {(t.footer as any).sellerTerms}
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  onClick={() => window.dispatchEvent(new CustomEvent('niapolor_open_cookie_prefs'))}
+                  className="min-h-[40px] sm:min-h-[32px] py-1.5 sm:py-1 inline-flex items-center hover:text-[#FF6B00] transition-colors cursor-pointer text-start"
+                >
+                  {(t.footer as any).cookiePrefs}
+                </button>
+              </li>
             </ul>
           </div>
 
@@ -312,10 +339,17 @@ export const Footer: React.FC = () => {
 
         {/* حقوق المتجر بدون أي روابط إدارية */}
         <div className="pt-6 mt-6 border-t border-[#E6E2D8] dark:border-[#23232A] text-center text-xs text-[#7A756D] dark:text-[#8E8980] space-y-1.5">
-          {(siteSettings?.legalEntityName?.trim() || siteSettings?.commercialRegisterId?.trim()) && (
+          {(siteSettings?.legalEntityName?.trim() ||
+            siteSettings?.commercialRegisterId?.trim() ||
+            siteSettings?.legalProfile?.rneNumber?.trim() ||
+            siteSettings?.legalProfile?.taxId?.trim()) && (
             <p className="text-[11px] font-medium">
               {t.footer.commercialNotice}{' '}
-              {[siteSettings.legalEntityName?.trim(), siteSettings.commercialRegisterId?.trim()]
+              {[
+                siteSettings.legalEntityName?.trim(),
+                siteSettings.legalProfile?.rneNumber?.trim() || siteSettings.commercialRegisterId?.trim(),
+                siteSettings.legalProfile?.taxId?.trim(),
+              ]
                 .filter(Boolean)
                 .join(' — ')}
             </p>

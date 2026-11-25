@@ -16,6 +16,11 @@ import {
   EyeOff,
   AlertCircle,
   Loader2,
+  ShieldCheck,
+  Download,
+  Cookie,
+  CheckCircle2,
+  ExternalLink,
 } from 'lucide-react';
 import {
   TUNISIAN_GOVERNORATES,
@@ -30,8 +35,15 @@ import {
   validateCustomerPasswordStrength,
   type AuthLang,
 } from '../lib/customerAuthMessages';
-import { getPaymentStatusTone } from '../lib/payments';
+import {
+  exportCustomerPrivacyData,
+  getPaymentStatusTone,
+  submitCustomerPrivacyRequest,
+} from '../lib/payments';
 import { handleStoreImageError, handleStoreImageLoad } from '../lib/imageFallback';
+import { LEGAL_TRANSLATIONS } from '../data/legalTranslations';
+import { resolveLegalDisclosures } from '../lib/legal';
+import { LegalPreviewModal, type LegalPreviewTopic } from './LegalPreviewModal';
 
 export const CustomerPortal: React.FC = () => {
   const {
@@ -43,6 +55,8 @@ export const CustomerPortal: React.FC = () => {
     addCustomerAddress,
     setDefaultAddress,
     deleteCustomerAddress,
+    updateCustomerProfile,
+    siteSettings,
     orders,
     products,
     wishlist,
@@ -56,26 +70,50 @@ export const CustomerPortal: React.FC = () => {
   } = useStore();
 
   const authT = (t as any).customerAuth;
+  const lt = LEGAL_TRANSLATIONS[language] || LEGAL_TRANSLATIONS.ar;
+  const disclosures = resolveLegalDisclosures(siteSettings, language);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [authName, setAuthName] = useState('');
   const [authPhone, setAuthPhone] = useState('');
+  const [registerLegalAccepted, setRegisterLegalAccepted] = useState(false);
+  const [previewTopic, setPreviewTopic] = useState<LegalPreviewTopic | null>(null);
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState('');
   const [authRetryable, setAuthRetryable] = useState(false);
   const authSubmittingRef = useRef(false);
 
-  const [activeTab, setActiveTab] = useState<'orders' | 'addresses' | 'wishlist'>(
+  const [activeTab, setActiveTab] = useState<'orders' | 'addresses' | 'wishlist' | 'privacy'>(
     currentView === 'wishlist' ? 'wishlist' : 'orders'
   );
+
+  // Privacy & Data Rights Center states
+  const [profileFullName, setProfileFullName] = useState('');
+  const [profilePhone, setProfilePhone] = useState('');
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileMsg, setProfileMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportError, setExportError] = useState('');
+  const [privacyReqType, setPrivacyReqType] = useState<'rectification' | 'erasure' | 'opposition'>('rectification');
+  const [privacyReqDetails, setPrivacyReqDetails] = useState('');
+  const [privacyReqBusy, setPrivacyReqBusy] = useState(false);
+  const [privacyReqSuccess, setPrivacyReqSuccess] = useState('');
+  const [privacyReqError, setPrivacyReqError] = useState('');
 
   useEffect(() => {
     if (currentView === 'wishlist') {
       setActiveTab('wishlist');
     }
   }, [currentView]);
+
+  useEffect(() => {
+    if (currentUser) {
+      setProfileFullName(currentUser.fullName || '');
+      setProfilePhone(currentUser.phone || '');
+    }
+  }, [currentUser]);
 
   // New Address Form state
   const [showAddAddress, setShowAddAddress] = useState(false);
@@ -124,6 +162,10 @@ export const CustomerPortal: React.FC = () => {
         setAuthError(getCustomerAuthMessage(language as AuthLang, mapPasswordReasonToMsgKey(pwdCheck.reason)));
         return;
       }
+      if (!registerLegalAccepted) {
+        setAuthError(lt.registerLegal.requiredError);
+        return;
+      }
     }
 
     authSubmittingRef.current = true;
@@ -137,6 +179,15 @@ export const CustomerPortal: React.FC = () => {
               email: cleanEmail,
               phone: authPhone.trim(),
               password: authPassword,
+              legalConsent: {
+                termsAccepted: true,
+                privacyAccepted: true,
+                termsVersion: disclosures.policyVersion,
+                privacyVersion: disclosures.policyVersion,
+                acceptedAt: new Date().toISOString(),
+                language,
+                source: 'customer_registration',
+              },
             });
 
       if (!res.ok) {
@@ -146,6 +197,7 @@ export const CustomerPortal: React.FC = () => {
       }
 
       setAuthPassword('');
+      setRegisterLegalAccepted(false);
       setAuthRetryable(false);
     } finally {
       authSubmittingRef.current = false;
@@ -223,6 +275,7 @@ export const CustomerPortal: React.FC = () => {
               onClick={() => {
                 setAuthMode('login');
                 setAuthError('');
+                setRegisterLegalAccepted(false);
               }}
               className={`py-2 rounded-xl text-xs font-black transition-colors cursor-pointer ${
                 authMode === 'login'
@@ -237,6 +290,7 @@ export const CustomerPortal: React.FC = () => {
               onClick={() => {
                 setAuthMode('register');
                 setAuthError('');
+                setRegisterLegalAccepted(false);
               }}
               className={`py-2 rounded-xl text-xs font-black transition-colors cursor-pointer ${
                 authMode === 'register'
@@ -353,6 +407,49 @@ export const CustomerPortal: React.FC = () => {
               </div>
             </div>
 
+            {authMode === 'register' && (
+              <label className="flex items-start gap-2.5 p-3 rounded-xl bg-[#FAF9F7] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] text-[11px] leading-relaxed text-[#5A5854] dark:text-[#B5B0A8] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={registerLegalAccepted}
+                  onChange={(e) => {
+                    setRegisterLegalAccepted(e.target.checked);
+                    if (e.target.checked && authError === lt.registerLegal.requiredError) {
+                      setAuthError('');
+                    }
+                  }}
+                  className="mt-0.5 w-4 h-4 accent-[#FF6B00] shrink-0 cursor-pointer"
+                />
+                <span>
+                  {lt.registerLegal.prefix}{' '}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setPreviewTopic('terms');
+                    }}
+                    className="font-bold text-[#FF6B00] underline hover:opacity-80 cursor-pointer"
+                  >
+                    {lt.registerLegal.termsLabel}
+                  </button>{' '}
+                  {lt.registerLegal.andWord}{' '}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setPreviewTopic('privacy');
+                    }}
+                    className="font-bold text-[#FF6B00] underline hover:opacity-80 cursor-pointer"
+                  >
+                    {lt.registerLegal.privacyLabel}
+                  </button>
+                  .
+                </span>
+              </label>
+            )}
+
             <button
               type="submit"
               disabled={authBusy}
@@ -368,6 +465,12 @@ export const CustomerPortal: React.FC = () => {
             </button>
           </form>
         </div>
+
+        <LegalPreviewModal
+          topic={previewTopic}
+          onClose={() => setPreviewTopic(null)}
+          onNavigateFullPage={(view) => setCurrentView(view)}
+        />
 
         {/* Allow viewing local wishlist when browsing /wishlist before signing in */}
         {currentView === 'wishlist' && wishlistedProducts.length > 0 && (
@@ -511,6 +614,19 @@ export const CustomerPortal: React.FC = () => {
           <span>
             {authT.wishlistTab} ({wishlistedProducts.length})
           </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('privacy')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            activeTab === 'privacy'
+              ? 'bg-[#111113] dark:bg-[#FF6B00] text-white shadow-xs'
+              : 'text-[#5A5854] dark:text-[#B5B0A8] hover:bg-[#F3F1EC] dark:hover:bg-[#18181D]'
+          }`}
+        >
+          <ShieldCheck className="w-4 h-4" />
+          <span>{lt.customerPrivacyCenter.tabLabel}</span>
         </button>
       </div>
 
@@ -791,6 +907,250 @@ export const CustomerPortal: React.FC = () => {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Tab 4: Privacy & Data Rights (Law No. 2004-63) */}
+      {activeTab === 'privacy' && (
+        <div className="space-y-5">
+          <div className="bg-white dark:bg-[#141418] rounded-3xl border border-[#E6E2D8] dark:border-[#23232A] p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-1">
+              <h2 className="text-base font-black flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-[#FF6B00]" />
+                <span>{lt.customerPrivacyCenter.title}</span>
+              </h2>
+              <p className="text-xs text-[#5A5854] dark:text-[#B5B0A8] leading-relaxed">
+                {lt.customerPrivacyCenter.subtitle}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setCurrentView('privacy')}
+              className="px-3.5 py-2 rounded-xl bg-[#FAF9F7] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A] text-xs font-bold text-[#FF6B00] hover:border-[#FF6B00] flex items-center gap-1.5 shrink-0 cursor-pointer"
+            >
+              <span>{lt.customerPrivacyCenter.legalLinkText}</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Consent Proof */}
+            <div className="bg-white dark:bg-[#141418] rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] p-5 space-y-2.5">
+              <h3 className="text-sm font-black">{lt.customerPrivacyCenter.consentCardTitle}</h3>
+              {currentUser.legalConsent ? (
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-xs space-y-1">
+                  <p className="font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    <span>{lt.customerPrivacyCenter.consentRecordedLabel}</span>
+                  </p>
+                  <p className="text-[11px] text-[#5A5854] dark:text-[#B5B0A8]">
+                    {lt.customerPrivacyCenter.versionLabel}{' '}
+                    <span className="font-mono font-bold">{currentUser.legalConsent.termsVersion}</span>
+                  </p>
+                  <p className="text-[11px] text-[#5A5854] dark:text-[#B5B0A8]">
+                    {lt.customerPrivacyCenter.dateLabel}{' '}
+                    <span className="font-mono">
+                      {new Date(currentUser.legalConsent.acceptedAt).toLocaleString(
+                        language === 'ar' ? 'ar-TN' : language === 'fr' ? 'fr-TN' : 'en-GB'
+                      )}
+                    </span>
+                  </p>
+                </div>
+              ) : (
+                <p className="text-xs text-[#7A756D] dark:text-[#8E8980] p-3 rounded-xl bg-[#FAF9F7] dark:bg-[#18181D] border border-[#E6E2D8] dark:border-[#23232A]">
+                  {lt.customerPrivacyCenter.consentNoneLabel}
+                </p>
+              )}
+            </div>
+
+            {/* Data Export + Cookie Preferences */}
+            <div className="bg-white dark:bg-[#141418] rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] p-5 space-y-4">
+              <div className="space-y-2">
+                <h3 className="text-sm font-black">{lt.customerPrivacyCenter.exportCardTitle}</h3>
+                <p className="text-xs text-[#5A5854] dark:text-[#B5B0A8] leading-relaxed">
+                  {lt.customerPrivacyCenter.exportCardDesc}
+                </p>
+                {exportError && (
+                  <p className="text-xs font-bold text-red-600 dark:text-red-400">{exportError}</p>
+                )}
+                <button
+                  type="button"
+                  disabled={exportBusy}
+                  onClick={async () => {
+                    setExportBusy(true);
+                    setExportError('');
+                    const res = await exportCustomerPrivacyData();
+                    setExportBusy(false);
+                    if (!res.ok || !res.exportData) {
+                      setExportError(res.error || 'Export failed.');
+                      return;
+                    }
+                    const blob = new Blob([JSON.stringify(res.exportData, null, 2)], {
+                      type: 'application/json',
+                    });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `niapolor-my-data-${currentUser.id}.json`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-[#111113] dark:bg-[#FF6B00] hover:bg-[#FF6B00] text-white text-xs font-bold flex items-center gap-2 cursor-pointer disabled:opacity-60"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>
+                    {exportBusy ? lt.customerPrivacyCenter.exportingBtn : lt.customerPrivacyCenter.exportBtn}
+                  </span>
+                </button>
+              </div>
+
+              <div className="pt-3 border-t border-[#E6E2D8] dark:border-[#23232A] space-y-2">
+                <h4 className="text-xs font-black flex items-center gap-1.5">
+                  <Cookie className="w-3.5 h-3.5 text-[#FF6B00]" />
+                  <span>{lt.customerPrivacyCenter.cookieCardTitle}</span>
+                </h4>
+                <p className="text-[11px] text-[#5A5854] dark:text-[#B5B0A8]">
+                  {lt.customerPrivacyCenter.cookieCardDesc}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => window.dispatchEvent(new CustomEvent('niapolor_open_cookie_prefs'))}
+                  className="px-3.5 py-2 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] text-xs font-bold hover:border-[#FF6B00] cursor-pointer"
+                >
+                  {lt.customerPrivacyCenter.cookieBtn}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Direct Profile Rectification + Formal Statutory Request */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setProfileMsg(null);
+                if (!profileFullName.trim() || !profilePhone.trim()) return;
+                setProfileSaving(true);
+                const res = await updateCustomerProfile({
+                  fullName: profileFullName.trim(),
+                  phone: profilePhone.trim(),
+                });
+                setProfileSaving(false);
+                if (!res.ok) {
+                  setProfileMsg({ type: 'err', text: res.error || 'Update failed' });
+                } else {
+                  setProfileMsg({
+                    type: 'ok',
+                    text:
+                      language === 'ar'
+                        ? 'تم تحديث بياناتك الشخصية بنجاح.'
+                        : language === 'fr'
+                        ? 'Vos coordonnées ont été mises à jour.'
+                        : 'Profile details updated.',
+                  });
+                }
+              }}
+              className="bg-white dark:bg-[#141418] rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] p-5 space-y-3"
+            >
+              <h3 className="text-sm font-black">{lt.customerPrivacyCenter.requestTypes.rectification}</h3>
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  required
+                  value={profileFullName}
+                  onChange={(e) => setProfileFullName(e.target.value)}
+                  placeholder={authT.fullNameLabel}
+                  className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#18181D]"
+                />
+                <input
+                  type="tel"
+                  required
+                  dir="ltr"
+                  value={profilePhone}
+                  onChange={(e) => setProfilePhone(e.target.value)}
+                  placeholder="+216 21 000 000"
+                  className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#18181D] font-mono"
+                />
+              </div>
+              {profileMsg && (
+                <p
+                  className={`text-xs font-bold ${
+                    profileMsg.type === 'ok' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
+                  }`}
+                >
+                  {profileMsg.text}
+                </p>
+              )}
+              <button
+                type="submit"
+                disabled={profileSaving}
+                className="px-4 py-2 rounded-xl bg-[#111113] dark:bg-[#FF6B00] hover:bg-[#FF6B00] text-white text-xs font-bold cursor-pointer disabled:opacity-60"
+              >
+                {language === 'ar' ? 'تحديث بياناتي' : language === 'fr' ? 'Mettre à jour' : 'Save Changes'}
+              </button>
+            </form>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setPrivacyReqSuccess('');
+                setPrivacyReqError('');
+                setPrivacyReqBusy(true);
+                const res = await submitCustomerPrivacyRequest({
+                  requestType: privacyReqType,
+                  details: privacyReqDetails,
+                  language,
+                });
+                setPrivacyReqBusy(false);
+                if (!res.ok) {
+                  setPrivacyReqError(res.error || 'Request failed');
+                  return;
+                }
+                setPrivacyReqDetails('');
+                setPrivacyReqSuccess(lt.customerPrivacyCenter.requestSuccess);
+              }}
+              className="bg-white dark:bg-[#141418] rounded-2xl border border-[#E6E2D8] dark:border-[#23232A] p-5 space-y-3"
+            >
+              <h3 className="text-sm font-black">{lt.customerPrivacyCenter.requestCardTitle}</h3>
+              <p className="text-xs text-[#5A5854] dark:text-[#B5B0A8] leading-relaxed">
+                {lt.customerPrivacyCenter.requestCardDesc}
+              </p>
+              <select
+                value={privacyReqType}
+                onChange={(e) => setPrivacyReqType(e.target.value as 'rectification' | 'erasure' | 'opposition')}
+                className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#18181D]"
+              >
+                <option value="rectification">{lt.customerPrivacyCenter.requestTypes.rectification}</option>
+                <option value="erasure">{lt.customerPrivacyCenter.requestTypes.erasure}</option>
+                <option value="opposition">{lt.customerPrivacyCenter.requestTypes.opposition}</option>
+              </select>
+              <textarea
+                rows={2}
+                value={privacyReqDetails}
+                onChange={(e) => setPrivacyReqDetails(e.target.value)}
+                placeholder={lt.customerPrivacyCenter.detailsPlaceholder}
+                className="w-full text-xs py-2 px-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-white dark:bg-[#18181D] resize-none"
+              />
+              {privacyReqError && (
+                <p className="text-xs font-bold text-red-600 dark:text-red-400">{privacyReqError}</p>
+              )}
+              {privacyReqSuccess && (
+                <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>{privacyReqSuccess}</span>
+                </p>
+              )}
+              <button
+                type="submit"
+                disabled={privacyReqBusy}
+                className="px-4 py-2 rounded-xl bg-[#FF6B00] hover:bg-[#e05e00] text-white text-xs font-bold cursor-pointer disabled:opacity-60"
+              >
+                {privacyReqBusy ? lt.customerPrivacyCenter.submittingBtn : lt.customerPrivacyCenter.submitRequestBtn}
+              </button>
+            </form>
+          </div>
         </div>
       )}
     </div>

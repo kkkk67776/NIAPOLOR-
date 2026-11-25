@@ -55,10 +55,14 @@ export default function Header(_props: HeaderProps) {
     setIsSupportModalOpen,
     isOnline,
     currentUser,
+    activeFloatingPanel,
+    openFloatingPanel,
+    toggleFloatingPanel,
+    closeFloatingPanel,
   } = useStore();
 
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const isMenuOpen = activeFloatingPanel === 'menu';
+  const isNotificationsOpen = activeFloatingPanel === 'notifications';
   const [announcements, setAnnouncements] = useState<PublicStoreAnnouncement[]>([]);
   const [isPushEnabled, setIsPushEnabled] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
@@ -112,14 +116,14 @@ export default function Header(_props: HeaderProps) {
     if (isPushEnabled) {
       await unsubscribePublicPushClient();
       setIsPushEnabled(false);
-      setPushFeedback('تم إيقاف إشعارات المتجر على هذا الجهاز.');
+      setPushFeedback((t.header as any).pushDisabledFeedback);
     } else {
       const res = await subscribePublicPushClient();
       if (res.ok) {
         setIsPushEnabled(true);
-        setPushFeedback('تم تفعيل إشعارات المتجر على هاتفك بنجاح ✓');
+        setPushFeedback((t.header as any).pushEnabledFeedback);
       } else {
-        setPushFeedback(res.error || 'تعذر تفعيل الإشعارات.');
+        setPushFeedback(res.error || (t.header as any).pushErrorFeedback);
       }
     }
     setPushBusy(false);
@@ -130,7 +134,7 @@ export default function Header(_props: HeaderProps) {
       const outcome = await triggerPwaInstallPrompt();
       if (outcome === 'accepted') {
         setCanInstallPwa(false);
-        setIsMenuOpen(false);
+        closeFloatingPanel('menu');
       }
     } else if (isIosDevice()) {
       setShowIosInstallTip((prev) => !prev);
@@ -145,14 +149,12 @@ export default function Header(_props: HeaderProps) {
       setSelectedCategory('all');
     }
     setCurrentView(view);
-    setIsMenuOpen(false);
+    closeFloatingPanel();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const openUnifiedSearch = () => {
-    setIsNotificationsOpen(false);
-    setIsMenuOpen(false);
-    window.dispatchEvent(new CustomEvent('open_echox_search'));
+    openFloatingPanel('search_modal');
   };
 
   const cycleLanguage = () => {
@@ -177,10 +179,11 @@ export default function Header(_props: HeaderProps) {
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <button
             type="button"
-            onClick={() => setIsMenuOpen(true)}
-            className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl hover:bg-[#F3F1EC] dark:hover:bg-[#18181E] text-[#111113] dark:text-[#F7F6F3] transition-colors cursor-pointer shrink-0"
-            title={language === 'ar' ? 'القائمة' : 'Menu'}
-            aria-label={language === 'ar' ? 'القائمة' : 'Menu'}
+            onClick={() => toggleFloatingPanel('menu')}
+            aria-expanded={isMenuOpen}
+            className="p-2 rounded-xl hover:bg-[#F3F1EC] dark:hover:bg-[#18181E] text-[#111113] dark:text-[#F7F6F3] transition-colors cursor-pointer shrink-0"
+            title={(t.header as any).menuLabel || 'Menu'}
+            aria-label={(t.header as any).menuLabel || 'Menu'}
           >
             <Menu className="w-5 h-5" />
           </button>
@@ -236,16 +239,16 @@ export default function Header(_props: HeaderProps) {
         </nav>
 
         {/* End: Compact Luxury Utility Controls */}
-        <div className="flex items-center gap-0.5 sm:gap-1.5 relative shrink-0">
+        <div className="flex items-center gap-1 sm:gap-1.5 relative shrink-0">
           {/* Quick Search Trigger (synced with Search Modal + # vault access) */}
           <button
             type="button"
             onClick={openUnifiedSearch}
-            className="hidden sm:inline-flex items-center justify-center gap-2 min-h-[44px] px-3 rounded-xl border border-[#E6E2D8] dark:border-[#23232C] bg-[#FAF9F7] dark:bg-[#131317] hover:border-[#FF6B00]/60 text-xs text-[#6B665F] dark:text-[#9A958E] hover:text-[#111113] dark:hover:text-[#F7F6F3] transition-colors cursor-pointer"
+            className="hidden sm:inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-full border border-[#E6E2D8] dark:border-[#23232C] bg-[#FAF9F7] dark:bg-[#131317] hover:border-[#FF6B00]/60 text-xs text-[#6B665F] dark:text-[#9A958E] hover:text-[#111113] dark:hover:text-[#F7F6F3] transition-colors cursor-pointer"
             title={t.nav.search}
             aria-label={t.nav.search}
           >
-            <Search className="w-4 h-4 text-[#FF6B00] shrink-0" />
+            <Search className="w-3.5 h-3.5 text-[#FF6B00] shrink-0" />
             <span className="hidden xl:inline font-semibold text-[11px]">{t.nav.search}</span>
           </button>
 
@@ -253,7 +256,7 @@ export default function Header(_props: HeaderProps) {
           <button
             type="button"
             onClick={toggleDarkMode}
-            className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl hover:bg-[#F3F1EC] dark:hover:bg-[#18181E] text-[#111113] dark:text-[#C8A25A] transition-colors cursor-pointer"
+            className="p-2 rounded-xl hover:bg-[#F3F1EC] dark:hover:bg-[#18181E] text-[#111113] dark:text-[#C8A25A] transition-colors cursor-pointer"
             title={isDarkMode ? t.header.lightMode : t.header.darkMode}
             aria-label="Toggle Theme"
           >
@@ -264,8 +267,9 @@ export default function Header(_props: HeaderProps) {
           <button
             type="button"
             onClick={cycleLanguage}
-            className="min-w-[44px] min-h-[44px] px-2.5 flex items-center justify-center rounded-xl border border-[#E6E2D8] dark:border-[#23232C] bg-[#FAF9F7] dark:bg-[#131317] text-[11px] font-extrabold text-[#111113] dark:text-[#F7F6F3] hover:border-[#FF6B00] transition-colors cursor-pointer uppercase"
+            className="px-2.5 py-1 rounded-full border border-[#E6E2D8] dark:border-[#23232C] bg-[#FAF9F7] dark:bg-[#131317] text-[11px] font-extrabold text-[#111113] dark:text-[#F7F6F3] hover:border-[#FF6B00] transition-colors cursor-pointer uppercase leading-tight"
             title={t.header.language}
+            aria-label={t.header.language}
           >
             {language}
           </button>
@@ -273,20 +277,28 @@ export default function Header(_props: HeaderProps) {
           {/* Notifications Bell */}
           <button
             type="button"
-            onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
-            className="relative min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl hover:bg-[#F3F1EC] dark:hover:bg-[#18181E] text-[#111113] dark:text-[#F7F6F3] transition-colors cursor-pointer"
+            onClick={() => toggleFloatingPanel('notifications')}
+            aria-expanded={isNotificationsOpen}
+            aria-haspopup="dialog"
+            className={`relative p-2 rounded-xl transition-colors cursor-pointer ${
+              isNotificationsOpen
+                ? 'bg-[#FF6B00]/12 text-[#FF6B00]'
+                : 'hover:bg-[#F3F1EC] dark:hover:bg-[#18181E] text-[#111113] dark:text-[#F7F6F3]'
+            }`}
             title={t.header.notifications}
             aria-label={t.header.notifications}
           >
-            <Bell className="w-[18px] h-[18px]" />
-            <span className="absolute top-2.5 right-2.5 w-1.5 h-1.5 rounded-full bg-[#FF6B00]" />
+            <span className="relative inline-flex items-center justify-center">
+              <Bell className="w-[18px] h-[18px]" />
+              <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-[#FF6B00]" />
+            </span>
           </button>
 
           {/* Customer Account / Sign In */}
           <button
             type="button"
             onClick={() => handleNavClick('account')}
-            className={`relative min-w-[44px] min-h-[44px] hidden sm:inline-flex items-center justify-center rounded-xl hover:bg-[#F3F1EC] dark:hover:bg-[#18181E] transition-colors cursor-pointer ${
+            className={`relative p-2 hidden sm:inline-flex items-center justify-center rounded-xl hover:bg-[#F3F1EC] dark:hover:bg-[#18181E] transition-colors cursor-pointer ${
               currentView === 'account' || currentUser ? 'text-[#FF6B00]' : 'text-[#111113] dark:text-[#F7F6F3]'
             }`}
             title={currentUser ? currentUser.fullName : t.nav.account}
@@ -299,87 +311,118 @@ export default function Header(_props: HeaderProps) {
           <button
             type="button"
             onClick={() => handleNavClick('wishlist')}
-            className="relative min-w-[44px] min-h-[44px] hidden sm:inline-flex items-center justify-center rounded-xl hover:bg-[#F3F1EC] dark:hover:bg-[#18181E] text-[#111113] dark:text-[#F7F6F3] transition-colors cursor-pointer"
+            className="relative p-2 hidden sm:inline-flex items-center justify-center rounded-xl hover:bg-[#F3F1EC] dark:hover:bg-[#18181E] text-[#111113] dark:text-[#F7F6F3] transition-colors cursor-pointer"
             title={t.nav.wishlist}
             aria-label={t.nav.wishlist}
           >
-            <Heart className={`w-[18px] h-[18px] ${wishlistCount > 0 ? 'text-[#FF6B00]' : ''}`} />
-            {wishlistCount > 0 && (
-              <span className="absolute top-1 right-1 bg-[#FF6B00] text-white text-[9px] font-black min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center tabular-nums">
-                {wishlistCount}
-              </span>
-            )}
+            <span className="relative inline-flex items-center justify-center">
+              <Heart className={`w-[18px] h-[18px] ${wishlistCount > 0 ? 'text-[#FF6B00]' : ''}`} />
+              {wishlistCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 bg-[#FF6B00] text-white text-[9px] font-black min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center tabular-nums">
+                  {wishlistCount}
+                </span>
+              )}
+            </span>
           </button>
 
           {/* Shopping Bag with fiery-orange badge */}
           <button
             type="button"
             onClick={() => setIsCartOpen(true)}
-            className="relative min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl hover:bg-[#F3F1EC] dark:hover:bg-[#18181E] text-[#111113] dark:text-[#F7F6F3] transition-colors cursor-pointer"
+            className="relative p-2 flex items-center justify-center rounded-xl hover:bg-[#F3F1EC] dark:hover:bg-[#18181E] text-[#111113] dark:text-[#F7F6F3] transition-colors cursor-pointer"
             title={t.nav.cart}
             aria-label={t.nav.cart}
           >
-            <ShoppingBag className="w-[18px] h-[18px]" />
-            {totalCartItems > 0 && (
-              <span className="absolute top-1 right-1 bg-[#FF6B00] text-white text-[9px] font-black min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center tabular-nums">
-                {totalCartItems}
-              </span>
-            )}
+            <span className="relative inline-flex items-center justify-center">
+              <ShoppingBag className="w-[18px] h-[18px]" />
+              {totalCartItems > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 bg-[#FF6B00] text-white text-[9px] font-black min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center tabular-nums">
+                  {totalCartItems}
+                </span>
+              )}
+            </span>
           </button>
 
-          {/* Notifications Dropdown */}
-          {isNotificationsOpen && (
-            <div className="absolute top-full left-0 mt-2 w-80 max-w-[90vw] bg-white dark:bg-[#131317] rounded-2xl border border-[#E6E2D8] dark:border-[#23232C] shadow-2xl p-3.5 z-50 animate-scaleUp">
-              <div className="flex items-center justify-between pb-2.5 border-b border-[#E6E2D8] dark:border-[#23232C] mb-2.5">
-                <span className="text-xs font-black text-[#111113] dark:text-[#F7F6F3] flex items-center gap-1.5">
-                  <BellRing className="w-3.5 h-3.5 text-[#FF6B00]" />
-                  <span>{t.header?.notifications || 'إشعارات NIAPOLOR'}</span>
-                </span>
+        </div>
+      </div>
+    </header>
+
+    {/* Viewport-safe Store Notifications Popover (rendered outside sticky backdrop-blur header) */}
+    {isNotificationsOpen && (
+      <>
+        <div
+          className="fixed inset-0 z-[45] bg-black/25 dark:bg-black/50 backdrop-blur-[1px] animate-fadeIn"
+          onClick={() => closeFloatingPanel('notifications')}
+          aria-hidden="true"
+        />
+        <div
+          className="fixed inset-x-0 top-[60px] sm:top-[68px] z-50 pointer-events-none select-none"
+          role="dialog"
+          aria-modal="true"
+          aria-label={t.header.notifications}
+        >
+          <div className="max-w-7xl mx-auto px-3 sm:px-6 flex justify-center sm:justify-end">
+            <div
+              className="pointer-events-auto w-full max-w-[380px] sm:w-[356px] max-h-[calc(100dvh-148px)] sm:max-h-[480px] bg-white dark:bg-[#131317] rounded-2xl border border-[#E6E2D8] dark:border-[#25252F] shadow-[0_20px_54px_rgba(17,17,19,0.18)] dark:shadow-[0_24px_60px_rgba(0,0,0,0.72)] overflow-hidden flex flex-col animate-scaleUp text-[#111113] dark:text-[#F7F6F3]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Popover Header */}
+              <div className="px-4 py-2.5 bg-[#FAF9F7] dark:bg-[#17171D] border-b border-[#EFECE6] dark:border-[#22222B] flex items-center justify-between gap-2 shrink-0">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="w-8 h-8 rounded-xl bg-[#FF6B00]/12 border border-[#FF6B00]/20 text-[#FF6B00] flex items-center justify-center shrink-0">
+                    <BellRing className="w-4 h-4" />
+                  </span>
+                  <span className="text-xs font-extrabold text-[#111113] dark:text-[#F7F6F3] truncate">
+                    {t.header.notifications}
+                  </span>
+                </div>
                 <button
                   type="button"
-                  onClick={() => setIsNotificationsOpen(false)}
-                  aria-label="Close notifications"
-                  className="text-[#7A756D] hover:text-[#111113] dark:hover:text-white min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl cursor-pointer"
+                  onClick={() => closeFloatingPanel('notifications')}
+                  aria-label={t.header.close}
+                  className="text-[#7A756D] hover:text-[#111113] dark:text-[#9A958E] dark:hover:text-white min-w-[44px] min-h-[44px] -me-1.5 flex items-center justify-center rounded-xl hover:bg-[#EFECE6] dark:hover:bg-[#23232C] transition-colors cursor-pointer shrink-0"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
-              <div className="mb-2.5 p-2.5 rounded-xl bg-[#FF6B00]/10 border border-[#FF6B00]/25 space-y-1.5">
-                <div className="flex items-center gap-1.5 text-[11px] font-bold text-[#111113] dark:text-[#F7F6F3]">
+              {/* Mobile Push Alerts Control */}
+              <div className="px-4 py-3 bg-[#FAF9F7]/70 dark:bg-[#16161C] border-b border-[#EFECE6] dark:border-[#22222B] space-y-2 shrink-0">
+                <div className="flex items-center gap-2 text-[11px] font-bold text-[#3D3A35] dark:text-[#D5D1C8]">
                   <Smartphone className="w-3.5 h-3.5 text-[#FF6B00] shrink-0" />
-                  <span>{language === 'ar' ? 'تنبيهات العروض والمنتجات الجديدة' : language === 'fr' ? 'Alertes offres & nouveautés' : 'Deals & New Arrivals Alerts'}</span>
+                  <span className="truncate">{(t.header as any).pushAlertsTitle}</span>
                 </div>
                 <button
                   type="button"
                   disabled={pushBusy}
                   onClick={handleToggleStorePush}
-                  className={`w-full min-h-[44px] py-2 px-3 rounded-lg text-[11px] font-black flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-60 ${
+                  className={`w-full min-h-[44px] py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-60 ${
                     isPushEnabled
-                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                      : 'bg-[#FF6B00] hover:bg-[#E05E00] text-white'
+                      ? 'bg-emerald-500/12 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25'
+                      : 'bg-[#FF6B00] hover:bg-[#E05E00] text-white shadow-xs'
                   }`}
                 >
                   {isPushEnabled ? (
                     <>
-                      <BellOff className="w-3.5 h-3.5" />
-                      <span>إشعارات المتجر مفعّلة ✓ (إيقاف)</span>
+                      <BellOff className="w-4 h-4 shrink-0" />
+                      <span>{(t.header as any).pushEnabledBtn}</span>
                     </>
                   ) : (
                     <>
-                      <BellRing className="w-3.5 h-3.5" />
-                      <span>{pushBusy ? 'جاري التفعيل...' : 'تفعيل إشعارات الموقع على الهاتف'}</span>
+                      <BellRing className="w-4 h-4 shrink-0" />
+                      <span>{pushBusy ? (t.header as any).pushEnablingBtn : (t.header as any).pushEnableBtn}</span>
                     </>
                   )}
                 </button>
                 {pushFeedback && (
-                  <p className="text-[10px] font-bold text-[#5A5854] dark:text-[#A9A49B] leading-relaxed">
+                  <p className="text-[11px] font-semibold text-[#5A5854] dark:text-[#A9A49B] leading-relaxed">
                     {pushFeedback}
                   </p>
                 )}
               </div>
 
-              <div className="space-y-2 text-xs max-h-60 overflow-y-auto">
+              {/* Store Announcements & Highlights */}
+              <div className="p-3 space-y-2 text-xs overflow-y-auto flex-1">
                 {announcements.length > 0 &&
                   announcements.map((ann) => (
                     <button
@@ -393,48 +436,51 @@ export default function Header(_props: HeaderProps) {
                             if (pid) setSelectedProductId(pid);
                           } catch {}
                         }
-                        setIsNotificationsOpen(false);
+                        closeFloatingPanel('notifications');
                       }}
-                      className="w-full text-start p-2.5 rounded-xl bg-[#FAF9F7] dark:bg-[#18181E] border border-[#E6E2D8] dark:border-[#23232C] hover:border-[#FF6B00]/50 transition-colors cursor-pointer"
+                      className="w-full text-start p-3 rounded-xl bg-[#FAF9F7] dark:bg-[#18181F] border border-[#EAE5DC] dark:border-[#262630] hover:border-[#FF6B00]/50 transition-colors cursor-pointer"
                     >
-                      <div className="flex items-center justify-between gap-1 text-[#FF6B00] font-bold text-[11px] mb-0.5">
-                        <span className="flex items-center gap-1">
-                          <Sparkles className="w-3 h-3 shrink-0" />
-                          <span>{ann.tag || 'تحديث المتجر'}</span>
+                      <div className="flex items-center justify-between gap-2 text-[#FF6B00] font-bold text-[11px] mb-1">
+                        <span className="flex items-center gap-1.5 min-w-0">
+                          <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                          <span className="truncate">{ann.tag || (t.header as any).storeUpdateTag}</span>
                         </span>
-                        <span className="text-[9px] text-[#7A756D] font-mono">
-                          {new Date(ann.createdAt).toLocaleDateString('ar-TN')}
+                        <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980] font-mono shrink-0">
+                          {new Date(ann.createdAt).toLocaleDateString(
+                            language === 'fr' ? 'fr-TN' : language === 'en' ? 'en-GB' : 'ar-TN'
+                          )}
                         </span>
                       </div>
-                      <p className="text-[11px] font-bold text-[#111113] dark:text-[#F7F6F3] leading-snug">{ann.title}</p>
-                      <p className="text-[10px] text-[#5A5854] dark:text-[#A9A49B] mt-0.5 leading-snug">{ann.body}</p>
+                      <p className="text-xs font-bold text-[#111113] dark:text-[#F7F6F3] leading-snug">{ann.title}</p>
+                      <p className="text-[11px] text-[#5A5854] dark:text-[#A9A49B] mt-0.5 leading-relaxed">{ann.body}</p>
                     </button>
                   ))}
 
-                <div className="p-2.5 rounded-xl bg-[#FAF9F7] dark:bg-[#18181E] border border-[#E6E2D8] dark:border-[#23232C]">
-                  <div className="flex items-center gap-1.5 text-[#FF6B00] font-bold text-[11px] mb-0.5">
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>{t.storefront?.defaultBannerTag || 'عروض حصرية'}</span>
+                <div className="p-3 rounded-xl bg-[#FAF9F7] dark:bg-[#18181F] border border-[#EAE5DC] dark:border-[#262630]">
+                  <div className="flex items-center gap-1.5 text-[#FF6B00] font-bold text-[11px] mb-1">
+                    <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                    <span>{t.storefront?.defaultBannerTag}</span>
                   </div>
-                  <p className="text-[11px] text-[#5A5854] dark:text-[#A9A49B]">
-                    {t.header?.notificationPromo}
+                  <p className="text-[11px] text-[#5A5854] dark:text-[#A9A49B] leading-relaxed">
+                    {t.header.notificationPromo}
                   </p>
                 </div>
-                <div className="p-2.5 rounded-xl bg-[#FAF9F7] dark:bg-[#18181E] border border-[#E6E2D8] dark:border-[#23232C]">
-                  <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-bold text-[11px] mb-0.5">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
+
+                <div className="p-3 rounded-xl bg-[#FAF9F7] dark:bg-[#18181F] border border-[#EAE5DC] dark:border-[#262630]">
+                  <div className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400 font-bold text-[11px] mb-1">
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
                     <span>{t.storefront?.trustGenuine}</span>
                   </div>
-                  <p className="text-[11px] text-[#5A5854] dark:text-[#A9A49B]">
-                    {t.header?.notificationCod}
+                  <p className="text-[11px] text-[#5A5854] dark:text-[#A9A49B] leading-relaxed">
+                    {t.header.notificationCod}
                   </p>
                 </div>
               </div>
             </div>
-          )}
+          </div>
         </div>
-      </div>
-    </header>
+      </>
+    )}
 
     {/* Solid Opaque Side Drawer rendered outside sticky backdrop-blur header so fixed inset-0 covers full viewport */}
     {isMenuOpen && (
@@ -442,7 +488,7 @@ export default function Header(_props: HeaderProps) {
         className="fixed inset-0 z-50 flex justify-start bg-[rgba(0,0,0,0.55)] animate-fadeIn select-none"
         role="dialog"
         aria-modal="true"
-        aria-label={language === 'ar' ? 'القائمة الجانبية' : 'Navigation Menu'}
+        aria-label={(t.header as any).menuLabel || 'Menu'}
       >
         <div
           className="relative z-10 w-4/5 max-w-xs h-full overflow-y-auto bg-[#FFFFFF] dark:bg-[#121212] border-e border-[#E5E0D5] dark:border-[#2A2A32] p-5 flex flex-col justify-between text-[#111113] dark:text-[#F7F6F3] shadow-[0_20px_50px_rgba(0,0,0,0.28)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.75)] animate-slideIn"
@@ -470,8 +516,8 @@ export default function Header(_props: HeaderProps) {
               </div>
               <button
                 type="button"
-                onClick={() => setIsMenuOpen(false)}
-                aria-label={language === 'ar' ? 'إغلاق القائمة' : 'Close menu'}
+                onClick={() => closeFloatingPanel('menu')}
+                aria-label={(t.header as any).closeMenuLabel || 'Close menu'}
                 className="text-[#4B4741] hover:text-[#111113] dark:text-[#B5B0A8] dark:hover:text-white min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl bg-[#F5F3EE] dark:bg-[#1E1E22] border border-[#E5E0D5] dark:border-[#2E2E36] transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
@@ -581,12 +627,26 @@ export default function Header(_props: HeaderProps) {
                 >
                   {t.footer.termsOfService}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => handleNavClick('legal')}
+                  className="w-full text-start flex items-center min-h-[44px] px-3 py-2 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer"
+                >
+                  {(t.nav as any).legalNotice}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleNavClick('seller_terms')}
+                  className="w-full text-start flex items-center min-h-[44px] px-3 py-2 rounded-xl bg-transparent hover:bg-[#F5F3EE] dark:hover:bg-[#1E1E22] hover:text-[#FF6B00] transition-colors cursor-pointer"
+                >
+                  {(t.nav as any).sellerTerms}
+                </button>
               </div>
 
               <button
                 type="button"
                 onClick={() => {
-                  setIsMenuOpen(false);
+                  closeFloatingPanel('menu');
                   setIsSupportModalOpen(true);
                 }}
                 className="w-full text-start flex items-center gap-2 min-h-[44px] px-3 py-2.5 rounded-xl bg-[#FFF3EA] dark:bg-[#241912] border border-[#FF6B00]/25 text-[#FF6B00] hover:bg-[#FFE6D3] dark:hover:bg-[#2F1F15] transition-colors cursor-pointer mt-3"
@@ -609,13 +669,16 @@ export default function Header(_props: HeaderProps) {
                       height={24}
                       className="w-6 h-6 rounded-lg object-cover shrink-0 border border-[#FF6B00]/30"
                     />
-                    <span className="flex-1">تثبيت تطبيق NIAPOLOR</span>
+                    <span className="flex-1">{(t.header as any).pwaInstallLabel}</span>
                     <Download className="w-4 h-4 text-[#FF6B00] shrink-0" />
                   </button>
                   {showIosInstallTip && (
                     <div className="p-2.5 rounded-xl bg-[#FFFBEB] dark:bg-[#261D0B] border border-amber-200 dark:border-amber-800 text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
-                      على متصفح Safari: اضغط على أيقونة <strong>المشاركة (Share)</strong> بالأسفل ثم اختر{' '}
-                      <strong>إضافة إلى الشاشة الرئيسية (Add to Home Screen)</strong> لتثبيت التطبيق وتفعيل إشعارات الهاتف.
+                      {language === 'ar'
+                        ? 'على متصفح Safari: اضغط على أيقونة المشاركة (Share) بالأسفل ثم اختر إضافة إلى الشاشة الرئيسية (Add to Home Screen).'
+                        : language === 'fr'
+                        ? 'Sur Safari : appuyez sur Partager puis choisissez « Sur l’écran d’accueil ».'
+                        : 'In Safari: tap Share at the bottom, then choose Add to Home Screen.'}
                     </div>
                   )}
                 </div>
@@ -629,7 +692,7 @@ export default function Header(_props: HeaderProps) {
         </div>
         <div
           className="flex-1 h-full cursor-pointer"
-          onClick={() => setIsMenuOpen(false)}
+          onClick={() => closeFloatingPanel('menu')}
           aria-hidden="true"
         />
       </div>

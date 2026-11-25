@@ -97,7 +97,7 @@ export const PromiseView: React.FC = () => {
 
 // 2. Partner Companies Page (الشركات)
 export const CompaniesView: React.FC = () => {
-  const { companies, products, language, t, setSelectedProductId, isOnline } = useStore();
+  const { companies, products, language, t, setSelectedProductId, setCurrentView, isOnline } = useStore();
   const [selectedVendorName, setSelectedVendorName] = useState<string>('');
   const [vendorFinancials, setVendorFinancials] = useState<ScopedVendorFinancialsResponse | null>(null);
   const [loadingVendor, setLoadingVendor] = useState(false);
@@ -227,6 +227,36 @@ export const CompaniesView: React.FC = () => {
             </div>
           );
         })}
+      </div>
+
+      {/* Partner Legal Charter Notice */}
+      <div className="bg-white dark:bg-[#131317] rounded-3xl border border-[#E6E2D8] dark:border-[#23232C] p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <h3 className="text-sm font-black">
+            {language === 'ar'
+              ? 'الإطار التنظيمي للبائعين والشركاء في NIAPOLOR'
+              : language === 'fr'
+              ? 'Cadre réglementaire des vendeurs et partenaires'
+              : 'NIAPOLOR Seller & Partner Compliance Framework'}
+          </h3>
+          <p className="text-xs text-[#5A5854] dark:text-[#B5B0A8]">
+            {language === 'ar'
+              ? 'تخضع كافة المؤسسات الشريكة لشروط الأصالة، مطابقة السلع، والتسوية المالية المعتمدة في تونس.'
+              : language === 'fr'
+              ? 'Chaque partenaire s’engage à respecter les règles de conformité, d’authenticité et de règlement.'
+              : 'All listed partners adhere to Tunisian product conformity, authenticity, and sub-order settlement terms.'}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setCurrentView('seller_terms');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          className="px-4 py-2.5 rounded-xl bg-[#FF6B00] hover:bg-[#e05e00] text-white text-xs font-bold shrink-0 cursor-pointer transition-colors"
+        >
+          {(t.nav as any).sellerTerms}
+        </button>
       </div>
 
       {/* Scoped Vendor Financial Ledger Modal (Strictly Isolated per vendorId) */}

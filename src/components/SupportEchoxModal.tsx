@@ -29,6 +29,7 @@ export const SupportEchoxModal: React.FC = () => {
   const {
     isSupportModalOpen,
     setIsSupportModalOpen,
+    setCurrentView,
     paymentConfig,
     isOnline,
     language,
@@ -178,7 +179,7 @@ export const SupportEchoxModal: React.FC = () => {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn overflow-y-auto"
+      className="fixed inset-0 z-[55] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn overflow-y-auto"
       onClick={resetAndClose}
     >
       <div
@@ -518,7 +519,32 @@ export const SupportEchoxModal: React.FC = () => {
 
               <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-700 dark:text-amber-300 flex items-start gap-2">
                 <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>{t.supportEchox.independentNotice}</span>
+                <div className="space-y-1">
+                  <span className="block">{t.supportEchox.independentNotice}</span>
+                  <div className="flex flex-wrap gap-2 text-[10px] font-bold">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsSupportModalOpen(false);
+                        setCurrentView('terms');
+                      }}
+                      className="underline hover:text-[#FF6B00] cursor-pointer"
+                    >
+                      {t.footer.termsOfService}
+                    </button>
+                    <span>·</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsSupportModalOpen(false);
+                        setCurrentView('privacy');
+                      }}
+                      className="underline hover:text-[#FF6B00] cursor-pointer"
+                    >
+                      {t.footer.privacyPolicy}
+                    </button>
+                  </div>
+                </div>
               </div>
 
               {errorMsg && (

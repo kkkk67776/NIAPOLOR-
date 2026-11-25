@@ -2130,6 +2130,7 @@ export interface ServerCheckoutInput {
   origin?: string;
   clientRequestId?: string;
   actorIp?: string;
+  legalConsent?: Order['legalConsent'];
 }
 
 export async function processServerCheckout(input: ServerCheckoutInput): Promise<{
@@ -2537,6 +2538,7 @@ export async function processServerCheckout(input: ServerCheckoutInput): Promise
       stockDeducted: true,
       stockRestored: false,
       carrierName: input.carrierName || 'NIAPOLOR Delivery Tunisie',
+      ...(input.legalConsent ? { legalConsent: input.legalConsent } : {}),
       createdAt: now,
       updatedAt: now,
       notes: input.notes?.trim() || '',

@@ -48,6 +48,15 @@ export interface Product {
   specs?: { key: MultilingualText; value: MultilingualText }[];
 }
 
+export interface CompanyLegalMetadata {
+  legalForm?: string;
+  rneNumber?: string;
+  taxId?: string;
+  agreementAccepted?: boolean;
+  agreementVersion?: string;
+  agreementAcceptedAt?: string;
+}
+
 export interface Company {
   id: string;
   name: string;
@@ -58,6 +67,7 @@ export interface Company {
   governorate: string;
   description: MultilingualText;
   website?: string;
+  legalMetadata?: CompanyLegalMetadata;
 }
 
 export interface CustomerAddress {
@@ -220,6 +230,7 @@ export interface Order {
   updatedAt: string;
   notes?: string;
   piiMasked?: boolean;
+  legalConsent?: LegalConsentRecord;
   statusHistory: {
     status: OrderStatus;
     timestamp: string;
@@ -369,6 +380,67 @@ export interface FinancialActivityLog {
   timestamp: string;
 }
 
+export interface LegalConsentRecord {
+  termsAccepted: boolean;
+  privacyAccepted: boolean;
+  returnsAccepted?: boolean;
+  partnerAgreementAccepted?: boolean;
+  termsVersion: string;
+  privacyVersion: string;
+  acceptedAt: string;
+  language: Language;
+  source:
+    | 'customer_registration'
+    | 'checkout_order'
+    | 'seller_onboarding'
+    | 'cookie_preferences'
+    | 'privacy_request';
+}
+
+export interface LegalConsentAuditEntry {
+  id: string;
+  source:
+    | 'customer_registration'
+    | 'checkout_order'
+    | 'seller_onboarding'
+    | 'cookie_preferences'
+    | 'privacy_request';
+  actorType: 'customer' | 'guest' | 'admin' | 'visitor';
+  actorId?: string;
+  actorLabel?: string;
+  trackingNumber?: string;
+  termsAccepted: boolean;
+  privacyAccepted: boolean;
+  returnsAccepted?: boolean;
+  partnerAgreementAccepted?: boolean;
+  cookieConsentChoice?: 'essential_only' | 'all_preferences';
+  requestType?: 'rectification' | 'erasure' | 'opposition' | 'access_export';
+  requestDetails?: string;
+  requestStatus?: 'recorded' | 'reviewed' | 'completed';
+  termsVersion: string;
+  privacyVersion: string;
+  language: Language;
+  ipMasked?: string;
+  acceptedAt: string;
+}
+
+export interface LegalProfileSettings {
+  legalForm: string;
+  rneNumber: string;
+  taxId: string;
+  shareCapital: string;
+  publicationDirector: string;
+  dpoEmail: string;
+  dpoPhone: string;
+  hostingProvider: string;
+  hostingAddress: string;
+  policyVersion: string;
+  effectiveDate: string;
+  retractionDays: number;
+  mediationContact: string;
+  customLegalNotice?: MultilingualText;
+}
+
 export interface CustomerUser {
   id: string;
   fullName: string;
@@ -376,6 +448,7 @@ export interface CustomerUser {
   phone: string;
   addresses: CustomerAddress[];
   wishlist: string[]; // Product IDs
+  legalConsent?: LegalConsentRecord;
 }
 
 export interface ContactInquiry {
@@ -470,6 +543,7 @@ export interface SiteSettings {
   commercialRegisterId?: string;
   returnWindowDays?: number;
   deliveryTimeEstimate?: MultilingualText;
+  legalProfile?: LegalProfileSettings;
 }
 
 export interface CategoryItem {

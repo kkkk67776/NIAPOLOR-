@@ -2,6 +2,8 @@ import type {
   CouponRule,
   FinancialActivityLog,
   InventoryAuditEntry,
+  LegalConsentAuditEntry,
+  LegalConsentRecord,
   Order,
   OrderItem,
   OrderStatus,
@@ -373,6 +375,7 @@ export async function submitServerCheckout(
     notes?: string;
     transferProof?: Partial<TransferProof>;
     clientRequestId?: string;
+    legalConsent?: LegalConsentRecord;
   },
   options?: { signal?: AbortSignal }
 ): Promise<{
@@ -763,4 +766,111 @@ export async function syncAdminCatalogToPaymentEngine(
   } catch {
     // Silent sync attempt only when admin session active
   }
+}
+
+export async function exportCustomerPrivacyData(): Promise<{
+  ok: boolean;
+  exportData?: Record<string, unknown>;
+  error?: string;
+}> {
+  const res = await fetch('/api/customer/privacy/export', {
+    credentials: 'include',
+    cache: 'no-store',
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) {
+    return { ok: false, error: data.error || 'Failed to export customer privacy data.' };
+  }
+  return { ok: true, exportData: data.exportData };
+}
+
+export async function submitCustomerPrivacyRequest(input: {
+  requestType: 'rectification' | 'erasure' | 'opposition';
+  details?: string;
+  language?: 'ar' | 'fr' | 'en';
+}): Promise<{
+  ok: boolean;
+  entry?: LegalConsentAuditEntry;
+  error?: string;
+}> {
+  const res = await fetch('/api/customer/privacy/request', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'NIAPOLOR-Customer',
+      'Accept-Language': input.language || 'ar',
+    },
+    credentials: 'include',
+    body: JSON.stringify({
+      requestType: input.requestType,
+      details: input.details || '',
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) {
+    return { ok: false, error: data.error || 'Failed to submit privacy request.' };
+  }
+  return { ok: true, entry: data.entry };
+}
+
+export interface AdminLegalConsentsResponse {
+  entries: LegalConsentAuditEntry[];
+  summary: {
+    totalConsents: number;
+    checkoutConsents: number;
+    registrationConsents: number;
+    sellerConsents: number;
+    cookieChoices: number;
+    privacyRequests: number;
+    pendingPrivacyRequests: number;
+  };
+}
+
+export async function fetchAdminLegalConsents(
+  source?: string,
+  limit = 120
+): Promise<AdminLegalConsentsResponse> {
+  const qs = new URLSearchParams();
+  if (source && source !== 'all') qs.set('source', source);
+  qs.set('limit', String(limit));
+  const res = await fetch(`/api/admin/legal/consents?${qs.toString()}`, {
+    credentials: 'include',
+    cache: 'no-store',
+    headers: getAdminAuthHeaders(),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401 || res.status === 403) notifySessionExpired();
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || 'Failed to load legal consents audit log.');
+  }
+  return {
+    entries: Array.isArray(data.entries) ? data.entries : [],
+    summary: data.summary || {
+      totalConsents: 0,
+      checkoutConsents: 0,
+      registrationConsents: 0,
+      sellerConsents: 0,
+      cookieChoices: 0,
+      privacyRequests: 0,
+      pendingPrivacyRequests: 0,
+    },
+  };
+}
+
+export async function updateAdminPrivacyRequestStatus(
+  id: string,
+  status: 'reviewed' | 'completed'
+): Promise<{ ok: boolean; entry?: LegalConsentAuditEntry; error?: string }> {
+  const res = await fetch(`/api/admin/legal/requests/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: getAdminAuthHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ status }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401 || res.status === 403) notifySessionExpired();
+  if (!res.ok || !data.success) {
+    return { ok: false, error: data.error || 'Failed to update privacy request status.' };
+  }
+  return { ok: true, entry: data.entry };
 }

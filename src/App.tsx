@@ -17,6 +17,7 @@ import { applySeo } from './lib/seo';
 import { verifyGatewayReturnClient } from './lib/payments';
 import { checkServerSession, isOwnerUnlocked } from './lib/security';
 import { OfflineBanner } from './components/OfflineBanner';
+import { CookieConsentBanner } from './components/CookieConsentBanner';
 import { CheckCircle2, AlertCircle, X, WifiOff, RefreshCw } from 'lucide-react';
 
 const CheckoutModal = lazy(() => import('./components/CheckoutModal').then(m => ({ default: m.CheckoutModal })));
@@ -33,6 +34,8 @@ const TermsView = lazy(() => import('./components/LegalInfoPages').then(m => ({ 
 const ReturnsView = lazy(() => import('./components/LegalInfoPages').then(m => ({ default: m.ReturnsView })));
 const ShippingView = lazy(() => import('./components/LegalInfoPages').then(m => ({ default: m.ShippingView })));
 const FaqView = lazy(() => import('./components/LegalInfoPages').then(m => ({ default: m.FaqView })));
+const LegalNoticeView = lazy(() => import('./components/LegalInfoPages').then(m => ({ default: m.LegalNoticeView })));
+const SellerTermsView = lazy(() => import('./components/LegalInfoPages').then(m => ({ default: m.SellerTermsView })));
 
 const RouteFallback: React.FC = () => {
   return (
@@ -116,8 +119,9 @@ const AppContent: React.FC = () => {
     setSelectedCategory,
     setSearchQuery,
     updateOrderInState,
+    isCheckoutOpen,
+    setIsCheckoutOpen,
   } = useStore();
-  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [navState, setNavState] = useState<{ challengeId?: string; devTestHint?: string }>({});
   const [vaultOpenNonce, setVaultOpenNonce] = useState(0);
   const [paymentReturnBanner, setPaymentReturnBanner] = useState<{
@@ -294,6 +298,10 @@ const AppContent: React.FC = () => {
         setCurrentView('privacy');
       } else if (path === '/terms') {
         setCurrentView('terms');
+      } else if (path === '/legal') {
+        setCurrentView('legal');
+      } else if (path === '/seller-terms' || path === '/seller_terms') {
+        setCurrentView('seller_terms');
       } else {
         setCurrentView('store');
       }
@@ -302,7 +310,9 @@ const AppContent: React.FC = () => {
     syncRouteFromUrl();
     window.addEventListener('popstate', syncRouteFromUrl);
     return () => window.removeEventListener('popstate', syncRouteFromUrl);
-  }, [setCurrentView, setLanguage, setSelectedCategory, setSelectedProductId, setSearchQuery, updateOrderInState]);
+    // Run once on mount and on browser popstate navigation only
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const activeProduct = products.find((p) => p.id === selectedProductId) || null;
 
@@ -398,6 +408,8 @@ const AppContent: React.FC = () => {
                 {currentView === 'faq' && <FaqView />}
                 {currentView === 'privacy' && <PrivacyView />}
                 {currentView === 'terms' && <TermsView />}
+                {currentView === 'legal' && <LegalNoticeView />}
+                {currentView === 'seller_terms' && <SellerTermsView />}
               </>
             )}
           </Suspense>
@@ -427,6 +439,9 @@ const AppContent: React.FC = () => {
 
       {/* 6. Google Play Fixed Bottom Navigation Bar */}
       {!isOwnerRoute && <BottomNavigation onOpenVault={requestOpenVault} />}
+
+      {/* 7. Explicit Cookie & Storage Consent Banner */}
+      {!isOwnerRoute && <CookieConsentBanner />}
     </div>
   );
 };
