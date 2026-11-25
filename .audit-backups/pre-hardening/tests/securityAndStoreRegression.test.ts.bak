@@ -1,0 +1,1316 @@
+/**
+ * Isolated Integration & Security Regression Suite for ECHOX STORE + Secret Control Room
+ *
+ * Runs against an ephemeral in-process Express server bound to 127.0.0.1:0 with a
+ * temporary DATA_DIR and synthetic Argon2id credentials. Never touches production
+ * databases, files, or external payment gateways.
+ */
+
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import argon2 from 'argon2';
+import http from 'http';
+
+const TEST_PIN = '739146';
+const TEST_ACCESS_CODE = '#TestVault2026';
+
+const VALID_PNG_BASE64 =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+const FAKE_PNG_TEXT_BASE64 = 'data:image/png;base64,SGVsbG8td29ybGQ='; // "Hello-world"
+const SVG_DATA_URI = 'data:image/svg+xml;base64,PHN2ZyBvbmxvYWQ9ImFsZXJ0KDEpIj48L3N2Zz4=';
+
+function assertTrue(condition: boolean, message: string): void {
+  if (!condition) {
+    throw new Error(`Assertion failed: ${message}`);
+  }
+}
+
+function assertEq<T>(actual: T, expected: T, message: string): void {
+  if (actual !== expected) {
+    throw new Error(`Assertion failed: ${message} (expected=${String(expected)}, actual=${String(actual)})`);
+  }
+}
+
+async function run(): Promise<void> {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'echox-sec-test-'));
+  let server: http.Server | null = null;
+
+  try {
+    // Isolate DATA_DIR and disable cloud writes & automatic listening before importing server.ts
+    process.env.ECHOX_DISABLE_LISTEN = '1';
+    process.env.DATA_DIR = tmpDir;
+    process.env.FIREBASE_SERVICE_ACCOUNT_JSON = '';
+    process.env.UPSTASH_REDIS_REST_URL = '';
+    process.env.UPSTASH_REDIS_REST_TOKEN = '';
+    process.env.ECHOX_SECURITY_HMAC_SECRET = 'test_hmac_secret_echox_store_control_room_2026';
+
+    const pinHash = await argon2.hash(TEST_PIN, { type: argon2.argon2id });
+    const accessHash = await argon2.hash(TEST_ACCESS_CODE, { type: argon2.argon2id });
+    fs.writeFileSync(
+      path.join(tmpDir, 'central_security_config.json'),
+      JSON.stringify({
+        access_code_argon2: accessHash,
+        pin_argon2: pinHash,
+        updated_at: new Date().toISOString(),
+        history: [{ type: 'TEST_SEED', timestamp: new Date().toISOString() }],
+      }),
+      'utf-8'
+    );
+
+    const { app, ensureServerInitialized } = await import('../server');
+    await ensureServerInitialized();
+
+    server = await new Promise<http.Server>((resolve) => {
+      const s = app.listen(0, '127.0.0.1', () => resolve(s));
+    });
+    const addr = server.address();
+    if (!addr || typeof addr === 'string') {
+      throw new Error('Failed to bind ephemeral localhost port');
+    }
+    const baseUrl = `http://127.0.0.1:${addr.port}`;
+
+    // =========================================================
+    // 1. Storefront & Security Headers Check
+    // =========================================================
+    const storeRes = await fetch(`${baseUrl}/api/store/state`);
+    assertEq(storeRes.status, 200, 'GET /api/store/state returns 200');
+    const cspHeader = storeRes.headers.get('content-security-policy') || '';
+    const nosniffHeader = storeRes.headers.get('x-content-type-options') || '';
+    assertTrue(cspHeader.includes("default-src 'self'"), 'CSP header present');
+    assertTrue(cspHeader.includes('frame-ancestors'), 'CSP frame-ancestors policy present');
+    assertEq(nosniffHeader, 'nosniff', 'X-Content-Type-Options header is nosniff');
+    const storeData = (await storeRes.json()) as any;
+    assertTrue(storeData.success === true, 'store state success === true');
+    assertTrue(Array.isArray(storeData.products) && storeData.products.length > 0, 'storefront has products');
+
+    // Preview vs Production framing policy parity
+    const previewHdrRes = await fetch(`${baseUrl}/api/store/state`, {
+      headers: { 'x-forwarded-host': 'ais-dev-preview.europe-west2.run.app' },
+    });
+    assertEq(previewHdrRes.headers.get('x-frame-options'), null, 'Preview proxy omits X-Frame-Options for AI Studio iframe');
+    assertTrue(
+      (previewHdrRes.headers.get('content-security-policy') || '').includes('https://aistudio.google.com'),
+      'Preview proxy allows https://aistudio.google.com frame-ancestors'
+    );
+
+    const prodHdrRes = await fetch(`${baseUrl}/api/store/state`, {
+      headers: { 'x-forwarded-host': 'echox-store.onrender.com' },
+    });
+    assertEq(prodHdrRes.headers.get('x-frame-options'), 'SAMEORIGIN', 'Production host enforces X-Frame-Options: SAMEORIGIN');
+    assertTrue(
+      (prodHdrRes.headers.get('content-security-policy') || '').endsWith("frame-ancestors 'self'"),
+      'Production host enforces strict frame-ancestors self'
+    );
+
+    // Adversarial header spoofing tests (raw http.request so Host header is respected)
+    const rawHttpGet = (headers: Record<string, string>) =>
+      new Promise<{ status: number; headers: http.IncomingHttpHeaders }>((resolve, reject) => {
+        const req = http.request(
+          { hostname: '127.0.0.1', port: addr.port, path: '/api/store/state', method: 'GET', headers },
+          (res) => {
+            res.resume();
+            res.on('end', () => resolve({ status: res.statusCode || 0, headers: res.headers }));
+          }
+        );
+        req.on('error', reject);
+        req.end();
+      });
+
+    // 1a. Substring spoof domain evil.run.app.attacker.com must NOT get preview framing
+    const evilSubdomainRes = await rawHttpGet({ Host: 'evil.run.app.attacker.com' });
+    assertEq(evilSubdomainRes.headers['x-frame-options'], 'SAMEORIGIN', 'evil.run.app.attacker.com blocked from preview framing');
+    assertTrue(
+      String(evilSubdomainRes.headers['content-security-policy'] || '').endsWith("frame-ancestors 'self'"),
+      'evil.run.app.attacker.com restricted to frame-ancestors self'
+    );
+
+    // 1b. Production Host with forged X-Forwarded-Host + forged Referer + forged Origin MUST keep SAMEORIGIN
+    const prodSpoofRes = await rawHttpGet({
+      Host: 'echox-store.onrender.com',
+      'X-Forwarded-Host': 'ais-dev-fake.europe-west2.run.app',
+      Referer: 'https://evil.com/?aistudio.google.com',
+      Origin: 'https://evil.com/?aistudio.google.com',
+    });
+    assertEq(prodSpoofRes.headers['x-frame-options'], 'SAMEORIGIN', 'Forged X-Forwarded-Host/Referer/Origin cannot disable X-Frame-Options on production');
+    assertTrue(
+      String(prodSpoofRes.headers['content-security-policy'] || '').endsWith("frame-ancestors 'self'"),
+      'Forged preview headers cannot widen CSP frame-ancestors on production'
+    );
+
+    // 1c. Verify SameSite=Lax on production vs SameSite=None on verified HTTPS preview login cookie
+    const prodAcRes = await fetch(`${baseUrl}/api/security/verifyAccessCode`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.11' },
+      body: JSON.stringify({ code: TEST_ACCESS_CODE }),
+    });
+    const prodAcJson = (await prodAcRes.json()) as any;
+    const prodLoginRaw = await new Promise<{ headers: http.IncomingHttpHeaders }>((resolve, reject) => {
+      const body = JSON.stringify({ pin: TEST_PIN, gateToken: prodAcJson.gateToken });
+      const req = http.request(
+        {
+          hostname: '127.0.0.1',
+          port: addr.port,
+          path: '/api/security/verifyPin',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(body),
+            Host: 'echox-store.onrender.com',
+            'X-Forwarded-Proto': 'https',
+            'X-Forwarded-Host': 'ais-dev-fake.europe-west2.run.app',
+            'X-Forwarded-For': '198.51.100.11',
+          },
+        },
+        (res) => {
+          res.resume();
+          res.on('end', () => resolve({ headers: res.headers }));
+        }
+      );
+      req.on('error', reject);
+      req.end(body);
+    });
+    const prodSetCookies = (prodLoginRaw.headers['set-cookie'] || []).join(' | ');
+    assertTrue(prodSetCookies.includes('SameSite=Lax'), 'Production session cookie uses SameSite=Lax despite forged X-Forwarded-Host');
+    assertTrue(!prodSetCookies.includes('SameSite=None'), 'Production session cookie never downgrades to SameSite=None');
+
+    const payCfgRes = await fetch(`${baseUrl}/api/payments/config`);
+    assertEq(payCfgRes.status, 200, 'GET /api/payments/config returns 200');
+    const payCfgJson = (await payCfgRes.json()) as any;
+    const payCfgText = JSON.stringify(payCfgJson);
+    assertEq(payCfgJson?.methods?.bank_transfer?.enabled, false, 'Public bank_transfer is disabled by default');
+    assertEq(payCfgJson?.methods?.bank_transfer?.ibanOrRib, '', 'Public config never exposes bank RIB/IBAN');
+    assertEq(payCfgJson?.methods?.bank_transfer?.accountHolder, '', 'Public config never exposes accountHolder');
+    assertEq(payCfgJson?.methods?.bank_transfer?.bankName, '', 'Public config never exposes bankName');
+    assertEq(payCfgJson?.methods?.bank_transfer?.swiftCode, '', 'Public config never exposes swiftCode');
+    assertEq(payCfgJson?.methods?.online_payment?.apiKeyMasked, undefined, 'Public config omits apiKeyMasked');
+    assertEq(payCfgJson?.methods?.online_payment?.walletIdMasked, undefined, 'Public config omits walletIdMasked');
+    assertEq(payCfgJson?.methods?.online_payment?.webhookPath, undefined, 'Public config omits webhookPath');
+    assertTrue(!payCfgText.includes('TN59') && !payCfgText.includes('BIAT'), 'Public /api/payments/config contains zero RIB/BIAT strings');
+
+    // =========================================================
+    // 2. Legacy Session Bypass Blocked & Vendor Financials Protected
+    // =========================================================
+    const legacyRes = await fetch(`${baseUrl}/api/createOwnerSession`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'attacker@example.com' }),
+    });
+    assertEq(legacyRes.status, 403, 'POST /api/createOwnerSession must return 403');
+
+    const unauthVendorRes = await fetch(`${baseUrl}/api/vendor/comp_echox/financials`);
+    assertEq(unauthVendorRes.status, 401, 'GET /api/vendor/:id/financials requires admin session (401)');
+
+    // =========================================================
+    // 3. Access Code + PIN Auth, CSRF & Progressive Brute-Force Lockout
+    // =========================================================
+    const acRes = await fetch(`${baseUrl}/api/security/verifyAccessCode`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.10' },
+      body: JSON.stringify({ code: TEST_ACCESS_CODE }),
+    });
+    assertEq(acRes.status, 200, 'Valid access code accepted');
+    const acJson = (await acRes.json()) as any;
+
+    // Acquire gateToken for isolated brute-force IP and verify progressive lockout
+    const bfAcRes = await fetch(`${baseUrl}/api/security/verifyAccessCode`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.55' },
+      body: JSON.stringify({ code: TEST_ACCESS_CODE }),
+    });
+    const bfAcJson = (await bfAcRes.json()) as any;
+
+    for (let i = 0; i < 4; i++) {
+      const badPin = await fetch(`${baseUrl}/api/security/verifyPin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.55' },
+        body: JSON.stringify({ pin: '000000', gateToken: bfAcJson.gateToken }),
+      });
+      assertEq(badPin.status, 401, `Wrong PIN attempt #${i + 1} returns 401`);
+    }
+    const lockedPinRes = await fetch(`${baseUrl}/api/security/verifyPin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.55' },
+      body: JSON.stringify({ pin: '000000', gateToken: bfAcJson.gateToken }),
+    });
+    assertEq(lockedPinRes.status, 429, '5th wrong PIN triggers brute-force lockout (429)');
+
+    // Login cleanly from admin IP using its single-use gateToken
+    const loginRes = await fetch(`${baseUrl}/api/security/verifyPin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.10' },
+      body: JSON.stringify({ pin: TEST_PIN, gateToken: acJson.gateToken }),
+    });
+    assertEq(loginRes.status, 200, 'Valid PIN returns 200');
+    const loginJson = (await loginRes.json()) as any;
+    assertTrue(loginJson.success === true, 'PIN verification success === true');
+    assertTrue(typeof loginJson.sessionToken === 'string' && loginJson.sessionToken.startsWith('v2.'), 'v2 signed session token returned');
+    assertTrue(typeof loginJson.csrfToken === 'string' && loginJson.csrfToken.startsWith('csrf1.'), 'HMAC CSRF token returned');
+
+    const adminToken: string = loginJson.sessionToken;
+    const csrfToken: string = loginJson.csrfToken;
+
+    // CSRF rejection test (missing CSRF token on mutating admin route)
+    const noCsrfRes = await fetch(`${baseUrl}/api/admin/security/backup/dry-run`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+      },
+      body: JSON.stringify({ bundle: {} }),
+    });
+    assertEq(noCsrfRes.status, 403, 'Mutating admin route without X-CSRF-Token returns 403');
+
+    // Foreign Origin rejection test
+    const badOriginRes = await fetch(`${baseUrl}/api/admin/security/backup/dry-run`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+        'X-CSRF-Token': csrfToken,
+        Origin: 'https://evil-attacker.invalid',
+      },
+      body: JSON.stringify({ bundle: {} }),
+    });
+    assertEq(badOriginRes.status, 403, 'Mutating admin route with untrusted Origin returns 403');
+
+    // Scoped Vendor Financials allowed for authenticated admin
+    const authVendorRes = await fetch(`${baseUrl}/api/vendor/comp_echox/financials`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    assertEq(authVendorRes.status, 200, 'Authenticated owner can read vendor financials (200)');
+
+    // Authenticated admin still sees sealed internal RIB for merchant settlement
+    const adminPayCfgRes = await fetch(`${baseUrl}/api/admin/payments/config`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    assertEq(adminPayCfgRes.status, 200, 'Authenticated owner can read admin payment config (200)');
+    const adminPayCfgJson = (await adminPayCfgRes.json()) as any;
+    assertTrue(
+      String(adminPayCfgJson?.methods?.bank_transfer?.ibanOrRib || '').includes('TN59'),
+      'Admin payment config retains sealed internal RIB/IBAN'
+    );
+    assertTrue(
+      Boolean(adminPayCfgJson?.methods?.bank_transfer?.ibanFingerprint),
+      'Admin payment config includes IBAN integrity fingerprint'
+    );
+
+    // =========================================================
+    // 4. Checkout Price Integrity, Order Tracking PII Stripping & Magic Bytes + Quarantine
+    // =========================================================
+    const firstProd = storeData.products[0];
+
+    // First verify tampered unitPrice is explicitly rejected (400)
+    const tamperedCheckoutRes = await fetch(`${baseUrl}/api/payments/checkout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.20' },
+      body: JSON.stringify({
+        customerName: 'عميل اختبار',
+        customerPhone: '22123456',
+        customerEmail: 'secret-customer@example.com',
+        shippingAddress: { governorate: 'tunis', delegation: 'المدينة', street: 'شارع الحبيب بورقيبة', notes: 'ملاحظة خاصة بالباب' },
+        paymentMethod: 'cod',
+        items: [
+          {
+            productId: firstProd.id,
+            productName: firstProd.name?.ar || firstProd.id,
+            quantity: 1,
+            unitPrice: 0.01,
+          },
+        ],
+      }),
+    });
+    assertEq(tamperedCheckoutRes.status, 400, 'Tampered client unitPrice rejected by server price authority (400)');
+
+    // Legitimate checkout without tampered price
+    const checkoutRes = await fetch(`${baseUrl}/api/payments/checkout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.21' },
+      body: JSON.stringify({
+        customerName: 'عميل اختبار',
+        customerPhone: '22123456',
+        customerEmail: 'secret-customer@example.com',
+        shippingAddress: { governorate: 'tunis', delegation: 'المدينة', street: 'شارع الحبيب بورقيبة', notes: 'ملاحظة خاصة بالباب' },
+        notes: 'ملاحظة طلب داخلية',
+        paymentMethod: 'cod',
+        items: [
+          {
+            productId: firstProd.id,
+            productName: firstProd.name?.ar || firstProd.id,
+            quantity: 1,
+            unitPrice: firstProd.price,
+          },
+        ],
+      }),
+    });
+    assertEq(checkoutRes.status, 200, 'Server checkout accepts valid order and computes authoritative total');
+    const checkoutData = (await checkoutRes.json()) as any;
+    const trackingCode: string = checkoutData.order.trackingNumber;
+    const trackingToken: string = checkoutData.trackingToken;
+    assertTrue(typeof trackingToken === 'string' && trackingToken.length >= 16, 'Checkout issues guest trackingToken');
+    assertTrue(checkoutData.order.items[0].unitPrice === firstProd.price, 'Server enforced authoritative product unitPrice');
+
+    // Tracking code shorter than 6 chars rejected
+    const shortTrackRes = await fetch(`${baseUrl}/api/payments/track/ABC`);
+    assertEq(shortTrackRes.status, 400, 'Tracking code shorter than 6 chars returns 400');
+
+    // Anonymous & phone-only tracking rejected (401); guest trackingToken masks PII
+    const anonTrackRes = await fetch(`${baseUrl}/api/payments/track/${encodeURIComponent(trackingCode)}`);
+    assertEq(anonTrackRes.status, 401, 'Anonymous tracking without trackingToken rejected (401)');
+
+    const phoneTrackRes = await fetch(`${baseUrl}/api/payments/track/${encodeURIComponent(trackingCode)}?phone=22123456`);
+    assertEq(phoneTrackRes.status, 401, 'Phone-only tracking rejected (401)');
+
+    const publicTrackRes = await fetch(`${baseUrl}/api/payments/track`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trackingNumber: trackingCode, trackingToken }),
+    });
+    assertEq(publicTrackRes.status, 200, 'Token-verified order tracking returns 200');
+    const publicTrackJson = (await publicTrackRes.json()) as any;
+    assertEq(publicTrackJson.order.piiMasked, true, 'Guest token tracking marks piiMasked: true');
+    assertEq(publicTrackJson.order.customerEmail, '', 'Guest token tracking strips customerEmail');
+    assertEq(publicTrackJson.order.notes, '', 'Guest token tracking strips internal notes');
+    assertEq(publicTrackJson.order.shippingAddress.street, '***', 'Guest token tracking masks street address');
+    assertTrue(publicTrackJson.order.customerPhone !== '22123456' && publicTrackJson.order.customerPhone.includes('*'), 'Guest token tracking masks customerPhone');
+
+    // Authenticated owner sees full order on track endpoint
+    const adminTrackRes = await fetch(`${baseUrl}/api/payments/track/${encodeURIComponent(trackingCode)}`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    const adminTrackJson = (await adminTrackRes.json()) as any;
+    assertEq(adminTrackJson.order.customerEmail, 'secret-customer@example.com', 'Owner sees unmasked order email');
+
+    // Buyer validation errors: invalid Tunisian phone & mismatched delegation
+    const badPhoneCheckoutRes = await fetch(`${baseUrl}/api/payments/checkout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.23' },
+      body: JSON.stringify({
+        customerName: 'مشتري تونسي',
+        customerPhone: '12345',
+        shippingAddress: { governorate: 'tunis', delegation: 'المدينة', street: 'شارع الحرية' },
+        paymentMethod: 'cod',
+        items: [{ productId: firstProd.id, productName: firstProd.name?.ar || firstProd.id, quantity: 1, unitPrice: firstProd.price }],
+      }),
+    });
+    assertEq(badPhoneCheckoutRes.status, 400, 'Invalid Tunisian phone rejected (400)');
+
+    const badDelCheckoutRes = await fetch(`${baseUrl}/api/payments/checkout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.24' },
+      body: JSON.stringify({
+        customerName: 'مشتري تونسي',
+        customerPhone: '55123456',
+        shippingAddress: { governorate: 'sfax', delegation: 'غير_موجودة', street: 'طريق تنيور' },
+        paymentMethod: 'cod',
+        items: [{ productId: firstProd.id, productName: firstProd.name?.ar || firstProd.id, quantity: 1, unitPrice: firstProd.price }],
+      }),
+    });
+    assertEq(badDelCheckoutRes.status, 400, 'Unknown delegation for governorate rejected (400)');
+
+    // Valid buyer checkout WITHOUT email (optional email) across Sfax + Sfax Ville
+    const noEmailCheckoutRes = await fetch(`${baseUrl}/api/payments/checkout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.25' },
+      body: JSON.stringify({
+        customerName: 'أحمد الصفاقسي',
+        customerPhone: '+216 55 123 456',
+        shippingAddress: { governorate: 'sfax', delegation: 'صفاقس المدينة', street: 'طريق قرمدة كم 3' },
+        paymentMethod: 'cod',
+        items: [{ productId: firstProd.id, productName: firstProd.name?.ar || firstProd.id, quantity: 1, unitPrice: firstProd.price }],
+      }),
+    });
+    assertEq(noEmailCheckoutRes.status, 200, 'Checkout succeeds with optional empty email and normalized +216 phone');
+    const noEmailCheckoutData = (await noEmailCheckoutRes.json()) as any;
+    const noEmailTracking: string = noEmailCheckoutData.order.trackingNumber;
+    const noEmailTrackingToken: string = noEmailCheckoutData.trackingToken;
+
+    // Customer refund/cancel request flow: invalid token blocked (403), valid trackingToken succeeds (200)
+    const badRefundReqRes = await fetch(`${baseUrl}/api/payments/request-refund`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.25' },
+      body: JSON.stringify({
+        trackingNumber: noEmailTracking,
+        trackingToken: '00000000000000000000000000000000',
+        reason: 'محاولة إلغاء برمز مزور',
+      }),
+    });
+    assertEq(badRefundReqRes.status, 403, 'Customer refund/cancel request with invalid trackingToken blocked (403)');
+
+    const refundReqRes = await fetch(`${baseUrl}/api/payments/request-refund`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.25' },
+      body: JSON.stringify({
+        trackingNumber: noEmailTracking,
+        trackingToken: noEmailTrackingToken,
+        reason: 'تغيير العنوان قبل الشحن',
+      }),
+    });
+    assertEq(refundReqRes.status, 200, 'Customer refund/cancel request succeeds with valid trackingToken (200)');
+
+    // Token-ownership check blocks spoofed submission when token doesn't match (403)
+    const tokenMismatchRes = await fetch(`${baseUrl}/api/payments/bank-transfer/proof`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.30' },
+      body: JSON.stringify({
+        trackingNumber: trackingCode,
+        trackingToken: 'ffffffffffffffffffffffffffffffff',
+        referenceNumber: 'REF-MISMATCH',
+        senderName: 'Attacker',
+        receiptImageDataUrl: VALID_PNG_BASE64,
+      }),
+    });
+    assertEq(tokenMismatchRes.status, 403, 'Proof submission with mismatched trackingToken blocked (403)');
+
+    // Temporarily enable legacy bank_transfer endpoint solely to exercise receipt Quarantine Vault magic-byte checks, then immediately re-disable
+    const enableBankRes = await fetch(`${baseUrl}/api/admin/payments/config`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+        'X-CSRF-Token': csrfToken,
+      },
+      body: JSON.stringify({ bankTransfer: { enabled: true } }),
+    });
+    assertEq(enableBankRes.status, 200, 'Admin can temporarily enable bank_transfer for receipt validation test (200)');
+
+    // Create a bank_transfer order to test real receipt uploads
+    const bankCheckoutRes = await fetch(`${baseUrl}/api/payments/checkout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.22' },
+      body: JSON.stringify({
+        customerName: 'عميل تحويل',
+        customerPhone: '22123456',
+        customerEmail: 'bank-buyer@example.com',
+        shippingAddress: { governorate: 'tunis', delegation: 'المدينة', street: 'نهج المقاومة' },
+        paymentMethod: 'bank_transfer',
+        items: [
+          {
+            productId: firstProd.id,
+            productName: firstProd.name?.ar || firstProd.id,
+            quantity: 1,
+            unitPrice: firstProd.price,
+          },
+        ],
+      }),
+    });
+    assertEq(bankCheckoutRes.status, 200, 'Bank transfer order created (200)');
+    const bankCheckoutJson = (await bankCheckoutRes.json()) as any;
+    const bankOrderTracking: string = bankCheckoutJson.order.trackingNumber;
+    const bankOrderToken: string = bankCheckoutJson.trackingToken;
+
+    // Receipt upload: spoofed PNG ("Hello-world") & SVG polyglot rejected and quarantined
+    const spoofProofRes = await fetch(`${baseUrl}/api/payments/bank-transfer/proof`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.30' },
+      body: JSON.stringify({
+        trackingNumber: bankOrderTracking,
+        trackingToken: bankOrderToken,
+        referenceNumber: 'REF-SPOOF-1',
+        senderName: 'Spoofer',
+        receiptImageDataUrl: FAKE_PNG_TEXT_BASE64,
+      }),
+    });
+    assertEq(spoofProofRes.status, 400, 'Spoofed PNG Magic Bytes proof rejected (400)');
+
+    const svgProofRes = await fetch(`${baseUrl}/api/payments/bank-transfer/proof`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.31' },
+      body: JSON.stringify({
+        trackingNumber: bankOrderTracking,
+        trackingToken: bankOrderToken,
+        referenceNumber: 'REF-SVG-1',
+        senderName: 'XSS Tester',
+        receiptImageDataUrl: SVG_DATA_URI,
+      }),
+    });
+    assertEq(svgProofRes.status, 400, 'SVG proof rejected (400)');
+
+    // Valid PNG passes magic-byte validator and succeeds (200)
+    const validProofRes = await fetch(`${baseUrl}/api/payments/bank-transfer/proof`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.32' },
+      body: JSON.stringify({
+        trackingNumber: bankOrderTracking,
+        trackingToken: bankOrderToken,
+        referenceNumber: 'REF-VALID-1',
+        senderName: 'Valid Buyer',
+        receiptImageDataUrl: VALID_PNG_BASE64,
+      }),
+    });
+    assertEq(validProofRes.status, 200, 'Valid PNG passes Magic Bytes validator (200)');
+
+    // Re-disable public bank_transfer immediately and verify public config remains scrubbed
+    const disableBankRes = await fetch(`${baseUrl}/api/admin/payments/config`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+        'X-CSRF-Token': csrfToken,
+      },
+      body: JSON.stringify({ bankTransfer: { enabled: false } }),
+    });
+    assertEq(disableBankRes.status, 200, 'Admin re-disables bank_transfer (200)');
+
+    const publicAfterRes = await fetch(`${baseUrl}/api/payments/config`);
+    const publicAfterText = await publicAfterRes.text();
+    assertTrue(!publicAfterText.includes('TN59') && !publicAfterText.includes('BIAT'), 'Public config never leaks RIB after admin config updates');
+
+    // Check Quarantine Vault contains both blocked artifacts and supports inspect + purge
+    const quarRes = await fetch(`${baseUrl}/api/admin/security/quarantine`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    assertEq(quarRes.status, 200, 'Quarantine Vault endpoint returns 200');
+    const quarJson = (await quarRes.json()) as any;
+    assertTrue(quarJson.activeCount >= 2, `Quarantine Vault captured blocked spoof/SVG attempts (found ${quarJson.activeCount})`);
+
+    const firstQuarId = quarJson.items[0].id;
+    const purgeRes = await fetch(`${baseUrl}/api/admin/security/quarantine/${encodeURIComponent(firstQuarId)}/action`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+        'X-CSRF-Token': csrfToken,
+      },
+      body: JSON.stringify({ action: 'purge' }),
+    });
+    assertEq(purgeRes.status, 200, 'Quarantine purge succeeds');
+
+    // =========================================================
+    // 5. Secret Control Room: Integrity, Signed Backup, Dry-Run, Restore & Rollback
+    // =========================================================
+    const integrityRes = await fetch(`${baseUrl}/api/admin/security/integrity`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    assertEq(integrityRes.status, 200, 'Integrity audit returns 200');
+    const integrityJson = (await integrityRes.json()) as any;
+    assertTrue(integrityJson.report.auditChain.intact === true, 'Integrity reports intact audit chain');
+    assertTrue(
+      integrityJson.report.checks.some((c: any) => c.id === 'orders_financial_integrity' && c.passed === true),
+      'Integrity includes passing orders_financial_integrity check'
+    );
+    assertTrue(
+      integrityJson.report.checks.some((c: any) => c.id === 'self_protection_guards' && c.passed === true),
+      'Integrity includes passing self_protection_guards check'
+    );
+    assertTrue(
+      integrityJson.report.checks.some(
+        (c: any) => c.id === 'hmac_signing_key' && c.passed === true && c.severity === 'ok'
+      ),
+      'Integrity confirms >= 32-byte HMAC-SHA256 signing key from environment with ok severity'
+    );
+    assertTrue(
+      integrityJson.report.checks.some(
+        (c: any) => c.id === 'bank_seal' && c.passed === true && c.severity === 'ok'
+      ),
+      'Integrity confirms bank RIB HMAC seal is valid'
+    );
+    assertTrue(
+      !JSON.stringify(integrityJson).includes(process.env.ECHOX_SECURITY_HMAC_SECRET || ''),
+      'Integrity response never leaks HMAC secret value'
+    );
+
+    // Pre-write Self-Protection: reject and quarantine unsafe product media & negative prices
+    const unsafeProductPayload = storeData.products.map((p: any, idx: number) =>
+      idx === 0 ? { ...p, images: [SVG_DATA_URI] } : p
+    );
+    const unsafeStoreRes = await fetch(`${baseUrl}/api/admin/store/state`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+        'X-CSRF-Token': csrfToken,
+      },
+      body: JSON.stringify({ products: unsafeProductPayload }),
+    });
+    assertEq(unsafeStoreRes.status, 400, 'PUT /api/admin/store/state blocks SVG data URI media (400)');
+
+    const quarAfterStoreRes = await fetch(`${baseUrl}/api/admin/security/quarantine`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    const quarAfterStoreJson = (await quarAfterStoreRes.json()) as any;
+    assertTrue(
+      quarAfterStoreJson.items.some((i: any) => i.source === 'admin_store_product_media'),
+      'Blocked admin store media automatically quarantined'
+    );
+
+    const negPricePayload = storeData.products.map((p: any, idx: number) =>
+      idx === 0 ? { ...p, price: -5 } : p
+    );
+    const negPriceRes = await fetch(`${baseUrl}/api/admin/store/state`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+        'X-CSRF-Token': csrfToken,
+      },
+      body: JSON.stringify({ products: negPricePayload }),
+    });
+    assertEq(negPriceRes.status, 400, 'PUT /api/admin/store/state rejects negative product price (400)');
+
+    // Step-Up PIN required when creating signed snapshot
+    const noPinBackupRes = await fetch(`${baseUrl}/api/admin/security/backup/create`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+        'X-CSRF-Token': csrfToken,
+      },
+      body: JSON.stringify({ label: 'No PIN Snapshot' }),
+    });
+    assertEq(noPinBackupRes.status, 403, 'Create signed backup requires Step-Up PIN (403)');
+
+    // Create valid HMAC signed snapshot
+    const createSnapRes = await fetch(`${baseUrl}/api/admin/security/backup/create`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+        'X-CSRF-Token': csrfToken,
+      },
+      body: JSON.stringify({ confirmPin: TEST_PIN, label: 'Baseline Signed Snapshot' }),
+    });
+    assertEq(createSnapRes.status, 200, 'Signed backup created with Step-Up PIN');
+    const createSnapJson = (await createSnapRes.json()) as any;
+    const baselineSnapId: string = createSnapJson.snapshot.snapshotId;
+    const originalFirstTitle = storeData.products[0].name.ar;
+
+    // Mutate live storefront state (change first product's Arabic title)
+    const mutatedProducts = storeData.products.map((p: any, idx: number) =>
+      idx === 0 ? { ...p, name: { ...p.name, ar: 'منتج معدل للاختبار' } } : p
+    );
+    const mutateRes = await fetch(`${baseUrl}/api/admin/store/state`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+        'X-CSRF-Token': csrfToken,
+      },
+      body: JSON.stringify({ products: mutatedProducts }),
+    });
+    assertEq(mutateRes.status, 200, 'Live storefront state mutated');
+
+    // Run Dry-Run against baseline snapshot — should detect 1 updated product
+    const dryRunRes = await fetch(`${baseUrl}/api/admin/security/backup/dry-run`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+        'X-CSRF-Token': csrfToken,
+      },
+      body: JSON.stringify({ snapshotId: baselineSnapId }),
+    });
+    assertEq(dryRunRes.status, 200, 'Dry-run succeeds (200)');
+    const dryRunJson = (await dryRunRes.json()) as any;
+    assertTrue(dryRunJson.dryRun.validToApply === true, 'Dry-run validates snapshot');
+    assertTrue(dryRunJson.dryRun.signatureValid === true, 'Dry-run verifies HMAC signature');
+    const prodDiff = dryRunJson.dryRun.diff.products;
+    assertEq(prodDiff.updated, 1, 'Dry-run detects exact 1 updated product diff');
+
+    // Apply Recovery (restores original title + auto-creates pre_restore snapshot)
+    const restoreRes = await fetch(`${baseUrl}/api/admin/security/backup/restore`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+        'X-CSRF-Token': csrfToken,
+      },
+      body: JSON.stringify({ confirmPin: TEST_PIN, snapshotId: baselineSnapId }),
+    });
+    assertEq(restoreRes.status, 200, 'Safe restore succeeds');
+    const restoreJson = (await restoreRes.json()) as any;
+    assertTrue(typeof restoreJson.preRestoreSnapshotId === 'string', 'Restore created automatic pre_restore snapshot');
+
+    const afterRestoreStore = (await (await fetch(`${baseUrl}/api/store/state`)).json()) as any;
+    assertEq(afterRestoreStore.products[0].name.ar, originalFirstTitle, 'Store product restored to baseline');
+
+    // Rollback to pre_restore snapshot — returns mutated title
+    const rollbackRes = await fetch(`${baseUrl}/api/admin/security/backup/rollback`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+        'X-CSRF-Token': csrfToken,
+      },
+      body: JSON.stringify({ confirmPin: TEST_PIN, snapshotId: restoreJson.preRestoreSnapshotId }),
+    });
+    assertEq(rollbackRes.status, 200, 'Pre-restore rollback succeeds');
+    const afterRollbackStore = (await (await fetch(`${baseUrl}/api/store/state`)).json()) as any;
+    assertEq(afterRollbackStore.products[0].name.ar, 'منتج معدل للاختبار', 'Rollback reverted to pre-restore state');
+
+    // Tampered recovery bundle (wrong HMAC signature) must be rejected without modifying store state
+    const tamperedRestoreRes = await fetch(`${baseUrl}/api/admin/security/backup/restore`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+        'X-CSRF-Token': csrfToken,
+      },
+      body: JSON.stringify({
+        confirmPin: TEST_PIN,
+        allowUnsigned: false,
+        bundle: {
+          schemaVersion: '1.0',
+          snapshotId: 'tampered-1',
+          createdAt: new Date().toISOString(),
+          signatureHmac: '0'.repeat(64),
+          payloadSha256: '1'.repeat(64),
+          payload: {
+            products: [{ id: 'hack', name: { ar: 'مهكر', fr: 'Hack', en: 'Hack' }, price: 1, stock: 1, category: 'all', companyId: 'comp_echox', companyName: 'x', governorate: 'tunis', images: ['/a.png'], description: { ar: 'x', fr: 'x', en: 'x' } }],
+            companies: storeData.companies,
+            categories: storeData.categories,
+            banners: storeData.banners,
+            siteSettings: storeData.siteSettings,
+            orders: [],
+          },
+        },
+      }),
+    });
+    assertEq(tamperedRestoreRes.status, 400, 'Tampered HMAC recovery bundle rejected (400) when allowUnsigned is false');
+    const afterTamperStore = (await (await fetch(`${baseUrl}/api/store/state`)).json()) as any;
+    assertEq(afterTamperStore.products[0].name.ar, 'منتج معدل للاختبار', 'Failed restore leaves storefront data intact');
+
+    // Verify Hash-Chained Audit Log integrity after all events
+    const auditRes = await fetch(`${baseUrl}/api/admin/security/audit-logs?limit=150`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    assertEq(auditRes.status, 200, 'Audit logs endpoint returns 200');
+    const auditJson = (await auditRes.json()) as any;
+    assertTrue(auditJson.chainIntact === true, 'SHA-256 audit log chain remains intact across all operations');
+
+    // =========================================================
+    // 6. Session Revocation on Logout & Emergency Lockdown
+    // =========================================================
+    const logoutRes = await fetch(`${baseUrl}/api/owner/logout`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${adminToken}`,
+        'X-CSRF-Token': csrfToken,
+      },
+    });
+    assertEq(logoutRes.status, 200, 'POST /api/owner/logout with CSRF succeeds');
+
+    const reusedTokenRes = await fetch(`${baseUrl}/api/owner/me`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    assertEq(reusedTokenRes.status, 401, 'Revoked v2 session token rejected with 401 after logout');
+
+    // Re-authenticate with fresh gateToken, then verify Emergency Lockdown invalidates active token immediately
+    const reloginAcRes = await fetch(`${baseUrl}/api/security/verifyAccessCode`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.10' },
+      body: JSON.stringify({ code: TEST_ACCESS_CODE }),
+    });
+    const reloginAcJson = (await reloginAcRes.json()) as any;
+    const reloginRes = await fetch(`${baseUrl}/api/security/verifyPin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.10' },
+      body: JSON.stringify({ pin: TEST_PIN, gateToken: reloginAcJson.gateToken }),
+    });
+    assertEq(reloginRes.status, 200, 'Re-login succeeds (200)');
+    const reloginJson = (await reloginRes.json()) as any;
+
+    const lockdownRes = await fetch(`${baseUrl}/api/security/emergencyLockdown`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${reloginJson.sessionToken}`,
+        'X-CSRF-Token': reloginJson.csrfToken,
+      },
+    });
+    assertEq(lockdownRes.status, 200, 'Emergency lockdown succeeds (200)');
+
+    const postLockdownMeRes = await fetch(`${baseUrl}/api/owner/me`, {
+      headers: { Authorization: `Bearer ${reloginJson.sessionToken}` },
+    });
+    assertEq(postLockdownMeRes.status, 401, 'Emergency lockdown immediately invalidates active session tokens (401)');
+
+    // =========================================================
+    // 7. Banking-Grade Hardening Checks (XSS, Legacy Routes, Info Minimization, Catalog Integrity, Chat & Push HMAC)
+    // =========================================================
+    const xssGoogleRes = await fetch(`${baseUrl}/google%3Cscript%3Ealert(1)%3C/script%3E.html`);
+    assertEq(xssGoogleRes.status, 404, 'Malicious /google<script>.html verification route returns 404');
+
+    const lockHashRes = await fetch(`${baseUrl}/api/security/verifyLockHash`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hash: 'abc' }),
+    });
+    assertEq(lockHashRes.status, 403, 'Legacy /api/security/verifyLockHash is blocked (403)');
+
+    const logFailRes = await fetch(`${baseUrl}/api/security/logFailedAttempt`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'pin' }),
+    });
+    assertEq(logFailRes.status, 403, 'Legacy /api/security/logFailedAttempt is blocked (403)');
+
+    const pubHealthJson = (await (await fetch(`${baseUrl}/api/health`)).json()) as any;
+    assertEq(pubHealthJson.dataDir, undefined, 'Public /api/health hides internal dataDir path');
+    const pubSysJson = (await (await fetch(`${baseUrl}/api/security/systemStatus`)).json()) as any;
+    assertEq(pubSysJson.defaultCodeAvailable, undefined, 'Public /api/security/systemStatus hides defaultCodeAvailable');
+
+    const unknownProdRes = await fetch(`${baseUrl}/api/payments/checkout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.77' },
+      body: JSON.stringify({
+        customerName: 'عميل اختبار',
+        customerPhone: '22123456',
+        shippingAddress: { governorate: 'tunis', delegation: 'المدينة', street: 'شارع اختبار' },
+        paymentMethod: 'cod',
+        items: [{ productId: 'nonexistent_prod_999', productName: 'Fake', quantity: 1, unitPrice: 1 }],
+      }),
+    });
+    assertEq(unknownProdRes.status, 400, 'Checkout with unknown productId rejected with 400');
+
+    // Chat token enforcement
+    const chatPost = await fetch(`${baseUrl}/api/chat/session/sess_sec_test_1/message`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        language: 'ar',
+        customerText: 'مرحباً <script>alert(1)</script>',
+        autoReplyText: 'أهلاً بك',
+        actionView: 'invalid_action_xx',
+      }),
+    });
+    assertEq(chatPost.status, 200, 'Chat POST returns 200');
+    const chatPostJson = (await chatPost.json()) as any;
+    assertTrue(typeof chatPostJson.chatToken === 'string' && chatPostJson.chatToken.startsWith('chat1.'), 'Chat POST issues signed X-Chat-Token');
+    assertTrue(!JSON.stringify(chatPostJson.thread).includes('<script>'), 'Chat sanitized HTML/script tags');
+    assertEq(chatPostJson.thread.messages[1].actionView, undefined, 'Invalid actionView rejected');
+
+    const chatNoTok = await fetch(`${baseUrl}/api/chat/session/sess_sec_test_1`);
+    assertEq(chatNoTok.status, 403, 'Chat GET without X-Chat-Token returns 403');
+    const chatWithTok = await fetch(`${baseUrl}/api/chat/session/sess_sec_test_1`, {
+      headers: { 'X-Chat-Token': chatPostJson.chatToken },
+    });
+    assertEq(chatWithTok.status, 200, 'Chat GET with valid X-Chat-Token returns 200');
+
+    // Public push unsubscribe HMAC enforcement
+    const pubSubRes = await fetch(`${baseUrl}/api/notifications/public/subscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        subscription: {
+          endpoint: 'https://fcm.googleapis.com/fcm/send/test-sub-endpoint-12345',
+          keys: {
+            p256dh: 'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U',
+            auth: 'tBHItJI5svbpez7KI4CCXg',
+          },
+        },
+      }),
+    });
+    assertEq(pubSubRes.status, 200, 'Public push subscribe returns 200');
+    const pubSubJson = (await pubSubRes.json()) as any;
+    assertTrue(typeof pubSubJson.unsubscribeToken === 'string' && pubSubJson.unsubscribeToken.startsWith('unsub1.'), 'Public push subscribe returns HMAC unsubscribeToken');
+
+    const badUnsubRes = await fetch(`${baseUrl}/api/notifications/public/unsubscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        endpoint: 'https://fcm.googleapis.com/fcm/send/test-sub-endpoint-12345',
+        unsubscribeToken: 'unsub1.invalid',
+      }),
+    });
+    assertEq(badUnsubRes.status, 403, 'Public push unsubscribe without valid HMAC token returns 403');
+
+    const okUnsubRes = await fetch(`${baseUrl}/api/notifications/public/unsubscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        endpoint: 'https://fcm.googleapis.com/fcm/send/test-sub-endpoint-12345',
+        unsubscribeToken: pubSubJson.unsubscribeToken,
+      }),
+    });
+    assertEq(okUnsubRes.status, 200, 'Public push unsubscribe with valid HMAC token succeeds (200)');
+
+    // =========================================================
+    // 8. Commercial Credibility, SEO, Customer Auth Isolation & Anti-Fake Review Tests
+    // =========================================================
+    const robotsRes = await fetch(`${baseUrl}/robots.txt`);
+    assertEq(robotsRes.status, 200, 'GET /robots.txt returns 200');
+    const robotsTxt = await robotsRes.text();
+    for (const p of ['/about', '/privacy', '/terms', '/returns', '/shipping', '/faq']) {
+      assertTrue(robotsTxt.includes(p), `robots.txt exposes ${p}`);
+    }
+    assertTrue(robotsTxt.includes('Disallow: /owner'), 'robots.txt disallows /owner');
+
+    const sitemapRes = await fetch(`${baseUrl}/sitemap.xml`);
+    assertEq(sitemapRes.status, 200, 'GET /sitemap.xml returns 200');
+    const sitemapXml = await sitemapRes.text();
+    for (const p of ['/about', '/privacy', '/terms', '/returns', '/shipping', '/faq']) {
+      assertTrue(sitemapXml.includes(p), `sitemap.xml includes ${p}`);
+    }
+
+    const extractCookie = (res: Response, name: string): string => {
+      const getSetCookie = (res.headers as any).getSetCookie;
+      const list: string[] =
+        typeof getSetCookie === 'function'
+          ? getSetCookie.call(res.headers)
+          : [res.headers.get('set-cookie') || ''];
+      for (const raw of list) {
+        const match = raw.match(new RegExp(`${name}=([^;]+)`));
+        if (match) return `${name}=${match[1]}`;
+      }
+      return '';
+    };
+
+    // Customer Registration (requires X-Requested-With)
+    const noHdrCust = await fetch(`${baseUrl}/api/customer/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.88' },
+      body: JSON.stringify({
+        fullName: 'حريف اختبار',
+        email: 'custA@niapolor.tn',
+        phone: '+21622111222',
+        password: 'StrongPassword123!',
+      }),
+    });
+    assertEq(noHdrCust.status, 403, 'Customer register without X-Requested-With rejected (403)');
+
+    const regARes = await fetch(`${baseUrl}/api/customer/register`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'NIAPOLOR-Customer',
+        'x-forwarded-for': '198.51.100.88',
+      },
+      body: JSON.stringify({
+        fullName: 'أحمد التونسي',
+        email: 'custa@niapolor.tn',
+        phone: '+21622111222',
+        password: 'StrongPassword123!',
+      }),
+    });
+    assertEq(regARes.status, 201, 'Customer A registration returns 201');
+    const custACookie = extractCookie(regARes, '__customer_session');
+    assertTrue(custACookie.startsWith('__customer_session=cust1.'), 'HttpOnly __customer_session cookie set');
+
+    const dupRegRes = await fetch(`${baseUrl}/api/customer/register`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'NIAPOLOR-Customer',
+        'x-forwarded-for': '198.51.100.88',
+      },
+      body: JSON.stringify({
+        fullName: 'أحمد مكرر',
+        email: 'custa@niapolor.tn',
+        phone: '+21622111222',
+        password: 'StrongPassword123!',
+      }),
+    });
+    assertEq(dupRegRes.status, 409, 'Duplicate customer email returns 409');
+
+    const meARes = await fetch(`${baseUrl}/api/customer/me`, {
+      headers: { Cookie: custACookie },
+    });
+    assertEq(meARes.status, 200, 'GET /api/customer/me returns 200 with session cookie');
+    const meAJson = (await meARes.json()) as any;
+    assertEq(meAJson.customer.email, 'custa@niapolor.tn', 'Customer A profile loaded');
+    assertEq(meAJson.customer.passwordHash, undefined, 'Customer response never includes passwordHash');
+
+    // Customer cookie must NEVER access admin endpoints
+    const custAdminOrders = await fetch(`${baseUrl}/api/admin/orders`, {
+      headers: { Cookie: custACookie },
+    });
+    assertEq(custAdminOrders.status, 401, 'Customer session cookie blocked from /api/admin/orders (401)');
+
+    const custAdminState = await fetch(`${baseUrl}/api/admin/store/state`, {
+      headers: { Cookie: custACookie },
+    });
+    assertEq(custAdminState.status, 401, 'Customer session cookie blocked from /api/admin/store/state (401)');
+
+    // Validated Tunisian address saved under Customer A
+    const addAddrRes = await fetch(`${baseUrl}/api/customer/addresses`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'NIAPOLOR-Customer',
+        Cookie: custACookie,
+      },
+      body: JSON.stringify({
+        fullName: 'أحمد التونسي',
+        phone: '+21622111222',
+        governorate: 'tunis',
+        delegation: 'المدينة',
+        street: '14 نهج الجمهورية تونس',
+        isDefault: true,
+      }),
+    });
+    assertEq(addAddrRes.status, 200, 'Customer A Tunisian address saved');
+
+    // Register Customer B
+    const regBRes = await fetch(`${baseUrl}/api/customer/register`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'NIAPOLOR-Customer',
+        'x-forwarded-for': '198.51.100.89',
+      },
+      body: JSON.stringify({
+        fullName: 'سارة الساحلي',
+        email: 'custb@niapolor.tn',
+        phone: '+21699888777',
+        password: 'StrongPassword456!',
+      }),
+    });
+    assertEq(regBRes.status, 201, 'Customer B registration returns 201');
+    const custBCookie = extractCookie(regBRes, '__customer_session');
+
+    // Checkout as Customer A for first product in catalog
+    const part8FirstProd = storeData.products[0];
+    const orderARes = await fetch(`${baseUrl}/api/payments/checkout`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: custACookie,
+        'x-forwarded-for': '198.51.100.88',
+      },
+      body: JSON.stringify({
+        customerName: 'أحمد التونسي',
+        customerEmail: 'custa@niapolor.tn',
+        customerPhone: '+21622111222',
+        shippingAddress: {
+          governorate: 'tunis',
+          delegation: 'المدينة',
+          street: '14 نهج الجمهورية تونس',
+        },
+        paymentMethod: 'cod',
+        items: [
+          {
+            productId: part8FirstProd.id,
+            productName: part8FirstProd.name,
+            unitPrice: part8FirstProd.price,
+            quantity: 1,
+          },
+        ],
+      }),
+    });
+    assertEq(orderARes.status, 200, 'Customer A checkout succeeds (200)');
+    const orderAJson = (await orderARes.json()) as any;
+    const orderA = orderAJson.order;
+
+    // Customer B orders list must NOT see Customer A's order
+    const custBOrdersRes = await fetch(`${baseUrl}/api/customer/orders`, {
+      headers: { Cookie: custBCookie },
+    });
+    assertEq(custBOrdersRes.status, 200, 'Customer B GET /api/customer/orders returns 200');
+    const custBOrdersJson = (await custBOrdersRes.json()) as any;
+    assertTrue(
+      !custBOrdersJson.orders.some((o: any) => o.id === orderA.id),
+      'Customer B never sees Customer A orders'
+    );
+
+    const custAOrdersRes = await fetch(`${baseUrl}/api/customer/orders`, {
+      headers: { Cookie: custACookie },
+    });
+    const custAOrdersJson = (await custAOrdersRes.json()) as any;
+    assertTrue(
+      custAOrdersJson.orders.some((o: any) => o.id === orderA.id),
+      'Customer A sees their own server-bound order'
+    );
+
+    // Anti-fake review tests
+    // 1) Unverified visitor spoofing verifiedPurchase: true must get verifiedPurchase === false
+    const spoofRevRes = await fetch(`${baseUrl}/api/store/products/${encodeURIComponent(part8FirstProd.id)}/reviews`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.91' },
+      body: JSON.stringify({
+        authorName: 'زائر غير مشتري',
+        rating: 5,
+        comment: 'تقييم من زائر يحاول تزييف شارة الشراء المؤكد.',
+        verifiedPurchase: true,
+      }),
+    });
+    assertEq(spoofRevRes.status, 200, 'Unverified visitor review accepted (200)');
+    const spoofRevJson = (await spoofRevRes.json()) as any;
+    assertEq(spoofRevJson.review?.verifiedPurchase, false, 'Server overrides client spoofed verifiedPurchase=true to false');
+
+    // 2) XSS HTML comment rejected 400
+    const xssRevRes = await fetch(`${baseUrl}/api/store/products/${encodeURIComponent(part8FirstProd.id)}/reviews`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.91' },
+      body: JSON.stringify({
+        authorName: 'مهاجم',
+        rating: 5,
+        comment: '<script>alert(1)</script> ممتاز',
+      }),
+    });
+    assertEq(xssRevRes.status, 400, 'Review with HTML script tag rejected (400)');
+
+    // 3) Too short comment (< 4 chars) rejected 400
+    const shortRevRes = await fetch(`${baseUrl}/api/store/products/${encodeURIComponent(part8FirstProd.id)}/reviews`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.91' },
+      body: JSON.stringify({
+        authorName: 'قصير',
+        rating: 5,
+        comment: 'ok',
+      }),
+    });
+    assertEq(shortRevRes.status, 400, 'Short <4 char review rejected (400)');
+
+    // 4) Duplicate comment rejected 409
+    const dupRevRes = await fetch(`${baseUrl}/api/store/products/${encodeURIComponent(part8FirstProd.id)}/reviews`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.91' },
+      body: JSON.stringify({
+        authorName: 'مكرر',
+        rating: 5,
+        comment: 'تقييم من زائر يحاول تزييف شارة الشراء المؤكد.',
+      }),
+    });
+    assertEq(dupRevRes.status, 409, 'Duplicate review comment rejected (409)');
+
+    // 5) Fresh admin login confirms Order A delivered (Paid), then Customer A gets verifiedPurchase === true
+    const adm3AcRes = await fetch(`${baseUrl}/api/security/verifyAccessCode`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.12' },
+      body: JSON.stringify({ code: TEST_ACCESS_CODE }),
+    });
+    const adm3AcJson = (await adm3AcRes.json()) as any;
+    const adm3PinRes = await fetch(`${baseUrl}/api/security/verifyPin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.12' },
+      body: JSON.stringify({ pin: TEST_PIN, gateToken: adm3AcJson.gateToken }),
+    });
+    const adm3PinJson = (await adm3PinRes.json()) as any;
+    assertEq(adm3PinRes.status, 200, 'Admin re-login after lockdown for Part 8 passes (200)');
+
+    const deliverRes = await fetch(`${baseUrl}/api/admin/orders/${encodeURIComponent(orderA.id)}/status`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adm3PinJson.sessionToken}`,
+        'X-CSRF-Token': adm3PinJson.csrfToken,
+      },
+      body: JSON.stringify({ status: 'delivered', note: 'تم تسليم الطلب وتحصيل الدفع' }),
+    });
+    assertEq(deliverRes.status, 200, 'Admin marks COD order A delivered & settled (200)');
+
+    // Logged-in verified buyer review
+    const verifiedAuthRevRes = await fetch(
+      `${baseUrl}/api/store/products/${encodeURIComponent(part8FirstProd.id)}/reviews`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: custACookie,
+          'x-forwarded-for': '198.51.100.92',
+        },
+        body: JSON.stringify({
+          authorName: 'أحمد التونسي',
+          rating: 5,
+          comment: 'تجربة شراء ممتازة والمنتج مطابق تماماً للمواصفات.',
+        }),
+      }
+    );
+    assertEq(verifiedAuthRevRes.status, 200, 'Verified Customer A review accepted (200)');
+    const verifiedAuthRevJson = (await verifiedAuthRevRes.json()) as any;
+    assertEq(verifiedAuthRevJson.review?.verifiedPurchase, true, 'Server assigns verifiedPurchase=true for real delivered buyer');
+
+    // Guest buyer verifying via trackingNumber + orderPhone
+    const verifiedTrackRevRes = await fetch(
+      `${baseUrl}/api/store/products/${encodeURIComponent(part8FirstProd.id)}/reviews`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.93' },
+        body: JSON.stringify({
+          authorName: 'أحمد برقم التتبع',
+          rating: 5,
+          comment: 'تقييم مؤكد برقم التتبع ورقم الهاتف التونسي بنجاح.',
+          orderTrackingNumber: orderA.trackingNumber,
+          orderPhone: '+216 22 111 222',
+        }),
+      }
+    );
+    assertEq(verifiedTrackRevRes.status, 200, 'Tracking+phone verified review accepted (200)');
+    const verifiedTrackRevJson = (await verifiedTrackRevRes.json()) as any;
+    assertEq(verifiedTrackRevJson.review?.verifiedPurchase, true, 'Server verifies guest review with delivered tracking + phone');
+
+    // Customer logout clears session
+    const custLogoutRes = await fetch(`${baseUrl}/api/customer/logout`, {
+      method: 'POST',
+      headers: {
+        'X-Requested-With': 'NIAPOLOR-Customer',
+        Cookie: custACookie,
+      },
+    });
+    assertEq(custLogoutRes.status, 200, 'POST /api/customer/logout succeeds (200)');
+    const postLogoutMeRes = await fetch(`${baseUrl}/api/customer/me`, {
+      headers: { Cookie: custACookie },
+    });
+    assertEq(postLogoutMeRes.status, 401, 'Customer session rejected with 401 after logout');
+
+    // =========================================================
+    // 9. Fail-Closed HMAC-SHA256 Enforcement (Missing or < 32 Bytes Blocks Sensitive Operations)
+    // =========================================================
+    const savedTestHmac = process.env.ECHOX_SECURITY_HMAC_SECRET || '';
+    try {
+      for (const badSecret of ['', 'short_key_16b', 'a'.repeat(62)]) {
+        if (badSecret === '') {
+          delete process.env.ECHOX_SECURITY_HMAC_SECRET;
+        } else {
+          process.env.ECHOX_SECURITY_HMAC_SECRET = badSecret;
+        }
+
+        const degradedHealthRes = await fetch(`${baseUrl}/api/health`);
+        assertEq(degradedHealthRes.status, 200, 'Health endpoint remains reachable when HMAC missing/weak');
+        const degradedHealthJson = (await degradedHealthRes.json()) as any;
+        assertEq(degradedHealthJson.status, 'degraded', `Health reports degraded for invalid secret (${badSecret.length} chars)`);
+        assertEq(degradedHealthJson.securityReady, false, 'Health reports securityReady: false');
+
+        const degradedSysRes = await fetch(`${baseUrl}/api/security/systemStatus`);
+        assertEq(degradedSysRes.status, 200, 'systemStatus remains reachable when HMAC missing/weak');
+        const degradedSysJson = (await degradedSysRes.json()) as any;
+        assertEq(degradedSysJson.hmacConfigured, false, 'systemStatus reports hmacConfigured: false');
+        assertEq(degradedSysJson.securityReady, false, 'systemStatus reports securityReady: false');
+
+        const sensitiveProbes: Array<{ name: string; path: string; method: string; body?: unknown }> = [
+          { name: 'verifyAccessCode', path: '/api/security/verifyAccessCode', method: 'POST', body: { code: TEST_ACCESS_CODE } },
+          { name: 'customerLogin', path: '/api/customer/login', method: 'POST', body: { email: 'custa@niapolor.tn', password: 'Password#123' } },
+          { name: 'paymentsCheckout', path: '/api/payments/checkout', method: 'POST', body: { customerName: 'Test' } },
+          { name: 'adminOrders', path: '/api/admin/orders', method: 'GET' },
+          { name: 'chatSession', path: '/api/chat/session/sess_failclosed/message', method: 'POST', body: { customerText: 'hi' } },
+        ];
+
+        for (const probe of sensitiveProbes) {
+          const probeRes = await fetch(`${baseUrl}${probe.path}`, {
+            method: probe.method,
+            headers: probe.body ? { 'Content-Type': 'application/json' } : undefined,
+            body: probe.body ? JSON.stringify(probe.body) : undefined,
+          });
+          assertEq(probeRes.status, 503, `${probe.name} fails closed with HTTP 503 when HMAC secret invalid`);
+          const probeJson = (await probeRes.json()) as any;
+          assertEq(probeJson.code, 'HMAC_SECRET_NOT_CONFIGURED', `${probe.name} returns HMAC_SECRET_NOT_CONFIGURED`);
+          if (badSecret) {
+            assertTrue(!JSON.stringify(probeJson).includes(badSecret), `${probe.name} never leaks secret value`);
+          }
+        }
+      }
+    } finally {
+      process.env.ECHOX_SECURITY_HMAC_SECRET = savedTestHmac;
+    }
+
+    const restoredHealthJson = (await (await fetch(`${baseUrl}/api/health`)).json()) as any;
+    assertEq(restoredHealthJson.status, 'ok', 'Health returns ok after restoring >= 32-byte HMAC secret');
+    assertEq(restoredHealthJson.securityReady, true, 'Health returns securityReady: true after restore');
+
+    console.log('ALL ECHOX SECURITY & CONTROL ROOM REGRESSION TESTS PASSED');
+  } finally {
+    if (server) {
+      await new Promise<void>((resolve) => server!.close(() => resolve()));
+    }
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
+run()
+  .then(() => {
+    process.exit(0);
+  })
+  .catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });

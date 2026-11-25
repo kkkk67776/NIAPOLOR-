@@ -443,29 +443,34 @@ async function proxyToUpstreamBackend(
   }
 }
 
-export async function onRequest(context: EdgeContext): Promise<Response> {
-  const { request, env, waitUntil } = context;
-
-  if (request.method === 'OPTIONS') {
-    const reqOrigin = request.headers.get('origin') || '';
-    if (reqOrigin && !isAllowedEdgeOrigin(reqOrigin, env)) {
-      return jsonResponse({ success: false, error: 'Origin not allowed' }, 403);
-    }
-    const allowedOrigin = reqOrigin || 'https://echoxstore.pages.dev';
-    return new Response(null, {
-      status: 204,
-      headers: {
-        'Access-Control-Allow-Origin': allowedOrigin,
-        Vary: 'Origin',
-        'Access-Control-Allow-Credentials': 'true',
-        'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers':
-          'Content-Type, Authorization, X-CSRF-Token, X-File-Name, X-Chat-Token, X-Tracking-Phone, X-Requested-With',
-        'Cache-Control': 'no-store',
-        'X-Robots-Tag': 'noindex, nofollow',
-      },
-    });
+function applyEdgeCorsHeaders(
+  request: Request,
+  env: EdgeEnv,
+  response: Response
+): Response {
+  const reqOrigin = (request.headers.get('origin') || '').trim();
+  const headers = new Headers(response.headers);
+  if (reqOrigin && isAllowedEdgeOrigin(reqOrigin, env)) {
+    headers.set('Access-Control-Allow-Origin', reqOrigin);
+    headers.set('Access-Control-Allow-Credentials', 'true');
+  } else if (!reqOrigin) {
+    const fallbackOrigin = (env.VITE_SITE_URL || env.SITE_URL || 'https://niapolor.pages.dev')
+      .trim()
+      .replace(/\/$/, '');
+    headers.set('Access-Control-Allow-Origin', fallbackOrigin);
   }
+  headers.set('Vary', 'Origin');
+  headers.set('X-Robots-Tag', 'noindex, nofollow');
+  headers.set('Cache-Control', 'no-store');
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+async function handleEdgeApiRequest(context: EdgeContext): Promise<Response> {
+  const { request, env, waitUntil } = context;
 
   const incomingUrl = new URL(request.url);
   const pathname = incomingUrl.pathname;
@@ -580,4 +585,38 @@ export async function onRequest(context: EdgeContext): Promise<Response> {
   }
 
   return proxyToUpstreamBackend(request, env, incomingUrl, bodyBuffer);
+}
+
+export async function onRequest(context: EdgeContext): Promise<Response> {
+  const { request, env } = context;
+  const reqOrigin = (request.headers.get('origin') || '').trim();
+
+  if (request.method === 'OPTIONS') {
+    if (reqOrigin && !isAllowedEdgeOrigin(reqOrigin, env)) {
+      return jsonResponse({ success: false, error: 'Origin not allowed' }, 403);
+    }
+    const allowedOrigin =
+      reqOrigin ||
+      (env.VITE_SITE_URL || env.SITE_URL || 'https://niapolor.pages.dev').trim().replace(/\/$/, '');
+    return new Response(null, {
+      status: 204,
+      headers: {
+        'Access-Control-Allow-Origin': allowedOrigin,
+        Vary: 'Origin',
+        'Access-Control-Allow-Credentials': 'true',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers':
+          'Content-Type, Authorization, X-CSRF-Token, X-File-Name, X-Chat-Token, X-Tracking-Phone, X-Requested-With',
+        'Cache-Control': 'no-store',
+        'X-Robots-Tag': 'noindex, nofollow',
+      },
+    });
+  }
+
+  if (reqOrigin && !isAllowedEdgeOrigin(reqOrigin, env) && !['GET', 'HEAD'].includes(request.method.toUpperCase())) {
+    return jsonResponse({ success: false, error: 'Origin not allowed' }, 403);
+  }
+
+  const response = await handleEdgeApiRequest(context);
+  return applyEdgeCorsHeaders(request, env, response);
 }

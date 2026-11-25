@@ -3,7 +3,7 @@ import { getTranslation } from '../data/translations';
 
 const FALLBACK_SITE_URL =
   (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_SITE_URL) ||
-  'https://echoxstore.pages.dev';
+  'https://niapolor.pages.dev';
 
 export function getSiteOrigin(): string {
   if (

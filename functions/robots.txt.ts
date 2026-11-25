@@ -4,30 +4,14 @@ interface PagesFunctionContext {
 }
 
 export async function onRequestGet(context: PagesFunctionContext): Promise<Response> {
-  const url = new URL(context.request.url);
-  const origin = context.env.VITE_SITE_URL || url.origin;
+  const origin = (context.env.VITE_SITE_URL || context.env.SITE_URL || 'https://niapolor.pages.dev')
+    .trim()
+    .replace(/\/$/, '');
 
   const body = `User-agent: *
 Allow: /
-Allow: /about
-Allow: /privacy
-Allow: /terms
-Allow: /returns
-Allow: /shipping
-Allow: /faq
-Allow: /promise
-Allow: /companies
-Allow: /contact
-Allow: /assets/
-Disallow: /owner
-Disallow: /owner/
-Disallow: /owner_dashboard
-Disallow: /my_orders
-Disallow: /account
-Disallow: /wishlist
-Disallow: /api/
 
-Sitemap: ${origin.replace(/\/$/, '')}/sitemap.xml
+Sitemap: ${origin}/sitemap.xml
 `;
 
   return new Response(body, {

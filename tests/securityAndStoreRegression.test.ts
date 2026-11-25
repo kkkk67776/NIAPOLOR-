@@ -930,15 +930,18 @@ async function run(): Promise<void> {
     const robotsRes = await fetch(`${baseUrl}/robots.txt`);
     assertEq(robotsRes.status, 200, 'GET /robots.txt returns 200');
     const robotsTxt = await robotsRes.text();
-    for (const p of ['/about', '/privacy', '/terms', '/returns', '/shipping', '/faq']) {
-      assertTrue(robotsTxt.includes(p), `robots.txt exposes ${p}`);
-    }
-    assertTrue(robotsTxt.includes('Disallow: /owner'), 'robots.txt disallows /owner');
+    assertTrue(robotsTxt.includes('User-agent: *'), 'robots.txt specifies User-agent: *');
+    assertTrue(robotsTxt.includes('Allow: /'), 'robots.txt specifies Allow: /');
+    assertTrue(
+      robotsTxt.includes('Sitemap: https://niapolor.pages.dev/sitemap.xml'),
+      'robots.txt points to canonical https://niapolor.pages.dev/sitemap.xml'
+    );
+    assertTrue(!robotsTxt.includes('/owner'), 'robots.txt does not disclose /owner routes');
 
     const sitemapRes = await fetch(`${baseUrl}/sitemap.xml`);
     assertEq(sitemapRes.status, 200, 'GET /sitemap.xml returns 200');
     const sitemapXml = await sitemapRes.text();
-    for (const p of ['/about', '/privacy', '/terms', '/returns', '/shipping', '/faq']) {
+    for (const p of ['/about', '/legal', '/privacy', '/terms', '/returns', '/shipping', '/seller-terms', '/faq']) {
       assertTrue(sitemapXml.includes(p), `sitemap.xml includes ${p}`);
     }
 

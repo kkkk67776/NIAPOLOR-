@@ -228,7 +228,6 @@ function isTrustedRunAppHostname(hostname: string): boolean {
 function isTrustedStorefrontHostname(hostname: string): boolean {
   if (!hostname) return false;
   if (
-    hostname === 'echoxstore.pages.dev' ||
     hostname === 'echox-store.onrender.com' ||
     hostname === 'niapolor.pages.dev' ||
     hostname === 'niapolor.com' ||
@@ -237,8 +236,7 @@ function isTrustedStorefrontHostname(hostname: string): boolean {
     hostname === 'www.niapolor.tn' ||
     isLoopbackHostname(hostname) ||
     isTrustedRunAppHostname(hostname) ||
-    /^([a-z0-9-]+\.)*echox[a-z0-9-]*\.pages\.dev$/i.test(hostname) ||
-    /^([a-z0-9-]+\.)*niapolor[a-z0-9-]*\.pages\.dev$/i.test(hostname)
+    /^([a-z0-9-]+\.)*niapolor\.pages\.dev$/i.test(hostname)
   ) {
     return true;
   }
@@ -407,7 +405,7 @@ function getRequestOrigin(req: Request): string {
   if (candidate && isLoopbackHostname(candidateHostname)) {
     return `${proto}://${candidate}`.replace(/\/$/, '');
   }
-  return 'https://echox-store.onrender.com';
+  return 'https://niapolor.pages.dev';
 }
 
 function escapeXml(str: string): string {
@@ -426,17 +424,21 @@ function getDynamicCatalogProductIds(): string[] {
 // Security, CORS (Cloudflare Pages <-> Render) & SEO indexing headers middleware
 function isAllowedOrigin(origin: string): boolean {
   if (!origin) return false;
+  const configuredOrigins = [
+    process.env.SITE_URL,
+    process.env.VITE_SITE_URL,
+    process.env.CORS_ORIGIN,
+  ]
+    .map((v) => (v || '').trim().replace(/\/$/, ''))
+    .filter(Boolean);
+
   if (
-    origin === 'https://echoxstore.pages.dev' ||
-    origin === 'https://echox-store.onrender.com' ||
     origin === 'https://niapolor.pages.dev' ||
     origin === 'https://niapolor.com' ||
     origin === 'https://www.niapolor.com' ||
     origin === 'https://niapolor.tn' ||
     origin === 'https://www.niapolor.tn' ||
-    origin === process.env.SITE_URL ||
-    origin === process.env.VITE_SITE_URL ||
-    origin === process.env.CORS_ORIGIN
+    configuredOrigins.includes(origin)
   ) {
     return true;
   }
@@ -444,12 +446,14 @@ function isAllowedOrigin(origin: string): boolean {
     const u = new URL(origin);
     if (
       u.protocol === 'https:' &&
-      (/^([a-z0-9-]+\.)*echox[a-z0-9-]*\.pages\.dev$/i.test(u.hostname) ||
-        /^([a-z0-9-]+\.)*niapolor[a-z0-9-]*\.pages\.dev$/i.test(u.hostname))
+      /^([a-z0-9-]+\.)*niapolor\.pages\.dev$/i.test(u.hostname)
     ) {
       return true;
     }
-    if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') {
+    if (
+      process.env.NODE_ENV !== 'production' &&
+      (u.hostname === 'localhost' || u.hostname === '127.0.0.1')
+    ) {
       return true;
     }
   } catch {
@@ -478,8 +482,8 @@ app.use((req: Request, res: Response, next) => {
 
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
   const p = req.path.toLowerCase();
   res.setHeader(
     'Cross-Origin-Resource-Policy',
@@ -500,14 +504,20 @@ app.use((req: Request, res: Response, next) => {
     [
       "default-src 'self'",
       isProdRuntime
-        ? "script-src 'self' 'unsafe-inline' https://apis.google.com https://www.gstatic.com https://www.googletagmanager.com"
-        : "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://www.gstatic.com https://www.googletagmanager.com",
+        ? "script-src 'self' https://apis.google.com https://www.gstatic.com https://www.googletagmanager.com https://www.google.com"
+        : "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://www.gstatic.com https://www.googletagmanager.com https://www.google.com",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com data:",
-      "img-src 'self' https: data:",
-      "connect-src 'self' https: wss:",
+      "img-src 'self' data: blob: https:",
+      isProdRuntime
+        ? "connect-src 'self' https://www.googletagmanager.com https://www.google-analytics.com https://analytics.google.com https://region1.google-analytics.com https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firebaseinstallations.googleapis.com https://www.googleapis.com https://apis.google.com https://www.google.com https://www.gstatic.com https://api.emailjs.com https://api.konnect.network https://api.sandbox.konnect.network https://developers.flouci.com https://niapolor.pages.dev https://echox-store.onrender.com"
+        : "connect-src 'self' https: ws: wss:",
+      "frame-src https://www.googletagmanager.com https://www.google.com https://www.gstatic.com https://gen-lang-client-0499444627.firebaseapp.com https://konnect.network https://developers.flouci.com",
+      "worker-src 'self'",
+      "manifest-src 'self'",
       "object-src 'none'",
       "base-uri 'self'",
+      "form-action 'self' https://konnect.network https://api.konnect.network https://developers.flouci.com",
       isPreviewOrLocalHost
         ? "frame-ancestors 'self' https://aistudio.google.com https://*.google.com https://*.googleusercontent.com https://*.usercontent.goog"
         : "frame-ancestors 'self'",
@@ -619,39 +629,24 @@ app.get('/google:id.html', (req: Request, res: Response) => {
   return res.send(`google-site-verification: google${id}.html`);
 });
 
-// Search Engine Optimization: dynamic domain-aware robots.txt and sitemap.xml
-app.get('/robots.txt', (req: Request, res: Response) => {
-  const origin = getRequestOrigin(req);
+// Search Engine Optimization: canonical domain-aware robots.txt and sitemap.xml
+app.get('/robots.txt', (_req: Request, res: Response) => {
+  const origin = (process.env.VITE_SITE_URL || process.env.SITE_URL || 'https://niapolor.pages.dev')
+    .trim()
+    .replace(/\/$/, '');
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
   res.setHeader('Cache-Control', 'public, max-age=3600');
   res.send(`User-agent: *
 Allow: /
-Allow: /about
-Allow: /legal
-Allow: /privacy
-Allow: /terms
-Allow: /returns
-Allow: /shipping
-Allow: /seller-terms
-Allow: /faq
-Allow: /promise
-Allow: /companies
-Allow: /contact
-Allow: /assets/
-Disallow: /owner
-Disallow: /owner/
-Disallow: /owner_dashboard
-Disallow: /my_orders
-Disallow: /account
-Disallow: /wishlist
-Disallow: /api/
 
 Sitemap: ${origin}/sitemap.xml
 `);
 });
 
-app.get('/sitemap.xml', (req: Request, res: Response) => {
-  const origin = getRequestOrigin(req);
+app.get('/sitemap.xml', (_req: Request, res: Response) => {
+  const origin = (process.env.VITE_SITE_URL || process.env.SITE_URL || 'https://niapolor.pages.dev')
+    .trim()
+    .replace(/\/$/, '');
   const lastmod = new Date().toISOString().slice(0, 10);
   const productIds = getDynamicCatalogProductIds();
 

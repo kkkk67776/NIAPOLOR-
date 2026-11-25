@@ -881,8 +881,6 @@ const CLOUD_REVOKED_SESSIONS_KEY = 'echox:security_revoked_sessions';
 export function isAllowedEdgeOrigin(origin: string, env: EdgeEnv): boolean {
   if (!origin) return false;
   if (
-    origin === 'https://echoxstore.pages.dev' ||
-    origin === 'https://echox-store.onrender.com' ||
     origin === 'https://niapolor.pages.dev' ||
     origin === 'https://niapolor.com' ||
     origin === 'https://www.niapolor.com' ||
@@ -898,12 +896,14 @@ export function isAllowedEdgeOrigin(origin: string, env: EdgeEnv): boolean {
     const u = new URL(origin);
     if (
       u.protocol === 'https:' &&
-      (/^([a-z0-9-]+\.)*echox[a-z0-9-]*\.pages\.dev$/i.test(u.hostname) ||
-        /^([a-z0-9-]+\.)*niapolor[a-z0-9-]*\.pages\.dev$/i.test(u.hostname))
+      /^([a-z0-9-]+\.)*niapolor\.pages\.dev$/i.test(u.hostname)
     ) {
       return true;
     }
-    if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') {
+    if (
+      env.ENVIRONMENT !== 'production' &&
+      (u.hostname === 'localhost' || u.hostname === '127.0.0.1')
+    ) {
       return true;
     }
   } catch {
@@ -1138,7 +1138,7 @@ export function getEdgeRequestOrigin(request: Request, env: EdgeEnv): string {
   try {
     return new URL(request.url).origin;
   } catch {
-    return 'https://echoxstore.pages.dev';
+    return 'https://niapolor.pages.dev';
   }
 }
 
