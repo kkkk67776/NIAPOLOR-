@@ -2532,10 +2532,10 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                   </div>
                   <p className="text-[11px] text-[#B5B0A8] leading-relaxed italic bg-black/20 p-2 rounded-xl border border-white/5">
                     "{previewFooterLang === 'ar' 
-                      ? (footerDescAr || 'NIAPOLOR هو متجر إلكتروني متعدد الفئات، يجمع عالمًا متنوعًا من المنتجات والاختيارات في مكان واحد...') 
+                      ? (footerDescAr || 'NIAPOLOR وجهتك الرقمية الشاملة لتسوق أحدث التقنيات، المعدات المتطورة، والمستلزمات العصرية...') 
                       : previewFooterLang === 'fr' 
-                      ? (footerDescFr || footerDescAr || "NIAPOLOR est votre destination de shopping en ligne, réunissant une grande variété de produits...") 
-                      : (footerDescEn || footerDescAr || 'NIAPOLOR is your online shopping destination, bringing together a wide variety of products...')}"
+                      ? (footerDescFr || footerDescAr || 'NIAPOLOR est votre destination e-commerce tout-en-un réunissant technologies de pointe...') 
+                      : (footerDescEn || footerDescAr || 'NIAPOLOR is your all-in-one e-commerce destination bringing together cutting-edge technology...')}"
                   </p>
                 </div>
 
@@ -2635,7 +2635,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                     required
                     value={footerDescAr}
                     onChange={e => setFooterDescAr(e.target.value)}
-                    placeholder="NIAPOLOR هو متجر إلكتروني متعدد الفئات، يجمع عالمًا متنوعًا من المنتجات والاختيارات في مكان واحد..."
+                    placeholder="NIAPOLOR وجهتك الرقمية الشاملة لتسوق أحدث التقنيات، المعدات المتطورة، والمستلزمات العصرية..."
                     className="w-full text-xs p-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent text-[#111113] dark:text-[#F7F6F3] focus:border-[#FF6B00] outline-none resize-none leading-relaxed"
                   />
                   <span className="text-[10px] text-[#7A756D] dark:text-[#8E8980] block text-end">
@@ -2653,7 +2653,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                     rows={3}
                     value={footerDescFr}
                     onChange={e => setFooterDescFr(e.target.value)}
-                    placeholder="NIAPOLOR est votre destination de shopping en ligne, réunissant une grande variété de produits dans plusieurs catégories..."
+                    placeholder="NIAPOLOR est votre destination e-commerce tout-en-un réunissant technologies de pointe, équipements..."
                     className="w-full text-xs p-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent text-[#111113] dark:text-[#F7F6F3] focus:border-[#FF6B00] outline-none resize-none leading-relaxed"
                     dir="ltr"
                   />
@@ -2672,7 +2672,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ onNavigate }) =>
                     rows={3}
                     value={footerDescEn}
                     onChange={e => setFooterDescEn(e.target.value)}
-                    placeholder="NIAPOLOR is your online shopping destination, bringing together a wide variety of products across multiple categories..."
+                    placeholder="NIAPOLOR is your all-in-one e-commerce destination bringing together cutting-edge technology..."
                     className="w-full text-xs p-3 rounded-xl border border-[#D6D0C4] dark:border-[#32323C] bg-transparent text-[#111113] dark:text-[#F7F6F3] focus:border-[#FF6B00] outline-none resize-none leading-relaxed"
                     dir="ltr"
                   />

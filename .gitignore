@@ -22,3 +22,6 @@ used_gate_nonces.json
 media_uploads/
 .hmac_secret
 .backups/
+.audit-backups/
+customer_accounts.json
+legal_consents.json

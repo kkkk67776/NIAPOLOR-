@@ -29,14 +29,14 @@ interface ChatDatabase {
 const DEFAULT_CHAT_CONFIG: SupportChatConfig = {
   autoReplyEnabled: true,
   welcomeMessage: {
-    ar: 'مرحباً بك في ECHOX Store! اسألني عن أي منتج أو سعر، مصاريف التوصيل لولايتك، طرق الدفع، أو أرسل رقم تتبع طلبيتك (مثل ECH-TN-...).',
-    fr: 'Bienvenue chez ECHOX Store ! Posez-moi vos questions sur nos produits, prix, livraison (24 gouvernorats), paiement ou suivi de commande (ECH-TN-...).',
-    en: 'Welcome to ECHOX Store! Ask me about any product or price, shipping across Tunisia’s 24 governorates, payment methods, or send your tracking code (e.g. ECH-TN-...).',
+    ar: 'مرحباً بك في NIAPOLOR! اسألني عن أي منتج أو سعر، مصاريف التوصيل لولايتك، طرق الدفع، أو أرسل رقم تتبع طلبيتك (مثل ECH-TN-...).',
+    fr: 'Bienvenue chez NIAPOLOR ! Posez-moi vos questions sur nos produits, prix, livraison (24 gouvernorats), paiement ou suivi de commande (ECH-TN-...).',
+    en: 'Welcome to NIAPOLOR! Ask me about any product or price, shipping across Tunisia’s 24 governorates, payment methods, or send your tracking code (e.g. ECH-TN-...).',
   },
   fallbackMessage: {
-    ar: 'تم استلام رسالتك وإشعار فريق ECHOX للرد عليك هنا مباشرة. يمكنك أيضاً ذكر اسم القطعة أو كتابة رقم الطلب (ECH-TN-...) أو التواصل الفوري على الرقم +216 21 511 162.',
-    fr: 'Votre message a bien été transmis à l’équipe ECHOX qui vous répondra ici. Vous pouvez aussi préciser le nom d’un article, votre numéro de suivi (ECH-TN-...) ou appeler le +216 21 511 162.',
-    en: 'Your message has been sent to the ECHOX team to reply directly here. You can also mention a product name, share an order tracking code (ECH-TN-...), or call +216 21 511 162.',
+    ar: 'تم استلام رسالتك وإشعار فريق NIAPOLOR للرد عليك هنا مباشرة. يمكنك أيضاً ذكر اسم المنتج أو كتابة رقم الطلب (ECH-TN-...) أو التواصل الفوري على الرقم +216 21 511 162.',
+    fr: 'Votre message a bien été transmis à l’équipe NIAPOLOR qui vous répondra ici. Vous pouvez aussi préciser le nom d’un article, votre numéro de suivi (ECH-TN-...) ou appeler le +216 21 511 162.',
+    en: 'Your message has been sent to the NIAPOLOR team to reply directly here. You can also mention a product name, share an order tracking code (ECH-TN-...), or call +216 21 511 162.',
   },
   customRules: [],
   updatedAt: new Date().toISOString(),

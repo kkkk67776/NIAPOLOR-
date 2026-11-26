@@ -134,6 +134,21 @@ function mergeLegalProfile(
 
 function mergeStoreState(raw: Partial<StorefrontDatabase>): StorefrontDatabase {
   const def = createInitialStoreState();
+  const rawDesc = raw.siteSettings?.description;
+  const migratedDesc = {
+    ar:
+      !rawDesc?.ar || /متخصص في المعدات|المعدات الميكانيكية|قطع الغيار الأصلية|قطع غيار السيارات|يجمع عالمًا متنوعًا من المنتجات/i.test(rawDesc.ar)
+        ? def.siteSettings.description.ar
+        : rawDesc.ar,
+    fr:
+      !rawDesc?.fr || /spécialisée dans l[’']outillage|pièces détachées|pièces automobiles|une grande variété de produits dans plusieurs catégories/i.test(rawDesc.fr)
+        ? def.siteSettings.description.fr
+        : rawDesc.fr,
+    en:
+      !rawDesc?.en || /specializing in professional tools|genuine spare parts|automotive parts|bringing together a wide variety of products across multiple categories/i.test(rawDesc.en)
+        ? def.siteSettings.description.en
+        : rawDesc.en,
+  };
   return {
     products: Array.isArray(raw.products) ? raw.products : def.products,
     companies: Array.isArray(raw.companies) ? raw.companies : def.companies,
@@ -143,7 +158,7 @@ function mergeStoreState(raw: Partial<StorefrontDatabase>): StorefrontDatabase {
       ...def.siteSettings,
       ...(raw.siteSettings || {}),
       slogan: mergeMultilingual(def.siteSettings.slogan, raw.siteSettings?.slogan),
-      description: mergeMultilingual(def.siteSettings.description, raw.siteSettings?.description),
+      description: migratedDesc,
       addressMultilingual: mergeMultilingual(
         def.siteSettings.addressMultilingual,
         raw.siteSettings?.addressMultilingual

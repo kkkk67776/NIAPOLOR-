@@ -295,9 +295,9 @@ export const INITIAL_OWNER_SETTINGS: OwnerSettings = {
   loginEmail: 'abdelkaderbahri570@gmail.com', // Locked sovereign Google email
   photoUrl: '/assets/images/niapolor-badge.webp',
   bio: {
-    ar: 'مالك ومؤسس متجر NIAPOLOR الإلكتروني متعدد الفئات — عالمك، متجر واحد.',
-    fr: 'Fondateur et propriétaire de la boutique en ligne multi-catégories NIAPOLOR — Votre monde. Une seule boutique.',
-    en: 'Founder and owner of NIAPOLOR multi-category online store — YOUR WORLD. ONE STORE.'
+    ar: 'مالك ومؤسس متجر NIAPOLOR الإلكتروني — عالمك، متجر واحد.',
+    fr: 'Fondateur et propriétaire de la boutique en ligne NIAPOLOR — Votre monde. Une seule boutique.',
+    en: 'Founder and owner of NIAPOLOR online store — YOUR WORLD. ONE STORE.'
   }
 };
 
@@ -309,9 +309,9 @@ export const INITIAL_SITE_SETTINGS: SiteSettings = {
     en: 'YOUR WORLD. ONE STORE.'
   },
   description: {
-    ar: 'NIAPOLOR هو متجر إلكتروني متعدد الفئات، يجمع عالمًا متنوعًا من المنتجات والاختيارات في مكان واحد. اكتشف الإلكترونيات والأجهزة والمعدات وقطع غيار السيارات والإكسسوارات والعديد من المنتجات الأخرى. تسوّق بسهولة واستمتع بتجربة شراء موثوقة تناسب احتياجاتك.',
-    fr: "NIAPOLOR est votre destination de shopping en ligne, réunissant une grande variété de produits dans plusieurs catégories. Découvrez l'électronique, les équipements, les pièces automobiles, les accessoires et bien plus encore, dans une seule boutique.",
-    en: 'NIAPOLOR is your online shopping destination, bringing together a wide variety of products across multiple categories. Discover electronics, equipment, automotive parts, accessories, and much more — all in one store.'
+    ar: 'NIAPOLOR وجهتك الرقمية الشاملة لتسوق أحدث التقنيات، المعدات المتطورة، والمستلزمات العصرية من علامات وموردين موثوقين في مكان واحد. تجربة تسوق احترافية تجمع بين تنوع الاختيارات، جودة مضمونة، وخدمة توصيل موثوقة إلى كافة أنحاء تونس.',
+    fr: 'NIAPOLOR est votre destination e-commerce tout-en-un réunissant technologies de pointe, équipements performants et essentiels modernes auprès de marques et partenaires de confiance. Profitez d’une expérience d’achat fluide alliant diversité de choix, qualité garantie et livraison fiable partout en Tunisie.',
+    en: 'NIAPOLOR is your all-in-one e-commerce destination bringing together cutting-edge technology, high-performance equipment, and modern essentials from trusted brands and partners. Experience seamless shopping with curated variety, guaranteed quality, and reliable delivery across Tunisia.'
   },
   officialEmail: 'contact@niapolor.tn',
   address: 'المركب التكنولوجي بالغزالة، أريانة / تونس العاصمة',

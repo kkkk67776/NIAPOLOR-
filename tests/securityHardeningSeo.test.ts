@@ -217,6 +217,29 @@ async function run(): Promise<void> {
     assert.equal(secTxtRes.status, 200, 'GET /.well-known/security.txt returns 200');
     assertIncludes(await secTxtRes.text(), 'Contact: mailto:security@niapolor.tn', 'security.txt content served');
 
+    // Verify new social preview banner in built HTML and unauthenticated public retrieval (WhatsApp/FB/Telegram/X)
+    const distHtml = readText('dist/index.html');
+    const expectedBannerUrl = 'https://niapolor.pages.dev/assets/aistudio/file_00000000be6881f49861ea9a4fa7fa90_4cf997af.png';
+    assertIncludes(distHtml, `<meta property="og:image" content="${expectedBannerUrl}" />`, 'dist/index.html sets og:image');
+    assertIncludes(distHtml, '<meta property="og:image:type" content="image/png" />', 'dist/index.html sets og:image:type');
+    assertIncludes(distHtml, '<meta property="og:image:width" content="1679" />', 'dist/index.html sets og:image:width');
+    assertIncludes(distHtml, '<meta property="og:image:height" content="937" />', 'dist/index.html sets og:image:height');
+    assertIncludes(distHtml, '<meta property="og:image:alt"', 'dist/index.html sets og:image:alt');
+    assertIncludes(distHtml, `<meta name="twitter:image" content="${expectedBannerUrl}" />`, 'dist/index.html sets twitter:image');
+    assertIncludes(distHtml, '<meta name="twitter:card" content="summary_large_image" />', 'dist/index.html sets twitter:card');
+    assertNotIncludes(distHtml, 'niapolor-logo-full', 'dist/index.html has zero old preview image references');
+
+    for (const ua of ['WhatsApp/2.23.20.0', 'facebookexternalhit/1.1', 'TelegramBot (like TwitterBot)', 'Twitterbot/1.0']) {
+      const imgRes = await fetch(`${baseUrl}/assets/aistudio/file_00000000be6881f49861ea9a4fa7fa90_4cf997af.png`, {
+        headers: { 'User-Agent': ua },
+      });
+      assert.equal(imgRes.status, 200, `Banner image returns 200 for ${ua}`);
+      assertIncludes(imgRes.headers.get('content-type') || '', 'image/png', `Banner MIME is image/png for ${ua}`);
+      assert.equal(imgRes.headers.get('cross-origin-resource-policy'), 'cross-origin', `Banner allows cross-origin retrieval for ${ua}`);
+      const buf = await imgRes.arrayBuffer();
+      assert.ok(buf.byteLength > 1000000, `Banner image payload intact for ${ua}`);
+    }
+
     const prodCorsAllow = await fetch(`${baseUrl}/api/store/state`, {
       method: 'OPTIONS',
       headers: { Origin: 'https://niapolor.pages.dev' },

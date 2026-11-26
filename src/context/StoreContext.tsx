@@ -956,13 +956,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const migrateLegacySiteSettings = (raw: SiteSettings): SiteSettings => {
     const desc = { ...(raw?.description || INITIAL_SITE_SETTINGS.description) };
     const slogan = { ...(raw?.slogan || INITIAL_SITE_SETTINGS.slogan) };
-    if (!desc.ar || /متخصص في المعدات|المعدات الميكانيكية|قطع الغيار الأصلية|الدفع عند الاستلام/i.test(desc.ar)) {
+    if (!desc.ar || /متخصص في المعدات|المعدات الميكانيكية|قطع الغيار الأصلية|قطع غيار السيارات|يجمع عالمًا متنوعًا من المنتجات|الدفع عند الاستلام/i.test(desc.ar)) {
       desc.ar = INITIAL_SITE_SETTINGS.description.ar;
     }
-    if (!desc.fr || /spécialisée dans l[’']outillage|pièces détachées|paiement à la livraison/i.test(desc.fr)) {
+    if (!desc.fr || /spécialisée dans l[’']outillage|pièces détachées|pièces automobiles|une grande variété de produits dans plusieurs catégories|paiement à la livraison/i.test(desc.fr)) {
       desc.fr = INITIAL_SITE_SETTINGS.description.fr;
     }
-    if (!desc.en || /specializing in professional tools|genuine spare parts|cash on delivery/i.test(desc.en)) {
+    if (!desc.en || /specializing in professional tools|genuine spare parts|automotive parts|bringing together a wide variety of products across multiple categories|cash on delivery/i.test(desc.en)) {
       desc.en = INITIAL_SITE_SETTINGS.description.en;
     }
     if (!slogan.ar || /المنصة التونسية الرائدة للأجهزة والقطع الأصلية/i.test(slogan.ar)) {

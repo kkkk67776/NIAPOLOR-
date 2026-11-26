@@ -85,9 +85,9 @@ export const translations = {
 
     storefront: {
       categoriesTitle: 'تسوّق حسب الفئة',
-      categoriesSubtitle: 'تصفح الفئات المتنوعة واكتشف اختياراتنا المصممة لكل احتياج',
+      categoriesSubtitle: 'استكشف أقسامنا المختارة بعناية لتجد كل ما يناسبك بسهولة',
       featuredTitle: 'منتجات مميزة وعروض حصرية',
-      featuredDesc: 'إصدارات مختارة وعروض حصرية عبر مختلف الفئات',
+      featuredDesc: 'مختارات رائدة وباقات ترويجية من مختلف أقسام المتجر',
       suggestedForYou: 'مقترحة لك',
       suggestedDesc: 'تشكيلة منتقاة بعناية عبر مختلف الفئات لتناسب اهتماماتك',
       more: 'عرض الكل',
@@ -109,7 +109,7 @@ export const translations = {
       marketplaceSubtitle: 'تجربة تسوق موثوقة للعملاء، ومساحة احترافية للبائعين والعلامات التجارية لعرض منتجاتهم.',
       marketplaceCta: 'استكشف البائعين والشركاء',
       trustFastDelivery: 'توصيل سريع وموثوق',
-      trustFastDeliveryDesc: 'شحن منظم لجميع الولايات والمناطق',
+      trustFastDeliveryDesc: 'شحن آمن ومنظم لكافة ولايات تونس',
       trustCod: 'دفع مرن وآمن',
       trustCodDesc: 'الدفع عند الاستلام أو إلكترونياً',
       trustGenuine: 'منتجات مختارة وأصلية',
@@ -117,14 +117,14 @@ export const translations = {
       trustDirectSupport: 'مساحة للشركات والبائعين',
       trustDirectSupportDesc: 'اعرض منتجاتك ووسّع حضورك',
       defaultBannerTag: 'عروض حصرية',
-      defaultBannerTitle: 'عروض وتخفيضات اليوم عبر مختلف فئات NIAPOLOR',
+      defaultBannerTitle: 'عروض وتخفيضات اليوم عبر كافة تشكيلات NIAPOLOR',
       defaultBannerSubtitle: 'اكتشف أحدث التشكيلات المختارة مع خيارات شحن ودفع مرنة',
     },
 
     hero: {
       badge: 'عالمك، متجر واحد.',
       title: 'عالمك، متجر واحد.',
-      subtitle: 'اكتشف الإلكترونيات والأجهزة والمعدات وقطع غيار السيارات والإكسسوارات والعديد من المنتجات الأخرى — تجربة تسوق حديثة تجمع التنوع والثقة للمتسوقين والشركات.',
+      subtitle: 'وجهتك المتكاملة لكل ما تحتاجه؛ تشكيلة واسعة تجمع بين أحدث التقنيات، المستلزمات العصرية، وأرقى المنتجات بجودة مضمونة وتجربة تسوق استثنائية.',
       shopNow: 'تسوّق الآن',
       exploreSellers: 'بوابة البائعين والشركات',
       learnPromise: 'ميثاق الجودة',
@@ -144,13 +144,13 @@ export const translations = {
 
     benefits: {
       cod: 'الدفع عند الاستلام',
-      codDesc: 'تفقد طلبيتك وادفع نقداً عند استلامها في أي مكان بتونس.',
+      codDesc: 'عاين طلبيتك بكل ثقة وادفع نقداً عند استلامها في أي مكان بتونس.',
       fastDelivery: 'توصيل لكافة الـ 24 ولاية',
-      fastDeliveryDesc: 'شحن آمن وسريع خلال 24 إلى 48 ساعة لباب منزلك أو ورشتك.',
-      genuine: 'قطع أصلية ومضمونة',
-      genuineDesc: 'جميع المنتجات تخضع لفحص الجودة ومرفقة بضمان رسمي من المصنع.',
-      directSupport: 'دعم مباشر ومرافقة',
-      directSupportDesc: 'تواصل فوري عبر الواتساب أو الهاتف مع فريقنا التقني التونسي.',
+      fastDeliveryDesc: 'شحن آمن ومنظم خلال 24 إلى 48 ساعة إلى باب منزلك أو مقر عملك.',
+      genuine: 'منتجات أصلية ومضمونة',
+      genuineDesc: 'تخضع كافة المنتجات لمعايير فحص صارمة ومشمولة بضمان رسمي معتمد.',
+      directSupport: 'مرافقة ودعم مباشر',
+      directSupportDesc: 'تواصل فوري ومباشر عبر الهاتف أو واتساب مع فريق خدمة الحرفاء في تونس.',
     },
 
     product: {
@@ -310,23 +310,23 @@ export const translations = {
     },
 
     companiesPage: {
-      title: 'الشركات والمصانع الشريكة في تونس',
-      subtitle: 'نعمل مباشرة مع كبرى الشركات المعتمدة لضمان جودة القطع والأسعار التنافسية.',
+      title: 'الشركات والعلامات التجارية الشريكة',
+      subtitle: 'نتعاون مباشرة مع أبرز العلامات التجارية والموردين المعتمدين لتقديم تشكيلة متكاملة تجمع بين الجودة العالية والأسعار التنافسية.',
       viewProducts: 'عرض المنتجات',
       contactCompany: 'معلومات الاتصال',
     },
 
     promisePage: {
       title: 'ميثاق الجودة والوعد — NIAPOLOR',
-      subtitle: 'ثقتكم هي رأس مالنا. هذا ما نلتزم به تجاه كل حريف في الـ 24 ولاية تونسية.',
-      point1Title: '1. قطع أصلية 100% دون تهاون',
-      point1Desc: 'نتعامل حصرياً مع الوكلاء الرسميين والمصنعين المعتمدين في تونس والخارج، ولا مكان في متجرنا للقطع المقلدة أو منخفضة الجودة.',
+      subtitle: 'ثقتكم أساس نجاحنا؛ التزامات واضحة نضعها لخدمة كل حريف في كافة ولايات تونس الـ 24.',
+      point1Title: '1. منتجات أصلية 100% بمعايير موثوقة',
+      point1Desc: 'نعتمد حصرياً على الموزعين الرسميين والشركاء المعتمدين لتقديم منتجات أصلية ومطابقة للمواصفات، دون أي مكان للمنتجات المقلدة.',
       point2Title: '2. شفافية كاملة في الأسعار والتواريخ',
       point2Desc: 'الأسعار محددة بالدينار التونسي الشامل لكافة الرسوم. لا مفاجآت عند التوصيل وتكلفة الشحن معلنة بوضوح مسبقاً.',
       point3Title: '3. حق المعاينة والإرجاع العادل',
       point3Desc: 'لك كامل الحق في معاينة طلبيتك، ولدينا سياسة إرجاع واستبدال مرنة تضمن حقك كاملاً وفق القانون التونسي.',
       point4Title: '4. تواصل بشري حقيقي ومباشر',
-      point4Desc: 'لا روبوتات مزيفة. خبيرنا متوفر للمرافقة التقنية عبر الهاتف والواتساب طيلة أيام الأسبوع.',
+      point4Desc: 'تواصل مباشر مع فريقنا المختص عبر الهاتف وواتساب لمساعدتك في الاختيار والمتابعة طوال الأسبوع.',
     },
 
     ownerSecurity: {
@@ -405,7 +405,7 @@ export const translations = {
       governorate: 'الولاية',
       cityAddress: 'المدينة والعنوان',
       orderAmount: 'المبلغ الإجمالي (د.ت)',
-      productPurchased: 'المنتج أو القطعة المطلوبة',
+      productPurchased: 'المنتج المطلوب',
       recordOrderBtn: 'حفظ واعتماد الطلب في النظام',
     },
 
@@ -455,7 +455,7 @@ export const translations = {
       ownerName: 'إدارة مركز التحكم / الدعم الفني',
       instantReplyNotice: 'رسالتك تصل مباشرة لفريق مركز التحكم.',
       resetChat: 'محادثة جديدة',
-      quickChips: ['مصاريف التوصيل؟', 'طرق الدفع المتاحة؟', 'كود تخفيض؟', 'أدوات ومعدات؟'],
+      quickChips: ['مصاريف التوصيل؟', 'طرق الدفع المتاحة؟', 'كود تخفيض؟', 'أحدث المنتجات؟'],
       viewProductBtn: 'عرض',
       liveOwnerBadge: 'رد الإدارة المباشر',
       typingNotice: 'جاري البحث والتحقق...',
@@ -463,7 +463,7 @@ export const translations = {
 
     contactModal: {
       title: 'اتصل بنا مباشرة',
-      subtitle: 'يسعدنا استقبال استفساراتكم أو طلبات الجملة والقطع الخاصة.',
+      subtitle: 'يسعدنا استقبال استفساراتكم حول المنتجات، الطلبات الخاصة، أو الشراكات التجارية.',
       directCall: 'اتصال هاتفي مباشر',
       whatsappDirect: 'تواصل عبر واتساب',
       formTitle: 'أو أرسل لنا رسالة فورية',
@@ -561,8 +561,8 @@ export const translations = {
 
     staticExtras: {
       promiseBadge: 'ميثاق الشرف والجودة',
-      promiseCtaTitle: 'جاهز لتجربة تسوق مختلفة في تونس؟',
-      promiseCtaDesc: 'اختر قطعتك الآن، واستلمها خلال 24-48 ساعة، وادفع عند المعاينة لباب منزلك أو ورشتك.',
+      promiseCtaTitle: 'ارتقِ بتجربة تسوقك في تونس مع NIAPOLOR',
+      promiseCtaDesc: 'اكتشف ما يناسبك عبر مختلف الفئات، واستلم طلبك خلال 24–48 ساعة مع خيار المعاينة والدفع عند الاستلام.',
       promiseCtaBtn: 'تصفح المتجر الآن',
       contactChannelsTitle: 'قنوات التواصل المباشرة',
       phoneShortLabel: 'اتصال هاتفي',
@@ -570,13 +570,13 @@ export const translations = {
       officialEmailLabel: 'البريد الرسمي',
       hqLabel: 'المقر الرئيسي',
       namePlaceholder: 'اسمك الكامل',
-      subjectPlaceholder: 'موضوع الاستفسار أو القطعة المطلوبة',
+      subjectPlaceholder: 'موضوع الاستفسار أو المنتج المطلوب',
       messagePlaceholder: 'اكتب تفاصيل استفسارك أو طلبك...',
       companyProductsPrefix: 'منتجات متوفرة من',
     },
 
     footer: {
-      desc: 'NIAPOLOR هو متجر إلكتروني متعدد الفئات، يجمع عالمًا متنوعًا من المنتجات والاختيارات في مكان واحد. اكتشف الإلكترونيات والأجهزة والمعدات وقطع غيار السيارات والإكسسوارات والعديد من المنتجات الأخرى. تسوّق بسهولة واستمتع بتجربة شراء موثوقة تناسب احتياجاتك.',
+      desc: 'NIAPOLOR وجهتك الرقمية الشاملة لتسوق أحدث التقنيات، المعدات المتطورة، والمستلزمات العصرية من علامات وموردين موثوقين في مكان واحد. تجربة تسوق احترافية تجمع بين تنوع الاختيارات، جودة مضمونة، وخدمة توصيل موثوقة إلى كافة أنحاء تونس.',
       verifiedBadge: 'عالمك، متجر واحد.',
       directContact: 'التواصل المباشر',
       quickLinks: 'روابط سريعة',
@@ -643,7 +643,7 @@ export const translations = {
         title: 'من نحن — NIAPOLOR تونس',
         subtitle: 'منصة تسوّق إلكترونية متعددة الفئات تجمع التنوع، الوضوح، وتجربة شراء عملية للعملاء في تونس.',
         storyTitle: 'رؤيتنا: عالمك، متجر واحد.',
-        storyBody: 'انطلقت NIAPOLOR لتبسيط تجربة التسوق الإلكتروني في تونس عبر منصة واحدة منظمة تجمع الإلكترونيات، الأدوات والمعدات، قطع غيار السيارات، المستلزمات المهنية، وإكسسوارات المنزل الذكي دون تعقيد أو وعود مبالغ فيها.',
+        storyBody: 'انطلقت NIAPOLOR لتقديم تجربة تسوق إلكتروني متكاملة في تونس عبر منصة واحدة منظمة تجمع أحدث التقنيات، التجهيزات والمعدات، المستلزمات العصرية، ومختلف المنتجات المختارة بوضوح تام في الأسعار وجودة موثوقة.',
         modelTitle: 'كيف نعمل بوضوح',
         modelPoints: [
           'عرض منتجات من مصادر وشركاء محليين ومستوردين في تونس بأسعار واضحة بالدينار التونسي.',
@@ -673,7 +673,7 @@ export const translations = {
           'تسجيل الطلب واستلام رقم تتبع فريد (ECH-TN-XXXXXX).',
           'التأكيد الهاتفي مع الحريف للتحقق من الولاية والمعتمدية وموعد التواجد.',
           'بالنسبة لطلبات الدفع المسبق (Poste CCP أو الدفع الإلكتروني): لا يُشحن الطلب قبل تأكيد استلام المبلغ رسمياً.',
-          'التسليم لباب المنزل أو الورشة مع المعاينة.',
+          'التسليم إلى باب منزلك أو مقر عملك مع حق المعاينة.',
         ],
       },
       returns: {
@@ -694,7 +694,7 @@ export const translations = {
           'المنتجات المفتوحة والمستخدمة بشكل يغيّر حالتها الأصلية أو الناقصة الملحقات.',
         ],
         refundTitle: 'آلية وإجراءات رد المبالغ',
-        refundDesc: 'بعد فحص القطعة المرتجعة والتأكد من حالتها، يتم الاستبدال الفوري أو رد المبلغ حسب وسيلة الدفع الأصلية (حوالة بريدية/بنكية أو عبر بوابة الدفع عند تفعيلها) خلال أجل معقول لا يتجاوز أيام العمل المصرفية.',
+        refundDesc: 'بعد فحص المنتج المرتجع والتأكد من حالته، يتم الاستبدال الفوري أو رد المبلغ حسب وسيلة الدفع الأصلية (حوالة بريدية/بنكية أو عبر بوابة الدفع عند تفعيلها) خلال أجل معقول لا يتجاوز أيام العمل المصرفية.',
       },
       privacy: {
         badge: 'الخصوصية والأمان',
@@ -871,9 +871,9 @@ export const translations = {
 
     storefront: {
       categoriesTitle: 'Explorer par Catégorie',
-      categoriesSubtitle: 'Parcourez nos univers sélectionnés et trouvez exactement ce qu’il vous faut',
+      categoriesSubtitle: 'Parcourez nos univers soigneusement sélectionnés et trouvez l’essentiel en un clic',
       featuredTitle: 'Produits Vedettes & Offres Exclusives',
-      featuredDesc: 'Sélections incontournables et offres privilégiées multi-catégories',
+      featuredDesc: 'Sélections phares et offres privilégiées à travers tous nos univers',
       suggestedForYou: 'Recommandés pour vous',
       suggestedDesc: 'Une sélection curatée à travers toutes nos catégories selon vos envies',
       more: 'Tout voir',
@@ -895,7 +895,7 @@ export const translations = {
       marketplaceSubtitle: 'Une expérience d’achat fluide pour les particuliers, et une vitrine premium pour les vendeurs et marques.',
       marketplaceCta: 'Découvrir nos partenaires',
       trustFastDelivery: 'Livraison Rapide',
-      trustFastDeliveryDesc: 'Expédition fiable partout sur le territoire',
+      trustFastDeliveryDesc: 'Expédition sécurisée dans toute la Tunisie',
       trustCod: 'Paiement Flexible',
       trustCodDesc: 'Paiement en ligne ou à la réception',
       trustGenuine: 'Produits Authentiques',
@@ -903,14 +903,14 @@ export const translations = {
       trustDirectSupport: 'Espace Vendeurs & Pro',
       trustDirectSupportDesc: 'Exposez vos produits sur NIAPOLOR',
       defaultBannerTag: 'Offres Exclusives',
-      defaultBannerTitle: 'Offres du jour sur tout l’univers multi-catégories NIAPOLOR',
-      defaultBannerSubtitle: 'Découvrez nos collections avec livraison rapide et paiement flexible',
+      defaultBannerTitle: 'Offres du jour sur l’ensemble des collections NIAPOLOR',
+      defaultBannerSubtitle: 'Découvrez nos nouveautés sélectionnées avec livraison rapide et paiement flexible',
     },
 
     hero: {
       badge: 'Votre monde. Une seule boutique.',
       title: 'VOTRE MONDE. UNE SEULE BOUTIQUE.',
-      subtitle: "Découvrez l'électronique, les équipements, les pièces automobiles, les accessoires et bien plus encore — une plateforme moderne réunissant diversité et confiance.",
+      subtitle: "Votre destination tout-en-un pour tout ce dont vous avez besoin ; une large sélection alliant technologies de pointe, essentiels modernes et produits d’exception à la qualité garantie, avec une expérience d’achat incomparable.",
       shopNow: 'ACHETER MAINTENANT',
       exploreSellers: 'Vendeurs & Partenaires',
       learnPromise: 'Notre Charte Qualité',
@@ -930,13 +930,13 @@ export const translations = {
 
     benefits: {
       cod: 'Paiement à la Livraison',
-      codDesc: 'Vérifiez votre colis et payez en espèces à la réception partout en Tunisie.',
+      codDesc: 'Vérifiez votre colis en toute confiance et payez à la réception partout en Tunisie.',
       fastDelivery: 'Livraison sur 24 Gouvernorats',
-      fastDeliveryDesc: 'Expédition sécurisée sous 24 à 48 heures à votre porte ou atelier.',
-      genuine: 'Pièces Certifiées & Garanties',
-      genuineDesc: 'Tous les produits subissent un contrôle qualité avec garantie constructeur.',
+      fastDeliveryDesc: 'Expédition sécurisée sous 24 à 48 heures à votre domicile ou lieu de travail.',
+      genuine: 'Produits Authentiques & Garantis',
+      genuineDesc: 'Chaque produit bénéficie d’un contrôle qualité rigoureux et d’une garantie officielle.',
       directSupport: 'Accompagnement Dédié',
-      directSupportDesc: 'Assistance technique immédiate par téléphone ou WhatsApp.',
+      directSupportDesc: 'Assistance réactive et personnalisée par téléphone ou WhatsApp partout en Tunisie.',
     },
 
     product: {
@@ -1096,23 +1096,23 @@ export const translations = {
     },
 
     companiesPage: {
-      title: 'Nos Fabricants et Partenaires Agréés',
-      subtitle: 'Partenariats directs avec les usines et importateurs pour vous garantir authenticité et meilleurs prix.',
+      title: 'Nos Marques & Partenaires Agréés',
+      subtitle: 'Partenariats directs avec des marques et fournisseurs agréés pour vous offrir authenticité, diversité et prix justes.',
       viewProducts: 'Voir les articles',
       contactCompany: 'Coordonnées',
     },
 
     promisePage: {
       title: 'La Promesse NIAPOLOR — Charte d’Excellence',
-      subtitle: 'Votre confiance est notre capital. Nos engagements envers chaque client des 24 gouvernorats.',
+      subtitle: 'Votre confiance est le cœur de notre engagement envers chaque client des 24 gouvernorats.',
       point1Title: '1. Produits 100% Authentiques et Certifiés',
-      point1Desc: 'Nous travaillons exclusivement avec des distributeurs officiels. Aucune contrefaçon n’est tolérée.',
+      point1Desc: 'Nous collaborons exclusivement avec des fournisseurs officiels et partenaires vérifiés afin de garantir des produits authentiques et conformes, sans aucune contrefaçon.',
       point2Title: '2. Clarté Totale des Prix et Délais',
       point2Desc: 'Prix transparents en Dinars Tunisiens toutes taxes comprises. Pas de mauvaises surprises à l’arrivée.',
       point3Title: '3. Droit d’Inspection et Retour Équitable',
       point3Desc: 'Vous avez le droit de vérifier votre colis avant paiement, avec une politique de retour conforme à la loi tunisienne.',
       point4Title: '4. Contact Humain Direct et Réactif',
-      point4Desc: 'Nos conseillers techniques sont joignables par téléphone et WhatsApp pour vous guider 6 jours sur 7.',
+      point4Desc: 'Des conseillers réels sont à votre écoute par téléphone et WhatsApp 6 jours sur 7 pour vous orienter et suivre vos commandes.',
     },
 
     ownerSecurity: {
@@ -1249,7 +1249,7 @@ export const translations = {
 
     contactModal: {
       title: 'Contactez-nous Directement',
-      subtitle: 'Nous répondons avec plaisir à vos demandes techniques ou de devis.',
+      subtitle: 'Nous répondons avec plaisir à vos demandes sur nos produits, commandes spéciales ou partenariats.',
       directCall: 'Appel Téléphonique',
       whatsappDirect: 'Discussion WhatsApp',
       formTitle: 'Ou envoyez un message direct',
@@ -1347,8 +1347,8 @@ export const translations = {
 
     staticExtras: {
       promiseBadge: 'Charte d’Honneur & Qualité',
-      promiseCtaTitle: 'Prêt pour une nouvelle expérience en Tunisie ?',
-      promiseCtaDesc: 'Choisissez votre équipement, recevez-le sous 24-48h et payez après vérification à votre porte.',
+      promiseCtaTitle: 'Prêt pour une expérience shopping d’exception en Tunisie ?',
+      promiseCtaDesc: 'Choisissez vos produits parmi nos univers variés, recevez-les sous 24 à 48h et payez après vérification à votre domicile.',
       promiseCtaBtn: 'Explorer la Boutique',
       contactChannelsTitle: 'Canaux de Contact Directs',
       phoneShortLabel: 'Appel téléphonique',
@@ -1356,13 +1356,13 @@ export const translations = {
       officialEmailLabel: 'Email officiel',
       hqLabel: 'Siège principal',
       namePlaceholder: 'Votre nom complet',
-      subjectPlaceholder: 'Objet de votre demande ou référence',
+      subjectPlaceholder: 'Objet de votre demande ou produit recherché',
       messagePlaceholder: 'Décrivez votre demande ou commande...',
       companyProductsPrefix: 'Articles disponibles chez',
     },
 
     footer: {
-      desc: "NIAPOLOR est votre destination de shopping en ligne, réunissant une grande variété de produits dans plusieurs catégories. Découvrez l'électronique, les équipements, les pièces automobiles, les accessoires et bien plus encore, dans une seule boutique.",
+      desc: 'NIAPOLOR est votre destination e-commerce tout-en-un réunissant technologies de pointe, équipements performants et essentiels modernes auprès de marques et partenaires de confiance. Profitez d’une expérience d’achat fluide alliant diversité de choix, qualité garantie et livraison fiable partout en Tunisie.',
       verifiedBadge: 'Votre monde. Une seule boutique.',
       directContact: 'Contact Direct',
       quickLinks: 'Navigation',
@@ -1429,7 +1429,7 @@ export const translations = {
         title: 'À propos de NIAPOLOR Tunisie',
         subtitle: 'Une boutique en ligne multi-catégories offrant variété, transparence tarifaire et commande simplifiée partout en Tunisie.',
         storyTitle: 'Notre vision : Votre monde. Une seule boutique.',
-        storyBody: "NIAPOLOR facilite les achats en ligne en Tunisie en réunissant électronique, outillage, pièces auto, équipement pro et accessoires connectés au sein d'un catalogue structuré en Dinars Tunisiens.",
+        storyBody: 'NIAPOLOR réinvente le shopping en ligne en Tunisie en réunissant technologies de pointe, équipements, essentiels modernes et produits sélectionnés dans un catalogue clair en Dinars Tunisiens.',
         modelTitle: 'Nos engagements concrets',
         modelPoints: [
           'Sélection de produits multi-catégories avec affichage clair des prix en TND et des disponibilités.',
@@ -1459,7 +1459,7 @@ export const translations = {
           'Enregistrement de la commande et génération du suivi ECH-TN-XXXXXX.',
           'Confirmation téléphonique de l’adresse (gouvernorat & délégation) avant départ.',
           'Pour les paiements anticipés (Poste CCP / carte), l’expédition démarre après confirmation effective du règlement.',
-          'Remise au domicile ou à l’atelier avec inspection visuelle possible.',
+          'Remise à votre domicile ou lieu de travail avec inspection visuelle.',
         ],
       },
       returns: {
@@ -1657,9 +1657,9 @@ export const translations = {
 
     storefront: {
       categoriesTitle: 'Shop by Category',
-      categoriesSubtitle: 'Navigate our curated departments to find everything you need in one place',
+      categoriesSubtitle: 'Explore our curated departments to find everything you need effortlessly',
       featuredTitle: 'Featured & Exclusive Offers',
-      featuredDesc: 'Handpicked highlights and seasonal promotions across our marketplace',
+      featuredDesc: 'Handpicked highlights and seasonal promotions across all collections',
       suggestedForYou: 'Recommended for You',
       suggestedDesc: 'Curated selections across multiple categories tailored to your interests',
       more: 'View All',
@@ -1681,7 +1681,7 @@ export const translations = {
       marketplaceSubtitle: 'Effortless online shopping for customers, and a premium storefront for brands and sellers.',
       marketplaceCta: 'Explore Sellers & Partners',
       trustFastDelivery: 'Fast & Reliable Delivery',
-      trustFastDeliveryDesc: 'Organized shipping to every region',
+      trustFastDeliveryDesc: 'Safe, organized shipping across Tunisia',
       trustCod: 'Flexible Checkout',
       trustCodDesc: 'Cash on delivery or online payment',
       trustGenuine: 'Curated Genuine Goods',
@@ -1689,14 +1689,14 @@ export const translations = {
       trustDirectSupport: 'Seller & Business Portal',
       trustDirectSupportDesc: 'Showcase your brand on NIAPOLOR',
       defaultBannerTag: 'Exclusive Deals',
-      defaultBannerTitle: 'Today’s special offers across NIAPOLOR multi-category collections',
+      defaultBannerTitle: 'Today’s featured deals across all NIAPOLOR collections',
       defaultBannerSubtitle: 'Discover new arrivals with flexible delivery and checkout options',
     },
 
     hero: {
       badge: 'YOUR WORLD. ONE STORE.',
       title: 'YOUR WORLD. ONE STORE.',
-      subtitle: 'Discover electronics, equipment, automotive parts, accessories, and much more — an international multi-category marketplace built for shoppers and brands.',
+      subtitle: 'Your all-in-one destination for everything you need; a wide selection bringing together the latest technologies, modern essentials, and finest products with guaranteed quality and an exceptional shopping experience.',
       shopNow: 'SHOP NOW',
       exploreSellers: 'Sellers & Partners',
       learnPromise: 'Our Quality Charter',
@@ -1716,13 +1716,13 @@ export const translations = {
 
     benefits: {
       cod: 'Cash on Delivery',
-      codDesc: 'Inspect your items and pay cash upon delivery anywhere in Tunisia.',
+      codDesc: 'Inspect your order with confidence and pay cash upon delivery anywhere in Tunisia.',
       fastDelivery: 'All 24 Governorates',
-      fastDeliveryDesc: 'Safe, fast 24-48h dispatch straight to your door or workshop.',
-      genuine: 'Certified & Guaranteed',
-      genuineDesc: 'All items are rigorously inspected and covered by official warranties.',
+      fastDeliveryDesc: 'Safe, fast 24–48h delivery straight to your home or workplace.',
+      genuine: 'Authentic & Guaranteed',
+      genuineDesc: 'Every product undergoes strict quality checks and carries an official warranty.',
       directSupport: 'Direct Human Support',
-      directSupportDesc: 'Instant WhatsApp and phone contact with our Tunisian technical team.',
+      directSupportDesc: 'Prompt, dedicated assistance via WhatsApp and phone from our Tunisia support team.',
     },
 
     product: {
@@ -1882,23 +1882,23 @@ export const translations = {
     },
 
     companiesPage: {
-      title: 'Partner Brands & Certified Manufacturers',
-      subtitle: 'We collaborate directly with authorized distributors to bring you genuine parts at fair prices.',
+      title: 'Partner Brands & Trusted Suppliers',
+      subtitle: 'We collaborate directly with verified brands and authorized suppliers to deliver authentic products across all categories at competitive prices.',
       viewProducts: 'View Products',
       contactCompany: 'Contact Info',
     },
 
     promisePage: {
       title: 'The NIAPOLOR Promise — Quality Charter',
-      subtitle: 'Your trust is our cornerstone. Our guarantee to every customer across all 24 governorates.',
-      point1Title: '1. 100% Genuine, Zero Compromise',
-      point1Desc: 'We exclusively source from authorized agents and manufacturers in Tunisia and abroad. No counterfeits.',
+      subtitle: 'Your trust is the foundation of our service — clear commitments for every shopper across all 24 governorates.',
+      point1Title: '1. 100% Authentic & Verified Products',
+      point1Desc: 'We work exclusively with authorized suppliers and trusted brand partners to guarantee genuine, spec-compliant products with zero counterfeits.',
       point2Title: '2. Transparent Pricing & Timelines',
       point2Desc: 'All prices are in Tunisian Dinars inclusive of all taxes. No unexpected fees upon delivery.',
       point3Title: '3. Inspection Rights & Fair Returns',
       point3Desc: 'You have the right to inspect your order, backed by a flexible return policy under Tunisian law.',
       point4Title: '4. Direct Human Support',
-      point4Desc: 'No automated bots. Our technical team is available by phone and WhatsApp throughout the week.',
+      point4Desc: 'Real support specialists are ready to assist you by phone and WhatsApp throughout the week for product guidance and order help.',
     },
 
     ownerSecurity: {
@@ -2027,7 +2027,7 @@ export const translations = {
       ownerName: 'NIAPOLOR Technical Support',
       instantReplyNotice: 'Your inquiry goes straight to the owner control room.',
       resetChat: 'New Chat',
-      quickChips: ['Shipping fees?', 'Payment methods?', 'Discount code?', 'Available tools?'],
+      quickChips: ['Shipping fees?', 'Payment methods?', 'Discount code?', 'Latest products?'],
       viewProductBtn: 'View',
       liveOwnerBadge: 'Direct Admin Reply',
       typingNotice: 'Checking store catalog...',
@@ -2035,7 +2035,7 @@ export const translations = {
 
     contactModal: {
       title: 'Contact Us Directly',
-      subtitle: 'We are delighted to assist with your technical questions or bulk orders.',
+      subtitle: 'We are glad to assist with product inquiries, special orders, or business partnerships.',
       directCall: 'Direct Phone Call',
       whatsappDirect: 'WhatsApp Message',
       formTitle: 'Or send a direct inquiry',
@@ -2133,8 +2133,8 @@ export const translations = {
 
     staticExtras: {
       promiseBadge: 'Honor & Quality Charter',
-      promiseCtaTitle: 'Ready for a trusted shopping experience in Tunisia?',
-      promiseCtaDesc: 'Pick your tools now, get 24–48h delivery, and pay only after inspecting at your door or workshop.',
+      promiseCtaTitle: 'Ready for a better shopping experience in Tunisia?',
+      promiseCtaDesc: 'Pick what you need across all categories, get fast 24–48h delivery, and pay only after inspecting at your door.',
       promiseCtaBtn: 'Browse Store Now',
       contactChannelsTitle: 'Direct Contact Channels',
       phoneShortLabel: 'Phone Call',
@@ -2142,13 +2142,13 @@ export const translations = {
       officialEmailLabel: 'Official Email',
       hqLabel: 'Headquarters',
       namePlaceholder: 'Your full name',
-      subjectPlaceholder: 'Inquiry subject or requested part',
+      subjectPlaceholder: 'Inquiry subject or requested product',
       messagePlaceholder: 'Write your inquiry or order details...',
       companyProductsPrefix: 'Available products from',
     },
 
     footer: {
-      desc: 'NIAPOLOR is your online shopping destination, bringing together a wide variety of products across multiple categories. Discover electronics, equipment, automotive parts, accessories, and much more — all in one store.',
+      desc: 'NIAPOLOR is your all-in-one e-commerce destination bringing together cutting-edge technology, high-performance equipment, and modern essentials from trusted brands and partners. Experience seamless shopping with curated variety, guaranteed quality, and reliable delivery across Tunisia.',
       verifiedBadge: 'YOUR WORLD. ONE STORE.',
       directContact: 'Direct Contact',
       quickLinks: 'Navigation',
@@ -2215,7 +2215,7 @@ export const translations = {
         title: 'About NIAPOLOR Tunisia',
         subtitle: 'A multi-category online store bringing variety, transparent TND pricing, and dependable delivery across Tunisia.',
         storyTitle: 'Our Vision: YOUR WORLD. ONE STORE.',
-        storyBody: 'NIAPOLOR simplifies online shopping in Tunisia by bringing electronics, tools, automotive parts, professional gear, and smart-home accessories into one clearly organized storefront.',
+        storyBody: 'NIAPOLOR delivers an elevated online shopping experience in Tunisia by bringing together modern technologies, quality equipment, lifestyle essentials, and curated multi-category products in one clearly structured storefront.',
         modelTitle: 'How We Operate',
         modelPoints: [
           'Curated multi-category catalog with transparent pricing in Tunisian Dinars (TND).',
@@ -2245,7 +2245,7 @@ export const translations = {
           'Order placement and generation of a unique tracking code (ECH-TN-XXXXXX).',
           'Phone confirmation to verify governorate, delegation, and recipient availability.',
           'Prepaid orders (Poste CCP or online gateway) dispatch once payment receipt is confirmed.',
-          'Doorstep or workshop delivery with package inspection.',
+          'Delivery straight to your home or workplace with visual inspection.',
         ],
       },
       returns: {

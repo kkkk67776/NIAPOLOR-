@@ -37,7 +37,7 @@ const FALLBACK_SHELL_URLS = [
   '/manifest.webmanifest',
   '/assets/images/niapolor-emblem.webp',
   '/assets/images/niapolor-badge.webp',
-  '/assets/images/niapolor-logo-full.webp',
+  '/assets/aistudio/file_00000000be6881f49861ea9a4fa7fa90_4cf997af.png',
   '/assets/images/hero-niapolor-dark.webp',
   '/assets/images/hero-niapolor-light.webp',
   '/assets/images/echox-logo.webp',

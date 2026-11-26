@@ -241,11 +241,12 @@ async function runTests() {
 
   // Verify logos & core offline icons
   const mandatoryBrandAssets = [
-    '/assets/images/echox-logo.webp',
-    '/assets/aistudio/file_000000003d20821088780f690ee97fed_f8e408f8.png',
-    '/pwa-any-192-v2.png',
-    '/pwa-any-512-v2.png',
-    '/apple-touch-icon-v2.png',
+    '/assets/images/niapolor-emblem.webp',
+    '/assets/images/niapolor-badge.webp',
+    '/assets/aistudio/file_00000000be6881f49861ea9a4fa7fa90_4cf997af.png',
+    '/pwa-any-192-v3.png',
+    '/pwa-any-512-v3.png',
+    '/apple-touch-icon-v3.png',
     '/manifest.webmanifest',
   ];
   for (const asset of mandatoryBrandAssets) {
@@ -360,8 +361,8 @@ async function runTests() {
   assert.ok(!cacheNames.includes('echox-sw-v2'), 'Stale echox-sw-v2 cache must be deleted on activate');
   assert.ok(!cacheNames.includes('echox-static-echox-old999'), 'Old release static cache must be deleted on activate');
   assert.ok(cacheNames.includes(`echox-static-${precacheManifest.version}`), 'Active versioned static cache must exist');
-  assert.ok(cacheNames.includes('echox-fonts-v3'), 'Font cache must be warmed during install');
-  assert.ok(cacheNames.includes('echox-api-v3'), 'Public store API cache must be warmed during install');
+  assert.ok(cacheNames.includes('echox-fonts-v4'), 'Font cache must be warmed during install');
+  assert.ok(cacheNames.includes('echox-api-v4'), 'Public store API cache must be warmed during install');
 
   // Switch network COMPLETELY OFFLINE
   networkOnline = false;
@@ -379,7 +380,7 @@ async function runTests() {
   assert.ok((await navDeep.response!.text()).includes('<div id="root">'), 'Deep route navigation offline must fall back to App Shell HTML');
 
   // Hashed CSS + JS + Logos offline must all return 200 OK with valid non-HTML content
-  for (const assetUrl of [...htmlAssetMatches, '/assets/images/echox-logo.webp', '/assets/aistudio/file_000000003d20821088780f690ee97fed_f8e408f8.png']) {
+  for (const assetUrl of [...htmlAssetMatches, '/assets/images/niapolor-emblem.webp', '/assets/aistudio/file_00000000be6881f49861ea9a4fa7fa90_4cf997af.png']) {
     const dest = assetUrl.endsWith('.css') ? 'style' : assetUrl.endsWith('.js') ? 'script' : 'image';
     const resWrap = await swEnv.dispatchFetch({ url: assetUrl, destination: dest });
     assert.equal(resWrap.intercepted, true, `SW must handle ${assetUrl}`);

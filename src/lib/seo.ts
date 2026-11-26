@@ -31,19 +31,19 @@ const PAGES: Record<string, PageMeta> = {
     index: true,
     meta: {
       ar: {
-        title: 'NIAPOLOR — عالمك، متجر واحد. | متجر إلكتروني متعدد الفئات',
+        title: 'NIAPOLOR — عالمك، متجر واحد. | متجر إلكتروني شامل',
         description:
-          'NIAPOLOR هو متجر إلكتروني متعدد الفئات، يجمع عالمًا متنوعًا من المنتجات والاختيارات في مكان واحد. اكتشف الإلكترونيات والأجهزة والمعدات وقطع غيار السيارات والإكسسوارات والعديد من المنتجات الأخرى. تسوّق بسهولة واستمتع بتجربة شراء موثوقة تناسب احتياجاتك.',
+          'NIAPOLOR وجهتك الرقمية الشاملة لتسوق أحدث التقنيات، المعدات المتطورة، والمستلزمات العصرية من علامات وموردين موثوقين في مكان واحد. تجربة تسوق احترافية تجمع بين تنوع الاختيارات، جودة مضمونة، وخدمة توصيل موثوقة إلى كافة أنحاء تونس.',
       },
       fr: {
         title: 'NIAPOLOR — Votre monde. Une seule boutique.',
         description:
-          "NIAPOLOR est votre destination de shopping en ligne, réunissant une grande variété de produits dans plusieurs catégories. Découvrez l'électronique, les équipements, les pièces automobiles, les accessoires et bien plus encore, dans une seule boutique.",
+          'NIAPOLOR est votre destination e-commerce tout-en-un réunissant technologies de pointe, équipements performants et essentiels modernes auprès de marques et partenaires de confiance. Profitez d’une expérience d’achat fluide alliant diversité de choix, qualité garantie et livraison fiable partout en Tunisie.',
       },
       en: {
         title: 'NIAPOLOR — YOUR WORLD. ONE STORE. | Online Store',
         description:
-          'NIAPOLOR is your online shopping destination, bringing together a wide variety of products across multiple categories. Discover electronics, equipment, automotive parts, accessories, and much more — all in one store.',
+          'NIAPOLOR is your all-in-one e-commerce destination bringing together cutting-edge technology, high-performance equipment, and modern essentials from trusted brands and partners. Experience seamless shopping with curated variety, guaranteed quality, and reliable delivery across Tunisia.',
       },
     },
   },
@@ -54,17 +54,17 @@ const PAGES: Record<string, PageMeta> = {
       ar: {
         title: 'من نحن | NIAPOLOR تونس',
         description:
-          'تعرّف على NIAPOLOR، متجر إلكتروني متعدد الفئات في تونس يجمع الإلكترونيات والمعدات وقطع غيار السيارات والإكسسوارات بتجربة شراء واضحة.',
+          'تعرّف على NIAPOLOR، متجرك الإلكتروني الشامل في تونس الذي يجمع أحدث التقنيات والمعدات والمستلزمات العصرية عبر مختلف الفئات بتجربة تسوق موثوقة.',
       },
       fr: {
         title: 'À propos de nous | NIAPOLOR Tunisie',
         description:
-          'Découvrez NIAPOLOR, boutique en ligne multi-catégories en Tunisie réunissant électronique, équipements, pièces auto et accessoires.',
+          'Découvrez NIAPOLOR, votre boutique en ligne complète en Tunisie réunissant technologies, équipements et essentiels modernes avec une expérience d’achat fiable.',
       },
       en: {
         title: 'About Us | NIAPOLOR Tunisia',
         description:
-          'Learn about NIAPOLOR, a multi-category online store in Tunisia bringing together electronics, tools, automotive parts, and accessories.',
+          'Learn about NIAPOLOR, an all-in-one online store in Tunisia bringing together modern technology, quality equipment, and curated lifestyle products.',
       },
     },
   },
@@ -339,8 +339,17 @@ function setHreflangLink(hreflang: string, href: string) {
   el.href = href;
 }
 
+const SOCIAL_BANNER_PATH = '/assets/aistudio/file_00000000be6881f49861ea9a4fa7fa90_4cf997af.png';
+const SOCIAL_BANNER_WIDTH = '1679';
+const SOCIAL_BANNER_HEIGHT = '937';
+
+function removeMeta(attr: 'name' | 'property', key: string) {
+  const el = document.head.querySelector(`meta[${attr}="${key}"]`);
+  if (el) el.remove();
+}
+
 function toAbsoluteUrl(origin: string, urlOrPath?: string): string {
-  if (!urlOrPath) return `${origin}/assets/images/niapolor-logo-full.webp`;
+  if (!urlOrPath) return `${origin}${SOCIAL_BANNER_PATH}`;
   if (urlOrPath.startsWith('http://') || urlOrPath.startsWith('https://')) return urlOrPath;
   return `${origin}${urlOrPath.startsWith('/') ? '' : '/'}${urlOrPath}`;
 }
@@ -485,9 +494,16 @@ export function applySeo(
     setMeta('property', 'og:description', productDesc);
     setMeta('property', 'og:url', productUrl);
     setMeta('property', 'og:image', productImg);
+    setMeta('property', 'og:image:secure_url', productImg);
+    removeMeta('property', 'og:image:type');
+    removeMeta('property', 'og:image:width');
+    removeMeta('property', 'og:image:height');
+    setMeta('property', 'og:image:alt', productTitle);
+    setMeta('name', 'twitter:card', 'summary_large_image');
     setMeta('name', 'twitter:title', productTitle);
     setMeta('name', 'twitter:description', productDesc);
     setMeta('name', 'twitter:image', productImg);
+    setMeta('name', 'twitter:image:alt', productTitle);
 
     let canonical = document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]');
     if (!canonical) {
@@ -526,7 +542,7 @@ export function applySeo(
 
   const metaForLang = page.meta[lang] || page.meta.ar;
   const url = `${origin}${page.path}`;
-  const defaultHeroImage = `${origin}/assets/images/niapolor-logo-full.webp`;
+  const defaultHeroImage = `${origin}${SOCIAL_BANNER_PATH}`;
 
   document.title = metaForLang.title;
   setMeta('name', 'description', metaForLang.description);
@@ -540,9 +556,16 @@ export function applySeo(
   setMeta('property', 'og:description', metaForLang.description);
   setMeta('property', 'og:url', url);
   setMeta('property', 'og:image', defaultHeroImage);
+  setMeta('property', 'og:image:secure_url', defaultHeroImage);
+  setMeta('property', 'og:image:type', 'image/png');
+  setMeta('property', 'og:image:width', SOCIAL_BANNER_WIDTH);
+  setMeta('property', 'og:image:height', SOCIAL_BANNER_HEIGHT);
+  setMeta('property', 'og:image:alt', metaForLang.title);
+  setMeta('name', 'twitter:card', 'summary_large_image');
   setMeta('name', 'twitter:title', metaForLang.title);
   setMeta('name', 'twitter:description', metaForLang.description);
   setMeta('name', 'twitter:image', defaultHeroImage);
+  setMeta('name', 'twitter:image:alt', metaForLang.title);
 
   let canonical = document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]');
   if (!canonical) {

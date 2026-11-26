@@ -9,7 +9,7 @@ const DARK_LOGO_PATH = '/assets/aistudio/file_000000003d20821088780f690ee97fed_f
 const CORE_BRAND_IMAGES = [
   '/assets/images/niapolor-emblem.webp',
   '/assets/images/niapolor-badge.webp',
-  '/assets/images/niapolor-logo-full.webp',
+  '/assets/aistudio/file_00000000be6881f49861ea9a4fa7fa90_4cf997af.png',
   '/assets/images/echox-logo.webp',
   DARK_LOGO_PATH,
   '/assets/images/hero_echox_tunisia_store.webp',
@@ -58,7 +58,7 @@ function buildPrecacheManifest(distDir: string) {
     } else if (
       rel === '/assets/images/niapolor-emblem.webp' ||
       rel === '/assets/images/niapolor-badge.webp' ||
-      rel === '/assets/images/niapolor-logo-full.webp' ||
+      rel === '/assets/aistudio/file_00000000be6881f49861ea9a4fa7fa90_4cf997af.png' ||
       rel === '/assets/images/echox-logo.webp' ||
       rel === DARK_LOGO_PATH ||
       rel === '/pwa-any-192-v3.png' ||
